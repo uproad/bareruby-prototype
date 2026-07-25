@@ -36,6 +36,10 @@ module BareRubyProt
           @bareruby_ast.create_interpolation(
             @bareruby_ast.children_of(node)[0].map { |part| preevaluate_node(part) }, span_of(node)
           )
+        when :array
+          @bareruby_ast.create_array(
+            @bareruby_ast.children_of(node)[0].map { |element| preevaluate_node(element) }, span_of(node)
+          )
         when :assignment
           preevaluate_assignment(node)
         when :method_definition

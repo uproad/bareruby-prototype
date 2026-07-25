@@ -26,6 +26,8 @@ module BareRubyProt
 
     def create_instance_type(class_name, struct = nil) = { kind: :instance, class_name:, struct: }
 
+    def create_array_type(element, capacity) = { kind: :array, element:, capacity: }
+
     def create_identity(owner, name, parameter_types, return_type)
       { owner:, name:, parameter_types:, return_type: }
     end
@@ -52,6 +54,16 @@ module BareRubyProt
 
     def create_call(receiver, callee, arguments, block, type, span)
       build(:call, [receiver, callee, arguments, block, type], span)
+    end
+
+    def create_array(elements, type, span) = build(:array, [elements, type], span)
+
+    def create_array_fill(value, type, span) = build(:array_fill, [value, type], span)
+
+    def create_index(receiver, index, type, span) = build(:index, [receiver, index, type], span)
+
+    def create_index_assign(receiver, index, value, type, span)
+      build(:index_assign, [receiver, index, value, type], span)
     end
 
     def create_block(parameters, body, type, span) = build(:block, [parameters, body, type], span)
@@ -198,6 +210,19 @@ module BareRubyProt
       when :symbol
         name, type = node[:children]
         "symbol(#{name.inspect}, #{inspect_type(type)})"
+      when :array
+        elements, type = node[:children]
+        "array([#{elements.map { |element| inspect_inline(element) }.join(', ')}], #{inspect_type(type)})"
+      when :array_fill
+        value, type = node[:children]
+        "array_fill(#{inspect_inline(value)}, #{inspect_type(type)})"
+      when :index
+        receiver, index, type = node[:children]
+        "index(#{inspect_inline(receiver)}, #{inspect_inline(index)}, #{inspect_type(type)})"
+      when :index_assign
+        receiver, index, value, type = node[:children]
+        "index_assign(#{inspect_inline(receiver)}, #{inspect_inline(index)}, " \
+          "#{inspect_inline(value)}, #{inspect_type(type)})"
       when :logical
         operator, left, right, type = node[:children]
         "logical(#{operator}, #{inspect_inline(left)}, #{inspect_inline(right)}, #{inspect_type(type)})"
@@ -218,7 +243,10 @@ module BareRubyProt
     end
 
     def inspect_type(type)
-      type.is_a?(Hash) ? "instance(#{type[:class_name]})" : type.to_s
+      return type.to_s unless type.is_a?(Hash)
+      return "array(#{inspect_type(type[:element])}, #{type[:capacity]})" if type[:kind] == :array
+
+      "instance(#{type[:class_name]})"
     end
 
     def gutter(node)

@@ -49,6 +49,8 @@ module BareRubyProt
           @result.create_string(node.unescaped, span_of(node))
         when Prism::InterpolatedStringNode
           @result.create_interpolation(node.parts.map { |part| read_prism_ast(part) }, span_of(node))
+        when Prism::ArrayNode
+          @result.create_array(node.elements.map { |element| read_prism_ast(element) }, span_of(node))
         when Prism::EmbeddedStatementsNode
           read_statements(node.statements).fetch(0)
         when Prism::TrueNode

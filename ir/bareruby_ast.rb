@@ -48,6 +48,8 @@ module BareRubyProt
 
     def create_interpolation(parts, span) = build(:interpolation, [parts], span)
 
+    def create_array(elements, span) = build(:array, [elements], span)
+
     def create_keyword_argument(name, value, span) = build(:keyword_argument, [name, value], span)
 
     def create_if(condition, then_body, else_body, span)
@@ -185,6 +187,8 @@ module BareRubyProt
         "float(#{node[:children][0].inspect})"
       when :interpolation
         "interpolation(#{node[:children][0].map { |part| inspect_inline(part) }.join(', ')})"
+      when :array
+        "array([#{node[:children][0].map { |element| inspect_inline(element) }.join(', ')}])"
       when :keyword_argument
         name, value = node[:children]
         "keyword_argument(#{name.inspect}, #{inspect_inline(value)})"

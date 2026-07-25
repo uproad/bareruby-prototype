@@ -26,6 +26,8 @@ module BareRubyProt
 
     def struct_type(name) = { kind: :struct, name: }
 
+    def c_array_type(element, capacity) = { kind: :c_array, element:, capacity: }
+
     def create_field(name, type) = { name:, type: }
 
     def create_struct(name, fields) = build(:struct, [name, fields])
@@ -69,6 +71,8 @@ module BareRubyProt
     def create_field_access(base, name, type) = build(:field_access, [base, name, type])
 
     def create_address_of(value) = build(:address_of, [value])
+
+    def create_index(base, index, type) = build(:index, [base, index, type])
 
     def create_binary(operator, left, right, type) = build(:binary, [operator, left, right, type])
 
@@ -165,6 +169,9 @@ module BareRubyProt
         base, name, = node[:children]
         "#{expression_text(base)}.#{name}"
       when :address_of then "&#{expression_text(node[:children][0])}"
+      when :index
+        base, index, = node[:children]
+        "#{expression_text(base)}[#{expression_text(index)}]"
       when :binary
         operator, left, right, = node[:children]
         "(#{expression_text(left)} #{operator} #{expression_text(right)})"
@@ -180,7 +187,11 @@ module BareRubyProt
     def type_text(type)
       case type
       when Hash
-        type[:kind] == :pointer ? "#{type_text(type[:target])}*" : "struct #{type[:name]}"
+        case type[:kind]
+        when :pointer then "#{type_text(type[:target])}*"
+        when :c_array then "#{type_text(type[:element])}[#{type[:capacity]}]"
+        else "struct #{type[:name]}"
+        end
       else
         type.to_s
       end

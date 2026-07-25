@@ -33,6 +33,10 @@ module BareRubyProt
           @bareruby_ast.create_interpolation(
             @bareruby_ast.children_of(node)[0].map { |part| desugar_node(part) }, span_of(node)
           )
+        when :array
+          @bareruby_ast.create_array(
+            @bareruby_ast.children_of(node)[0].map { |element| desugar_node(element) }, span_of(node)
+          )
         when :assignment
           desugar_assignment(node)
         when :compound_assignment

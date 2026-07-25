@@ -27,8 +27,34 @@ module BareRubyProt
         when :while then inline_while(node)
         when :begin then inline_begin(node)
         when :logical then inline_logical(node)
+        when :array then inline_array(node)
+        when :array_fill then inline_array_fill(node)
+        when :index then inline_index(node)
+        when :index_assign then inline_index_assign(node)
         else node
         end
+      end
+
+      def inline_array(node)
+        elements, type = @tir.children_of(node)
+        @tir.create_array(elements.map { |element| inline_node(element) }, type, span_of(node))
+      end
+
+      def inline_array_fill(node)
+        value, type = @tir.children_of(node)
+        @tir.create_array_fill(inline_node(value), type, span_of(node))
+      end
+
+      def inline_index(node)
+        receiver, index, type = @tir.children_of(node)
+        @tir.create_index(inline_node(receiver), inline_node(index), type, span_of(node))
+      end
+
+      def inline_index_assign(node)
+        receiver, index, value, type = @tir.children_of(node)
+        @tir.create_index_assign(
+          inline_node(receiver), inline_node(index), inline_node(value), type, span_of(node)
+        )
       end
 
       def inline_if(node)

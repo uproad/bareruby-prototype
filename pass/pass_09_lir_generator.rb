@@ -22,6 +22,7 @@ module BareRubyProt
       def run
         structs = []
         functions = []
+        @array_structs = {}
 
         @tir.program_body.each do |statement|
           next unless class_definition?(statement)
@@ -32,7 +33,7 @@ module BareRubyProt
         end
 
         functions << lower_main
-        @result = @lir.replace_module(structs, functions)
+        @result = @lir.replace_module(@array_structs.values + structs, functions)
 
         self
       end
@@ -174,6 +175,12 @@ module BareRubyProt
           [[], @lir.create_const_string(value)]
         when :assignment
           lower_assignment(node)
+        when :index
+          lower_index(node)
+        when :index_assign
+          lower_index_assign(node)
+        when :array, :array_fill
+          lower_array_temporary(node)
         when :call
           lower_call(node)
         when :logical
@@ -233,9 +240,57 @@ module BareRubyProt
           [@lir.create_expression(call)], place]
       end
 
+      def items_of(base) = @lir.create_field_access(base, :items, nil)
+
+      def lower_index(node)
+        receiver, index, type = @tir.children_of(node)
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        index_statements, index_expression = lower_index_value(index, @tir.value_type(receiver))
+        [receiver_statements + index_statements,
+         @lir.create_index(items_of(receiver_expression), index_expression, lir_type(type))]
+      end
+
+      def lower_index_assign(node)
+        receiver, index, value, type = @tir.children_of(node)
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        index_statements, index_expression = lower_index_value(index, @tir.value_type(receiver))
+        value_statements, value_expression = lower_expression(value)
+        place = @lir.create_index(items_of(receiver_expression), index_expression, lir_type(type))
+
+        [receiver_statements + index_statements + value_statements +
+          [@lir.create_assign(place, value_expression)], place]
+      end
+
+      # A constant index was already range checked by pass 5, so only a runtime index
+      # carries a test. It is held in a temporary first: the guard reads it twice, and the
+      # index expression must not run more than once (LANGUAGE.md section 6.2.3).
+      def lower_index_value(index, array_type)
+        statements, expression = lower_expression(index)
+        return [statements, expression] if @tir.node_type(index) == :integer
+
+        name = next_temp
+        local = @lir.create_local(name, :int32)
+        guard = @lir.create_if(out_of_range(local, array_type[:capacity]), [bounds_panic], nil)
+        [statements + [@lir.create_declare(name, :int32, expression), guard], local]
+      end
+
+      def out_of_range(local, capacity)
+        @lir.create_binary(
+          "||",
+          @lir.create_binary("<", local, @lir.create_const_int(0, :int32), :bool),
+          @lir.create_binary(">=", local, @lir.create_const_int(capacity, :int32), :bool),
+          :bool
+        )
+      end
+
+      def bounds_panic
+        @lir.create_expression(@lir.create_call(:bareruby_array_out_of_range, [], :void))
+      end
+
       def lower_assignment(node)
         binding, value, type = @tir.children_of(node)
         return lower_format_assignment(binding, value) if @tir.node_type(value) == :format
+        return lower_array_assignment(binding, value, type) if array_initializer?(value)
 
         statements, value_expression = lower_expression(value)
         place = place_of(binding, lir_type(type))
@@ -246,6 +301,69 @@ module BareRubyProt
         else
           [statements + [@lir.create_assign(place, value_expression)], place]
         end
+      end
+
+      def array_initializer?(node) = %i[array array_fill].include?(@tir.node_type(node))
+
+      # Both forms declare the storage and then write into it element by element, so a
+      # local and an instance variable take the same path: C has no assignable aggregate
+      # initializer, and the wrapper struct is the same either way.
+      def lower_array_assignment(binding, value, type)
+        struct = lir_type(type)
+        place = place_of(binding, struct)
+        statements = []
+        if binding[:kind] == :local && !@declared.include?(binding[:name])
+          @declared << binding[:name]
+          statements << @lir.create_declare(binding[:name], struct, nil)
+        end
+
+        [statements + fill_of(place, value, type), place]
+      end
+
+      # An array written anywhere other than the right of an assignment still needs
+      # storage to fill, so it gets a temporary of its own.
+      def lower_array_temporary(node)
+        type = @tir.value_type(node)
+        struct = lir_type(type)
+        place = @lir.create_local(next_temp, struct)
+        [[@lir.create_declare(@lir.children_of(place)[0], struct, nil)] + fill_of(place, node, type), place]
+      end
+
+      def fill_of(place, value, type)
+        @tir.node_type(value) == :array ? fill_from_elements(place, value) : fill_from_value(place, value, type)
+      end
+
+      def fill_from_elements(place, value)
+        elements, = @tir.children_of(value)
+        elements.each_with_index.flat_map do |element, position|
+          element_statements, element_expression = lower_expression(element)
+          slot = @lir.create_index(
+            items_of(place), @lir.create_const_int(position, :int32), @lir.value_type(element_expression)
+          )
+          element_statements + [@lir.create_assign(slot, element_expression)]
+        end
+      end
+
+      # Array.new evaluates its initial value once, so it is bound to a temporary before
+      # the loop rather than re-evaluated per element.
+      def fill_from_value(place, value, type)
+        fill_value, = @tir.children_of(value)
+        element_type = lir_type(type[:element])
+        statements, expression = lower_expression(fill_value)
+        source = next_temp
+        counter = next_temp
+        local = @lir.create_local(counter, :int32)
+
+        statements + [@lir.create_declare(source, element_type, expression),
+                      @lir.create_for(
+                        @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
+                        @lir.create_binary("<", local, @lir.create_const_int(type[:capacity], :int32), :bool),
+                        @lir.create_assign(local, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32)),
+                        [@lir.create_assign(
+                          @lir.create_index(items_of(place), local, element_type),
+                          @lir.create_local(source, element_type)
+                        )]
+                      )]
       end
 
       def lower_call(node)
@@ -323,9 +441,22 @@ module BareRubyProt
         when :Bool then :bool
         when :Fixed then :fixed
         when :String then :string_ptr
-        when Hash then @lir.struct_type(type[:struct] || type[:class_name])
+        when Hash
+          type[:kind] == :array ? array_struct_type(type) : @lir.struct_type(type[:struct] || type[:class_name])
         else :void
         end
+      end
+
+      # An array becomes a struct wrapping one C array so that assignment, argument
+      # passing and embedding in an owner are all plain value copies (LANGUAGE.md section
+      # 6.2.4). A raw C array would decay to a pointer and share storage instead.
+      def array_struct_type(type)
+        element = lir_type(type[:element])
+        name = :"bareruby_array_#{element}_#{type[:capacity]}_t"
+        @array_structs[name] ||= @lir.create_struct(
+          name, [@lir.create_field(:items, @lir.c_array_type(element, type[:capacity]))]
+        )
+        @lir.struct_type(name)
       end
 
       def field_name(name) = name.to_s.delete_prefix("@").to_sym

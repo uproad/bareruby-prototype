@@ -32,6 +32,10 @@ Covered so far:
 - **M2.6** — the ADC binding (`ref_adc.rb`). `read` and `read_voltage` return `Fixed`
   rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
   converter channel is rejected while compiling. No new pass.
+- **M2.7** — fixed-capacity arrays (`ref_array.rb`): `Array.new(n, init)`, array
+  literals, `[]`, `[]=` and `size`. Single element type, capacity settled while
+  compiling, laid out as a struct wrapping one C array so assignment copies. A constant
+  index out of range is a compile error and a runtime one panics. No new pass.
 
 Sample programs:
 
@@ -45,6 +49,7 @@ Sample programs:
 | `ref_fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 | `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
 | `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
+| `ref_array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
