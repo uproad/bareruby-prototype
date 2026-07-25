@@ -103,9 +103,15 @@ module BareRubyProt
         }
       }.freeze
 
+      # sleep waits from the moment it is called, so a loop drifts by however long its
+      # body takes. asleep waits from the moment the previous asleep returned, which is
+      # what a loop that has to keep a period needs.
       PERIPHERAL_FUNCTIONS = {
         sleep: { function: :bareruby_sleep, parameter_types: %i[Int32], return_type: :Nil },
-        sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32], return_type: :Nil }
+        sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32], return_type: :Nil },
+        asleep: { function: :bareruby_asleep, parameter_types: %i[Int32], return_type: :Nil },
+        asleep_ms: { function: :bareruby_asleep_ms, parameter_types: %i[Int32], return_type: :Nil },
+        asleep_us: { function: :bareruby_asleep_us, parameter_types: %i[Int32], return_type: :Nil }
       }.freeze
 
       PERIPHERAL_MODULES = {
