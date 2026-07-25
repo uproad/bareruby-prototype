@@ -20,6 +20,9 @@ int32_t bareruby_fixed_to_i32(int32_t value);
 int32_t bareruby_fixed_mul(int32_t left, int32_t right);
 int32_t bareruby_fixed_div(int32_t left, int32_t right);
 void bareruby_printf(const char *format, ...);
+void bareruby_panic(const char *message);
+void bareruby_throw(const char *message);
+void bareruby_format(char *buffer, int32_t capacity, const char *format, ...);
 
 #ifdef __cplusplus
 }

@@ -7,10 +7,16 @@ require_relative "../ir/bareruby_ast"
 module BareRubyProt
   module Pass
     class BareRubyAstGenerator
-      attr_reader :result
+      REQUIRE_NAMES = %i[require require_relative].freeze
+      BUILTIN_REQUIRES = %w[gpio uart pwm i2c spi adc machine].freeze
+
+      attr_reader :result, :notices
 
       def initialize(source_file_name)
-        @source_file_name = source_file_name
+        @source_file_name = File.expand_path(source_file_name)
+        @loaded = [@source_file_name]
+        @files = [@source_file_name]
+        @notices = []
       end
 
       def run
@@ -101,6 +107,20 @@ module BareRubyProt
             read_statements(node.body),
             span_of(node)
           )
+        when Prism::BeginNode
+          @result.create_begin(
+            read_statements(node.statements),
+            node.rescue_clause ? read_statements(node.rescue_clause.statements) : [],
+            span_of(node)
+          )
+        when Prism::ModuleNode
+          @result.create_module_definition(
+            node.constant_path.name, read_statements(node.body), span_of(node)
+          )
+        when Prism::SuperNode
+          @result.create_super(read_arguments(node.arguments), span_of(node))
+        when Prism::ForwardingSuperNode
+          @result.create_super([], span_of(node))
         when Prism::CallNode
           @result.create_call(
             read_optional_node(node.receiver),
@@ -127,7 +147,40 @@ module BareRubyProt
       end
 
       def read_statements(node)
-        node ? node.body.map { |child| read_prism_ast(child) } : []
+        return [] unless node
+
+        node.body.flat_map do |child|
+          target = require_target(child)
+          target ? expand_require(*target, child) : [read_prism_ast(child)]
+        end
+      end
+
+      def require_target(node)
+        return unless node.is_a?(Prism::CallNode) && REQUIRE_NAMES.include?(node.name)
+
+        argument = node.arguments&.arguments&.first
+        [node.name, argument.unescaped] if argument.is_a?(Prism::StringNode)
+      end
+
+      # require is a compile-time splice with no runtime machinery (LANGUAGE.md section
+      # 5.11). A file expands once; the second require of it is a no-op, which is also
+      # what makes a cycle harmless rather than an error, since the compiler counts the
+      # top-level file as require #0.
+      def expand_require(kind, target, node)
+        if kind == :require && BUILTIN_REQUIRES.include?(target)
+          @notices << "notice: require #{target.inspect} is unnecessary; it is built in."
+          return []
+        end
+
+        path = File.expand_path("#{target}.rb", File.dirname(@files.last))
+        return [] if @loaded.include?(path)
+        return [read_prism_ast(node)] unless File.exist?(path)
+
+        @loaded << path
+        @files.push(path)
+        statements = read_statements(Prism.parse_file(path).value.statements)
+        @files.pop
+        statements
       end
 
       def read_parameters(node)

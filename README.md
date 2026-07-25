@@ -26,6 +26,9 @@ Covered so far:
   (`ref_servo.rb`) and UART logging (`ref_logger.rb`). Adds pass 8 and, in the language,
   control flow, strings with printf-expanded interpolation, keyword arguments, symbols,
   `Fixed`, and the PWM, UART and Machine bindings.
+- **M2.5** — inheritance and modules flattened at compile time with `super`, begin and
+  rescue with `--no-exceptions`, the interpolation assignment form, and require
+  expansion. No new pass; pass 5 does the flattening.
 
 Sample programs:
 
@@ -37,6 +40,8 @@ Sample programs:
 | `ref_logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
 | `ref_features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
 | `ref_fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
+| `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
+| `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
 
@@ -63,6 +68,11 @@ ruby compile.rb                          # defaults to ref.rb
 ruby compile.rb ref_blink.rb
 ruby compile.rb -d ref_blink.rb   # debug firmware
 ```
+
+`--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
+the unwinder and its tables are left out. On an rp2040 build of `ref_blink.rb` that is
+13164 B of text against 8612 B, so the mechanism costs about 4.5 KB of flash and 316 B
+of RAM even in a program that never raises.
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —

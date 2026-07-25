@@ -80,6 +80,9 @@ module BareRubyProt
         when :while_true then lower_while_true(node)
         when :while then lower_while(node)
         when :if then lower_if_statement(node)
+        when :begin
+          body, rescue_body = @tir.children_of(node)
+          [@lir.create_try(lower_body(body), lower_body(rescue_body))]
         when :iteration_control then lower_iteration_control(node)
         else
           statements, value = lower_expression(node)
@@ -211,8 +214,29 @@ module BareRubyProt
           [@lir.create_assign(@lir.create_local(result_name, result_type), value_expression)]
       end
 
+      # An interpolation assigned to a local becomes a buffer of the size pass 5 bounded
+      # plus one formatting call into it. The local is the buffer, so every later
+      # reference to it already reads as a const char *.
+      def lower_format_assignment(binding, value)
+        capacity, format, values, = @tir.children_of(value)
+        statements, format_expression = lower_expression(format)
+        argument_statements, argument_expressions = lower_arguments(values)
+        place = @lir.create_local(binding[:name], :string_ptr)
+        @declared << binding[:name]
+
+        call = @lir.create_call(
+          :bareruby_format,
+          [place, @lir.create_const_int(capacity, :int32), format_expression] + argument_expressions,
+          :void
+        )
+        [[@lir.create_declare_buffer(binding[:name], capacity)] + statements + argument_statements +
+          [@lir.create_expression(call)], place]
+      end
+
       def lower_assignment(node)
         binding, value, type = @tir.children_of(node)
+        return lower_format_assignment(binding, value) if @tir.node_type(value) == :format
+
         statements, value_expression = lower_expression(value)
         place = place_of(binding, lir_type(type))
 

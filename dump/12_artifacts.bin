@@ -1,4 +1,4 @@
-{	:boundaryI"12_artifacts:ET:schemaI"ARTIFACTS;T:versioni:payload{I"bareruby_runtime.h;TI"×#ifndef BARERUBY_RUNTIME_H
+{	:boundaryI"12_artifacts:ET:schemaI"ARTIFACTS;T:versioni:payload{I"bareruby_runtime.h;TI"z#ifndef BARERUBY_RUNTIME_H
 #define BARERUBY_RUNTIME_H
 
 #include <stdbool.h>
@@ -20,18 +20,22 @@ int32_t bareruby_fixed_to_i32(int32_t value);
 int32_t bareruby_fixed_mul(int32_t left, int32_t right);
 int32_t bareruby_fixed_div(int32_t left, int32_t right);
 void bareruby_printf(const char *format, ...);
+void bareruby_panic(const char *message);
+void bareruby_throw(const char *message);
+void bareruby_format(char *buffer, int32_t capacity, const char *format, ...);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-;TI"bareruby_runtime_stdio.cpp;TI":#include "bareruby_runtime.h"
+;TI"bareruby_runtime_stdio.cpp;TI"”#include "bareruby_runtime.h"
 
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void bareruby_puts_int32(int32_t value) {
     printf("%d\n", (int)value);
@@ -126,6 +130,29 @@ const char *bareruby_fixed_to_s(int32_t value) {
 
 void bareruby_puts_fixed(int32_t value) {
     printf("%s\n", bareruby_fixed_to_s(value));
+}
+
+/* A panic stops immediately without unwinding: stdout is flushed, the message
+   goes to fd2, and the process exits 1 (LANGUAGE.md section 5.5). */
+void bareruby_panic(const char *message) {
+    fflush(stdout);
+    fprintf(stderr, "panic: %s\n", message);
+    exit(1);
+}
+
+/* Exceptions are one of the two things the generated code borrows from C++, so
+   the throw is confined here rather than spread through the output. */
+void bareruby_throw(const char *message) {
+    throw message;
+}
+
+/* The buffer is sized at compile time from the widest rendering of each part, so
+   this never allocates and never grows. */
+void bareruby_format(char *buffer, int32_t capacity, const char *format, ...) {
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(buffer, (size_t)capacity, format, arguments);
+    va_end(arguments);
 }
 ;TI"bareruby_binding.h;TI"=#ifndef BARERUBY_BINDING_H
 #define BARERUBY_BINDING_H
@@ -461,46 +488,23 @@ void bareruby_sleep(int32_t seconds) {
 void bareruby_sleep_ms(int32_t milliseconds) {
     sleep_ms((uint32_t)milliseconds);
 }
-;TI"hosted/main.cpp;TI"j#include <stdbool.h>
+;TI"hosted/main.cpp;TI"þ#include <stdbool.h>
 #include <stdint.h>
 
 #include "bareruby_binding.h"
 #include "bareruby_runtime.h"
 
-struct Servo {
-    bareruby_pwm_t pwm;
-    int32_t angle;
-};
-
-static void Servo_initialize(Servo *self, int32_t pin);
-static void Servo_move(Servo *self, int32_t angle);
 static void bareruby_main(void);
 
-static void Servo_initialize(Servo *self, int32_t pin) {
-    bareruby_pwm_t temporary_1;
-    bareruby_pwm_init(&temporary_1, pin, 50, 0);
-    self->pwm = temporary_1;
-    self->angle = 0;
-    return;
-}
-
-static void Servo_move(Servo *self, int32_t angle) {
-    self->angle = angle;
-    bareruby_pwm_pulse_width_us(&self->pwm, (1000 + ((angle * 1000) / 180)));
-    return;
-}
-
 static void bareruby_main(void) {
-    Servo temporary_1;
-    Servo_initialize(&temporary_1, 15);
-    Servo servo = temporary_1;
+    bareruby_gpio_t temporary_1;
+    bareruby_gpio_init(&temporary_1, 25, 1);
+    bareruby_gpio_t led = temporary_1;
     while (true) {
-        int32_t temporary_2 = 180;
-        for (int32_t angle = 0; (angle <= temporary_2); angle = (angle + 1)) {
-            Servo_move(&servo, angle);
-            bareruby_machine_delay_us(500);
-        }
-        bareruby_sleep_ms(300);
+        bareruby_gpio_write(&led, 1);
+        bareruby_sleep_ms(500);
+        bareruby_gpio_write(&led, 0);
+        bareruby_sleep_ms(500);
     }
 }
 
@@ -519,46 +523,22 @@ stdout_channel = printf
 exceptions = enabled
 artifact = bareruby_program
 build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
-;TI"rp2040/main.cpp;TI"ª#include <stdbool.h>
+;TI"rp2040/main.cpp;TI" #include <stdbool.h>
 #include <stdint.h>
 
 #include "bareruby_binding.h"
-#include "bareruby_runtime.h"
 
-struct Servo {
-    bareruby_pwm_t pwm;
-    int32_t angle;
-};
-
-static void Servo_initialize(Servo *self, int32_t pin);
-static void Servo_move(Servo *self, int32_t angle);
 static void bareruby_main(void);
 
-static void Servo_initialize(Servo *self, int32_t pin) {
-    bareruby_pwm_t temporary_1;
-    bareruby_pwm_init(&temporary_1, pin, 50, 0);
-    self->pwm = temporary_1;
-    self->angle = 0;
-    return;
-}
-
-static void Servo_move(Servo *self, int32_t angle) {
-    self->angle = angle;
-    bareruby_pwm_pulse_width_us(&self->pwm, (1000 + ((angle * 1000) / 180)));
-    return;
-}
-
 static void bareruby_main(void) {
-    Servo temporary_1;
-    Servo_initialize(&temporary_1, 15);
-    Servo servo = temporary_1;
+    bareruby_gpio_t temporary_1;
+    bareruby_gpio_init(&temporary_1, 25, 1);
+    bareruby_gpio_t led = temporary_1;
     while (true) {
-        int32_t temporary_2 = 180;
-        for (int32_t angle = 0; (angle <= temporary_2); angle = (angle + 1)) {
-            Servo_move(&servo, angle);
-            bareruby_machine_delay_us(500);
-        }
-        bareruby_sleep_ms(300);
+        bareruby_gpio_write(&led, 1);
+        bareruby_sleep_ms(500);
+        bareruby_gpio_write(&led, 0);
+        bareruby_sleep_ms(500);
     }
 }
 
@@ -569,21 +549,25 @@ int main(void) {
         bareruby_sleep_ms(1000);
     }
 }
-;TI"rp2040/manifest.txt;TI"Ôtarget = freestanding-rp2040
+;TI"rp2040/manifest.txt;TI"¹target = freestanding-rp2040
 toolchain = arm-none-eabi-g++
 language_standard = gnu++20
 compile_options = -std=gnu++20 -fno-rtti
 include_directories = ..
-sources = main.cpp ../bareruby_binding_rp2040.cpp ../bareruby_runtime_stdio.cpp
+sources = main.cpp ../bareruby_binding_rp2040.cpp
 link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
-stdout_channel = usb
-debug = enabled
-exceptions = enabled
+stdout_channel = none
+debug = disabled
+exceptions = disabled
 artifact = bareruby_program.uf2
 build_command = cmake -B build -S . && cmake --build build
-;TI"rp2040/CMakeLists.txt;TI"cmake_minimum_required(VERSION 3.13)
+;TI"rp2040/CMakeLists.txt;TI"acmake_minimum_required(VERSION 3.13)
 
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+# pico-sdk leaves C++ exceptions off unless asked, so whether the unwinder and
+# its tables are linked is a decision the first stage records here.
+set(PICO_CXX_ENABLE_EXCEPTIONS 0)
 
 project(bareruby_program C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -594,23 +578,14 @@ pico_sdk_init()
 add_executable(bareruby_program
     main.cpp
     ../bareruby_binding_rp2040.cpp
-    ../bareruby_runtime_stdio.cpp
 )
 
 target_include_directories(bareruby_program PRIVATE ..)
-target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
+target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
 target_link_libraries(bareruby_program pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks)
 
-pico_enable_stdio_usb(bareruby_program 1)
+pico_enable_stdio_usb(bareruby_program 0)
 pico_enable_stdio_uart(bareruby_program 0)
-
-# Keep the USB device enumerated so the board can be reset into BOOTSEL from
-# the host instead of by replugging it with the button held.
-target_compile_definitions(bareruby_program PRIVATE
-    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
-    PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
-    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
-)
 
 pico_add_extra_outputs(bareruby_program)
 ;T

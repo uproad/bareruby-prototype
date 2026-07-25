@@ -41,6 +41,13 @@ module BareRubyProt
           desugar_method_definition(node)
         when :subclass_definition
           desugar_subclass_definition(node)
+        when :module_definition
+          desugar_module_definition(node)
+        when :super
+          desugar_super(node)
+        when :begin
+          body, rescue_body = @bareruby_ast.children_of(node)
+          @bareruby_ast.create_begin(desugar_body(body), desugar_body(rescue_body), span_of(node))
         when :call
           desugar_call(node)
         when :block
@@ -73,6 +80,16 @@ module BareRubyProt
         include_target = @bareruby_ast.create_reference(:constant, superclass, span)
         include_call = @bareruby_ast.create_call(nil, :include, [include_target], nil, span)
         @bareruby_ast.create_class_definition(name, [include_call] + desugar_body(body), span)
+      end
+
+      def desugar_module_definition(node)
+        name, body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_module_definition(name, desugar_body(body), span_of(node))
+      end
+
+      def desugar_super(node)
+        arguments = @bareruby_ast.children_of(node)[0]
+        @bareruby_ast.create_super(arguments.map { |argument| desugar_node(argument) }, span_of(node))
       end
 
       def desugar_call(node)

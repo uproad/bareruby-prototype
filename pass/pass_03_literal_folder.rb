@@ -42,6 +42,13 @@ module BareRubyProt
           preevaluate_method_definition(node)
         when :class_definition
           preevaluate_class_definition(node)
+        when :module_definition
+          preevaluate_module_definition(node)
+        when :super
+          preevaluate_super(node)
+        when :begin
+          body, rescue_body = @bareruby_ast.children_of(node)
+          @bareruby_ast.create_begin(preevaluate_body(body), preevaluate_body(rescue_body), span_of(node))
         when :call
           preevaluate_call(node)
         when :block
@@ -64,6 +71,16 @@ module BareRubyProt
       def preevaluate_class_definition(node)
         name, body = @bareruby_ast.children_of(node)
         @bareruby_ast.create_class_definition(name, preevaluate_body(body), span_of(node))
+      end
+
+      def preevaluate_module_definition(node)
+        name, body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_module_definition(name, preevaluate_body(body), span_of(node))
+      end
+
+      def preevaluate_super(node)
+        arguments = @bareruby_ast.children_of(node)[0]
+        @bareruby_ast.create_super(arguments.map { |argument| preevaluate_node(argument) }, span_of(node))
       end
 
       def preevaluate_call(node)

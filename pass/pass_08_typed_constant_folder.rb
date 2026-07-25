@@ -33,6 +33,9 @@ module BareRubyProt
         when :call then fold_call(node)
         when :if then fold_if(node)
         when :while then fold_while(node)
+        when :begin
+          body, rescue_body = @tir.children_of(node)
+          @tir.create_begin(fold_body(body), fold_body(rescue_body), span_of(node))
         when :while_true then fold_while_true(node)
         when :for_range then fold_for_range(node)
         when :logical then fold_logical(node)

@@ -36,6 +36,8 @@ module BareRubyProt
 
     def create_declare(name, type, value) = build(:declare, [name, type, value])
 
+    def create_declare_buffer(name, capacity) = build(:declare_buffer, [name, capacity])
+
     def create_assign(place, value) = build(:assign, [place, value])
 
     def create_expression(value) = build(:expression, [value])
@@ -47,6 +49,8 @@ module BareRubyProt
     def create_while(condition, body) = build(:while, [condition, body])
 
     def create_if(condition, then_body, else_body) = build(:if, [condition, then_body, else_body])
+
+    def create_try(body, rescue_body) = build(:try, [body, rescue_body])
 
     def create_break = build(:break, [])
 
@@ -110,6 +114,9 @@ module BareRubyProt
       when :declare
         name, type, value = statement[:children]
         ["#{indent}declare #{name}: #{type_text(type)}#{value ? " = #{expression_text(value)}" : ''}"]
+      when :declare_buffer
+        name, capacity = statement[:children]
+        ["#{indent}declare_buffer #{name}[#{capacity}]"]
       when :assign
         place, value = statement[:children]
         ["#{indent}assign #{expression_text(place)} = #{expression_text(value)}"]
@@ -136,6 +143,10 @@ module BareRubyProt
           lines += else_body.flat_map { |child| inspect_statement(child, "#{indent}    ") }
         end
         lines
+      when :try
+        body, rescue_body = statement[:children]
+        ["#{indent}try"] + body.flat_map { |child| inspect_statement(child, "#{indent}    ") } +
+          ["#{indent}catch"] + rescue_body.flat_map { |child| inspect_statement(child, "#{indent}    ") }
       when :break
         ["#{indent}break"]
       when :next

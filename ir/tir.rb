@@ -72,11 +72,17 @@ module BareRubyProt
 
     def create_symbol(name, type, span) = build(:symbol, [name, type], span)
 
+    def create_format(capacity, format, values, type, span)
+      build(:format, [capacity, format, values, type], span)
+    end
+
     def create_if(condition, then_body, else_body, type, span)
       build(:if, [condition, then_body, else_body, type], span)
     end
 
     def create_while(condition, body, span) = build(:while, [condition, body], span)
+
+    def create_begin(body, rescue_body, span) = build(:begin, [body, rescue_body], span)
 
     def create_logical(operator, left, right, type, span)
       build(:logical, [operator, left, right, type], span)
@@ -146,6 +152,11 @@ module BareRubyProt
           lines += else_body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
         end
         lines
+      when :begin
+        body, rescue_body = node[:children]
+        lines = [gutter(node) + indent + "begin"] + body.flat_map { |s| inspect_lines(s, indent + "  ") }
+        lines << gutter(node) + indent + "rescue"
+        lines + rescue_body.flat_map { |s| inspect_lines(s, indent + "  ") }
       when :while
         condition, body = node[:children]
         [gutter(node) + "#{indent}while(#{inspect_inline(condition)})"] +
@@ -180,6 +191,10 @@ module BareRubyProt
       when :string
         value, type = node[:children]
         "string(#{value.inspect}, #{inspect_type(type)})"
+      when :format
+        capacity, format, values, type = node[:children]
+        rendered = values.map { |value| inspect_inline(value) }.join(", ")
+        "format(#{capacity}, #{inspect_inline(format)}, [#{rendered}], #{inspect_type(type)})"
       when :symbol
         name, type = node[:children]
         "symbol(#{name.inspect}, #{inspect_type(type)})"
