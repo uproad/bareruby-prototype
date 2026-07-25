@@ -29,6 +29,9 @@ Covered so far:
 - **M2.5** — inheritance and modules flattened at compile time with `super`, begin and
   rescue with `--no-exceptions`, the interpolation assignment form, and require
   expansion. No new pass; pass 5 does the flattening.
+- **M2.6** — the ADC binding (`ref_adc.rb`). `read` and `read_voltage` return `Fixed`
+  rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
+  converter channel is rejected while compiling. No new pass.
 
 Sample programs:
 
@@ -41,6 +44,7 @@ Sample programs:
 | `ref_features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
 | `ref_fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 | `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
+| `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way

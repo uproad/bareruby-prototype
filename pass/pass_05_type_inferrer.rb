@@ -41,7 +41,22 @@ module BareRubyProt
         }
       }.freeze
 
+      # LANGUAGE.md section 8.6: the guideline returns a Float from read_voltage, but section
+      # 5.4 makes Fixed the default fractional type, so the binding returns Fixed. Q16.16
+      # resolves to 1/65536 V, finer than the 12-bit converter's least significant bit.
+      ADC_CHANNEL_PINS = (26..29).freeze
+
       PERIPHERAL_CLASSES_EXTRA = {
+        ADC: {
+          struct: :bareruby_adc_t,
+          constants: {},
+          constructor: { function: :bareruby_adc_init, parameter_types: %i[Int32] },
+          methods: {
+            read: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
+            read_voltage: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
+            read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
+          }
+        },
         PWM: {
           struct: :bareruby_pwm_t,
           constants: {},
@@ -607,6 +622,7 @@ module BareRubyProt
         constructor = peripheral[:constructor]
         argument_tirs = resolve_keywords(arguments, constructor[:keywords] || {}, env:, self_class:, span:)
         verify_gpio_direction(argument_tirs) if class_name == :GPIO
+        verify_adc_pin(argument_tirs) if class_name == :ADC
         instance_type = @tir.create_instance_type(class_name, peripheral[:struct])
         callee = @tir.create_callee(
           :binding_new, class_name, :new, constructor[:function],
@@ -626,6 +642,14 @@ module BareRubyProt
         return if directions == 1
 
         raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
+      end
+
+      # LANGUAGE.md section 8.6: pins without a converter channel are rejected while compiling.
+      def verify_adc_pin(argument_tirs)
+        pin = constant_integer(argument_tirs[0])
+        return if pin.nil? || ADC_CHANNEL_PINS.include?(pin)
+
+        raise "ADC.new: pin #{pin} has no converter channel (expected #{ADC_CHANNEL_PINS})"
       end
 
       def constant_integer(node)

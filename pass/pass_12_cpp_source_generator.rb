@@ -198,6 +198,11 @@ module BareRubyProt
             int32_t parity;
         } bareruby_uart_t;
 
+        typedef struct {
+            int32_t pin;
+            int32_t channel;
+        } bareruby_adc_t;
+
         void bareruby_startup(void);
 
         void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
@@ -221,6 +226,10 @@ module BareRubyProt
         void bareruby_uart_flush(bareruby_uart_t *self);
         void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
         void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
+
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin);
+        int32_t bareruby_adc_read(bareruby_adc_t *self);
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self);
 
         void bareruby_machine_delay_us(int32_t microseconds);
         void bareruby_sleep(int32_t seconds);
@@ -352,6 +361,22 @@ module BareRubyProt
             fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
         }
 
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+            self->pin = pin;
+            self->channel = pin - 26;
+            fprintf(stderr, "adc_init(pin=%d, channel=%d)\\n", (int)pin, (int)self->channel);
+        }
+
+        int32_t bareruby_adc_read(bareruby_adc_t *self) {
+            fprintf(stderr, "adc_read(pin=%d) -> 0\\n", (int)self->pin);
+            return 0;
+        }
+
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+            fprintf(stderr, "adc_read_raw(pin=%d) -> 0\\n", (int)self->pin);
+            return 0;
+        }
+
         void bareruby_machine_delay_us(int32_t microseconds) {
             fprintf(stderr, "machine_delay_us(microseconds=%d)\\n", (int)microseconds);
         }
@@ -372,6 +397,7 @@ module BareRubyProt
         #include <stdio.h>
         #include <string.h>
 
+        #include "hardware/adc.h"
         #include "hardware/clocks.h"
         #include "hardware/gpio.h"
         #include "hardware/pwm.h"
@@ -504,6 +530,23 @@ module BareRubyProt
             uart_tx_wait_blocking(bareruby_uart_port(self));
         }
 
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+            self->pin = pin;
+            self->channel = pin - 26;
+            adc_init();
+            adc_gpio_init((uint)pin);
+        }
+
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+            adc_select_input((uint)self->channel);
+            return (int32_t)adc_read();
+        }
+
+        int32_t bareruby_adc_read(bareruby_adc_t *self) {
+            int64_t raw = (int64_t)bareruby_adc_read_raw(self);
+            return (int32_t)((raw * 3300 * 65536) / (4095 * 1000));
+        }
+
         void bareruby_machine_delay_us(int32_t microseconds) {
             sleep_us((uint64_t)microseconds);
         }
@@ -572,7 +615,7 @@ module BareRubyProt
           compile_options = -std=gnu++20 -fno-rtti
           include_directories = ..
           sources = #{rp2040_sources.join(' ')}
-          link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
+          link_libraries = pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_clocks
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
           exceptions = #{@exceptions ? 'enabled' : 'disabled'}
@@ -603,7 +646,7 @@ module BareRubyProt
 
           target_include_directories(bareruby_program PRIVATE ..)
           target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
-          target_link_libraries(bareruby_program pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks)
+          target_link_libraries(bareruby_program pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_clocks)
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
         CMAKE
