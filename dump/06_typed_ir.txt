@@ -1,0 +1,25 @@
+=== boundary: 06_typed_ir / schema: TIR / version: 1 ===
+  1| class_definition(:Counter, ivars[@value: Int32])
+  2|   method_definition(:Counter#initialize, [parameter(initial, Int32)]) -> Nil
+  3|     return(assignment(instance @value, reference(local initial, Int32), Int32), Int32)
+  6|   method_definition(:Counter#reset, []) -> Nil
+  7|     assignment(instance @value, integer(0, Int32), Int32)
+  8|     return(nil, Nil)
+ 11|   method_definition(:Counter#advance, [parameter(step, Int32), parameter(limit, Int32)]) -> Int32
+ 12|     assignment(local mask, integer(7, Int32), Int32)
+ 13|     assignment(local adjustment, call(reference(local step, Int32), builtin_operator:-@, [], Int32), Int32)
+ 14|     assignment(local adjustment, call(reference(local adjustment, Int32), builtin_operator:+, [integer(1, Int32)], Int32), Int32)
+ 15|     assignment(instance @value, call(reference(instance @value, Int32), builtin_operator:+, [reference(local adjustment, Int32)], Int32), Int32)
+ 17|     for_range(index: Int32, integer(0, Int32), reference(local limit, Int32), exclusive)
+ 18|       assignment(instance @value, call(reference(instance @value, Int32), builtin_operator:+, [reference(local index, Int32)], Int32), Int32)
+ 19|       iteration_control(:next)
+ 22|     for_range(index: Int32, integer(1, Int32), reference(local limit, Int32), inclusive)
+ 23|       assignment(instance @value, call(reference(instance @value, Int32), builtin_operator:<<, [integer(1, Int32)], Int32), Int32)
+ 26|     while_true
+ 27|       iteration_control(:break)
+ 30|     assignment(instance @value, call(reference(instance @value, Int32), builtin_operator:&, [reference(local mask, Int32)], Int32), Int32)
+ 31|     return(reference(instance @value, Int32), Int32)
+ 35| assignment(local counter, call(nil, new:new, [integer(0, Int32)], instance(Counter)), instance(Counter))
+ 36| call(reference(local counter, instance(Counter)), user_method:reset, [], Nil)
+ 37| assignment(local result, call(reference(local counter, instance(Counter)), user_method:advance, [integer(1, Int32), integer(2, Int32)], Int32), Int32)
+ 38| call(nil, builtin_puts:puts, [reference(local result, Int32)], Nil)
