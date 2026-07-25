@@ -168,7 +168,7 @@ module BareRubyProt
         }
 
         /* A panic stops immediately without unwinding: stdout is flushed, the message
-           goes to fd2, and the process exits 1 (LANGUAGE.md section 5.5). */
+           goes to fd2, and the process exits 1. */
         void bareruby_panic(const char *message) {
             fflush(stdout);
             fprintf(stderr, "panic: %s\\n", message);

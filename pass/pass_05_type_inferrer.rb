@@ -23,9 +23,9 @@ module BareRubyProt
         Int64: (-(2**63)..(2**63 - 1))
       }.freeze
 
-      # LANGUAGE.md section 8.2: one-hot, matching PicoRuby. A direction constant of 0 would
-      # make "IN" and "no direction given" the same value, so the mandatory-direction check
-      # the standard guideline requires could not be expressed at all.
+      # One-hot, matching PicoRuby. A direction constant of 0 would make "IN" and "no
+      # direction given" the same value, so the mandatory-direction check the standard
+      # guideline requires could not be expressed at all.
       GPIO_DIRECTION_MASK = 0b111
 
       PERIPHERAL_CLASSES = {
@@ -42,9 +42,9 @@ module BareRubyProt
         }
       }.freeze
 
-      # LANGUAGE.md section 8.6: the guideline returns a Float from read_voltage, but section
-      # 5.4 makes Fixed the default fractional type, so the binding returns Fixed. Q16.16
-      # resolves to 1/65536 V, finer than the 12-bit converter's least significant bit.
+      # The guideline returns a Float from read_voltage, but Fixed is the default
+      # fractional type here, so the binding returns Fixed. Q16.16 resolves to 1/65536 V,
+      # finer than the 12-bit converter's least significant bit.
       ADC_CHANNEL_PINS = (26..29).freeze
 
       PERIPHERAL_CLASSES_EXTRA = {
@@ -228,9 +228,9 @@ module BareRubyProt
         module_definition?(node) || class_definition?(node) ? @bareruby_ast.children_of(node)[0] : nil
       end
 
-      # Inheritance and include are the same mechanism: compile-time flat expansion
-      # (LANGUAGE.md section 5.2). Pass 2 already turned the superclass into a leading
-      # include, so a class body is a list of include calls followed by its own
+      # Inheritance and include are the same mechanism: compile-time flat expansion.
+      # Pass 2 already turned the superclass into a leading include, so a class body is a
+      # list of include calls followed by its own
       # definitions. Later sources win over earlier ones and the class's own definitions
       # win over all of them. Every definition is copied into the class, which is what
       # lets an included method infer instance variables against the including class.
@@ -239,7 +239,7 @@ module BareRubyProt
         definitions = expand(body)
 
         # Every class descends from Object, whose initialize takes no arguments and
-        # assigns nothing (LANGUAGE.md section 5.2). It is the base of every chain, so a
+        # assigns nothing. It is the base of every chain, so a
         # class without its own initialize still has one and super always has a floor.
         methods = { initialize: MethodInfo.new(name, :initialize, [], [], [], :Nil, [], [], nil, 0) }
         definitions.each do |definition|
@@ -357,7 +357,7 @@ module BareRubyProt
       end
 
       # Every return in the body contributes, plus the value the body falls off the end
-      # with. NoReturn contributes nothing (LANGUAGE.md section 4.7).
+      # with. NoReturn contributes nothing.
       def method_return_type(typed_body)
         return :Nil if typed_body.empty?
 
@@ -422,7 +422,7 @@ module BareRubyProt
       end
 
       # A decimal literal is rounded to the nearest representable Q16.16 value at compile
-      # time and carried as its internal integer form (LANGUAGE.md section 5.4).
+      # time and carried as its internal integer form.
       def infer_float(node)
         value = @bareruby_ast.children_of(node)[0]
         @tir.create_integer((value * FIXED_ONE).round, :Fixed, span_of(node))
@@ -438,8 +438,7 @@ module BareRubyProt
       end
 
       # raise degrades to panic when the program has no begin at all, and throws
-      # otherwise (LANGUAGE.md section 5.5). Only the string form is accepted; the other
-      # forms are Q-011 and are not settled.
+      # otherwise. Only the string form is accepted; the other forms are not settled.
       def infer_raise_call(arguments, env:, self_class:, span:)
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         function = @rescues_present ? :bareruby_throw : :bareruby_panic
@@ -447,8 +446,8 @@ module BareRubyProt
         @tir.create_call(nil, callee, argument_tirs, nil, :NoReturn, span)
       end
 
-      # super is a static call to the definition this one shadowed (LANGUAGE.md section
-      # 5.2). No arguments means forward the ones the method received.
+      # super is a static call to the definition this one shadowed. No arguments means
+      # forward the ones the method received.
       def infer_super(node, env:, self_class:)
         ancestor = @current_method.ancestor
         arguments = @bareruby_ast.children_of(node)[0]
@@ -473,9 +472,9 @@ module BareRubyProt
         @tir.create_symbol(@bareruby_ast.children_of(node)[0], :Symbol, span_of(node))
       end
 
-      # LANGUAGE.md section 6.2.2: the element type is the least upper bound of the
-      # elements, so a literal that mixes types with no common widening is an error here
-      # rather than something the backend has to represent.
+      # The element type is the least upper bound of the elements, so a literal that mixes
+      # types with no common widening is an error here rather than something the backend
+      # has to represent.
       def infer_array(node, env:, self_class:)
         elements = @bareruby_ast.children_of(node)[0].map do |element|
           infer_node(element, env:, self_class:)
@@ -489,9 +488,9 @@ module BareRubyProt
         @tir.create_array(elements, type, span_of(node))
       end
 
-      # LANGUAGE.md section 6.2.1: the capacity must be settled while compiling. The initial
-      # value may be left out, in which case the storage is not written and the element type
-      # comes from the first assignment instead.
+      # The capacity must be settled while compiling. The initial value may be left out, in
+      # which case the storage is not written and the element type comes from the first
+      # assignment instead.
       def infer_array_new_call(arguments, env:, self_class:, span:)
         capacity = constant_capacity(arguments[0], env:, self_class:)
         raise "Array.new: the capacity must be known at compile time" if capacity.nil?
@@ -518,8 +517,8 @@ module BareRubyProt
       end
 
       # An if in value position takes the type both branches agree on; as a statement it
-      # is Nil. A missing else keeps it a statement (LANGUAGE.md section 5.10). A branch
-      # that always leaves contributes NoReturn, which the other branch absorbs (4.7).
+      # is Nil. A missing else keeps it a statement. A branch that always leaves
+      # contributes NoReturn, which the other branch absorbs.
       def infer_if(node, env:, self_class:)
         condition, then_body, else_body = @bareruby_ast.children_of(node)
         condition_tir = infer_node(condition, env:, self_class:)
@@ -654,9 +653,8 @@ module BareRubyProt
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
       # size folds to the capacity because a fixed-capacity array can have no other length
-      # (LANGUAGE.md section 6.2.3). Indexing is pointer arithmetic and is not range
-      # checked, at compile time or at run time; a negative index is out of range like any
-      # other and is left alone.
+      # Indexing is pointer arithmetic and is not range checked, at compile time or at run
+      # time; a negative index is out of range like any other and is left alone.
       def infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
         return @tir.create_array_dup(receiver_tir, receiver_type, span) if name == :dup
 
@@ -673,8 +671,8 @@ module BareRubyProt
       end
 
       # Array.new(n) leaves the element type open, and the first assignment settles it
-      # (LANGUAGE.md section 6.2.2). The type hash is shared with every reference to the
-      # array, so filling it in here reaches all of them.
+      # The type hash is shared with every reference to the array, so filling it in here
+      # reaches all of them.
       def infer_index_assign(receiver_tir, receiver_type, index, value_node, env:, self_class:, span:)
         value = infer_node(value_node, env:, self_class:)
         receiver_type[:element] ||= @tir.value_type(value)
@@ -746,9 +744,9 @@ module BareRubyProt
         @tir.create_call(nil, callee, argument_tirs, nil, instance_type, span)
       end
 
-      # LANGUAGE.md section 8.2: exactly one of IN / OUT / HIGH_Z is mandatory. The standard
-      # guideline raises ArgumentError at run time; one-hot constants let us fold the params
-      # expression and reject it while compiling instead.
+      # Exactly one of IN / OUT / HIGH_Z is mandatory. The standard guideline raises
+      # ArgumentError at run time; one-hot constants let us fold the params expression and
+      # reject it while compiling instead.
       def verify_gpio_direction(argument_tirs)
         params = constant_integer(argument_tirs[1])
         return if params.nil?
@@ -759,7 +757,7 @@ module BareRubyProt
         raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
       end
 
-      # LANGUAGE.md section 8.6: pins without a converter channel are rejected while compiling.
+      # Pins without a converter channel are rejected while compiling.
       def verify_adc_pin(argument_tirs)
         pin = constant_integer(argument_tirs[0])
         return if pin.nil? || ADC_CHANNEL_PINS.include?(pin)
@@ -780,7 +778,7 @@ module BareRubyProt
         left && right && (left | right)
       end
 
-      # A fixed key set (LANGUAGE.md section 5.7): every declared keyword becomes a
+      # A fixed key set: every declared keyword becomes a
       # trailing positional parameter, in declaration order, defaulted when absent.
       def resolve_keywords(arguments, keywords, env:, self_class:, span:)
         positional, keyword_nodes = arguments.partition do |argument|
@@ -847,7 +845,7 @@ module BareRubyProt
         @tir.create_call(nil, callee, [receiver_tir], nil, conversion[:return_type], span)
       end
 
-      # The builtin signature table for Fixed (LANGUAGE.md section 5.4): an integer
+      # The builtin signature table for Fixed: an integer
       # operand is converted with to_fixed semantics, add and subtract act directly on
       # the Q16.16 representation, and multiply and divide go through the runtime so the
       # doubled intermediate, the rounding and the saturation all happen there.
@@ -919,7 +917,7 @@ module BareRubyProt
       end
 
       # puts is expanded at compile time: an interpolation becomes a format string plus
-      # its values, with no intermediate buffer (LANGUAGE.md section 5.9).
+      # its values, with no intermediate buffer.
       def infer_puts_call(arguments, env:, self_class:, span:)
         argument = arguments.first
         return infer_printf_call(:bareruby_printf, nil, argument, env:, self_class:, span:) if formatted?(argument)
@@ -964,7 +962,7 @@ module BareRubyProt
       MAX_LENGTHS = { Int32: 11, Int64: 20, Bool: 5, Fixed: 12, String: 64 }.freeze
 
       # An interpolation outside a puts argument becomes a fixed-capacity buffer plus a
-      # compile-time bound on what can land in it (LANGUAGE.md section 5.9).
+      # compile-time bound on what can land in it.
       def infer_format(node, env:, self_class:)
         parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
         format = +""

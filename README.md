@@ -11,9 +11,8 @@ built end to end? It has no tests, no diagnostics, no error handling and no CLI 
 Happy path only, and it is meant to be thrown away once it has answered the question.
 
 The language specification and the real implementation live in separate repositories
-that are not public yet. Comments here cite that specification by section number
-(`LANGUAGE.md section 5.4` and the like); they record why a decision was made, and are
-readable as intent even though the document itself is not yet available.
+that are not public yet. Nothing here points at them. Comments record why a decision was
+made in their own terms, so this repository reads on its own.
 
 Covered so far:
 

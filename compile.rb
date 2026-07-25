@@ -106,7 +106,7 @@ module BareRubyProt
     def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug, exceptions: @exceptions).run
 
     # --no-exceptions removes the mechanism, so begin has nothing to land on and is
-    # rejected outright rather than quietly doing nothing (LANGUAGE.md section 5.5).
+    # rejected outright rather than quietly doing nothing.
     def reject_begin_without_exceptions(bareruby_ast)
       return if @exceptions
       return unless Pass::TypeInferrer.new(bareruby_ast).contains_begin?(bareruby_ast.program_body)

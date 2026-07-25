@@ -130,7 +130,7 @@ module BareRubyProt
         [@lir.create_while(@lir.create_const_bool(true), lower_body(@tir.children_of(node)[0]))]
       end
 
-      # Only Bool can be false (LANGUAGE.md section 5.10), so a condition of any other
+      # Only Bool can be false, so a condition of any other
       # type is statically true and the test disappears.
       def lower_condition(node)
         statements, expression = lower_expression(node)
@@ -246,8 +246,8 @@ module BareRubyProt
 
       def items_of(base) = @lir.create_field_access(base, :items, nil)
 
-      # Indexing is pointer arithmetic and carries no range test (LANGUAGE.md section
-      # 6.2.3), so the index lowers to whatever expression it is.
+      # Indexing is pointer arithmetic and carries no range test, so the index lowers to
+      # whatever expression it is.
       def lower_index(node)
         receiver, index, type = @tir.children_of(node)
         receiver_statements, receiver_expression = lower_expression(receiver)
@@ -285,13 +285,13 @@ module BareRubyProt
         end
       end
 
-      # Assignment shares the array rather than copying it (LANGUAGE.md section 6.2.4), so
-      # only the binding a creation expression is assigned to owns storage. Every other
-      # binding of array type is a pointer to somebody else's.
+      # Assignment shares the array rather than copying it, so only the binding a creation
+      # expression is assigned to owns storage. Every other binding of array type is a
+      # pointer to somebody else's.
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
       # An array in value position is always a reference: returning one by value would copy
-      # it, which only dup is allowed to do (LANGUAGE.md section 6.2.4).
+      # it, which only dup is allowed to do.
       def value_lir_type(type)
         array_type?(type) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
       end
@@ -375,9 +375,9 @@ module BareRubyProt
         end
       end
 
-      # dup is the only thing that duplicates an array (LANGUAGE.md section 6.2.4). The
-      # wrapper struct makes it one assignment, dereferencing the source when it is a
-      # pointer to somebody else's storage.
+      # dup is the only thing that duplicates an array. The wrapper struct makes it one
+      # assignment, dereferencing the source when it is a pointer to somebody else's
+      # storage.
       def fill_from_copy(place, value)
         receiver, type = @tir.children_of(value)
         struct = lir_type(type)
@@ -504,9 +504,8 @@ module BareRubyProt
         end
       end
 
-      # An array becomes a struct wrapping one C array so that assignment, argument
-      # passing and embedding in an owner are all plain value copies (LANGUAGE.md section
-      # 6.2.4). A raw C array would decay to a pointer and share storage instead.
+      # An array becomes a struct wrapping one C array so that dup is a plain assignment
+      # and an owner can embed one inline. A raw C array would decay to a pointer.
       def array_struct_type(type)
         raise "the element type of this array was never determined" if type[:element].nil?
 
