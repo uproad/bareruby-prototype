@@ -1,15 +1,24 @@
-# bareruby_prot
+# bareruby-prototype
 
-Throwaway feasibility prototype for the BareRuby compiler. It exists to answer one
-question by running it: **can the pipeline described in `docs/ARCHITECTURE.md` §3.4
-actually be built?** It is not the implementation — that lives in `../bareruby`.
+BareRuby is a Ruby subset and an ahead-of-time compiler for microcontrollers. It
+translates Ruby to C++ in a "better C" style, which a standard toolchain
+(`arm-none-eabi-g++` with pico-sdk) turns into a native firmware image. There is no
+VM and no garbage collector; every type is resolved at compile time.
 
-It has no tests, no diagnostics, no error handling and no CLI options. Happy path only.
+**This repository is a throwaway feasibility prototype, not that compiler.** It exists to
+answer one question by running it: can the pipeline the design calls for actually be
+built end to end? It has no tests, no diagnostics, no error handling and no CLI options.
+Happy path only, and it is meant to be thrown away once it has answered the question.
+
+The language specification and the real implementation live in separate repositories
+that are not public yet. Comments here cite that specification by section number
+(`LANGUAGE.md section 5.4` and the like); they record why a decision was made, and are
+readable as intent even though the document itself is not yet available.
 
 Covered so far:
 
-- **M0** — Prism → BRAST → TIR → LIR → C++ for the WP00 representative program
-  (`ref.rb`), compiled with the host `g++` and executed.
+- **M0** — Prism → BRAST → TIR → LIR → C++ for the representative program the design
+  documents use (`ref.rb`), compiled with the host `g++` and executed.
 - **M1** — the same eight passes produce an rp2040 firmware image for the blink
   program (`ref_blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a
   Raspberry Pi Pico, where it blinks.
@@ -22,7 +31,7 @@ Sample programs:
 
 | File | What it covers |
 | --- | --- |
-| `ref.rb` | The WP00 representative program (M0) |
+| `ref.rb` | The representative program from the design documents (M0) |
 | `ref_blink.rb` | Demo 1 — GPIO |
 | `ref_servo.rb` | Demo 2 — PWM with keyword arguments, a peripheral held in an ivar |
 | `ref_logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
@@ -34,7 +43,7 @@ Sample programs:
 `brd` runs the whole cycle — first stage, second stage, flash — for one program:
 
 ```sh
-cd bareruby_prot
+cd bareruby-prototype
 ./brd app.rb -d      # debug firmware: USB stays up, reflashable without the button
 ./brd app.rb         # default firmware
 ./brd                # prints usage
@@ -50,9 +59,9 @@ needs.
 ## Running the first stage
 
 ```sh
-ruby bareruby_prot/compile.rb                          # defaults to ref.rb
-ruby bareruby_prot/compile.rb bareruby_prot/ref_blink.rb
-ruby bareruby_prot/compile.rb -d bareruby_prot/ref_blink.rb   # debug firmware
+ruby compile.rb                          # defaults to ref.rb
+ruby compile.rb ref_blink.rb
+ruby compile.rb -d ref_blink.rb   # debug firmware
 ```
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
@@ -83,9 +92,9 @@ Needs a GNU `g++` (version 12 or newer). Ubuntu 24.04 ships 13.3, which is fine.
 The build command is recorded in the manifest, so just run what it says:
 
 ```sh
-cd bareruby_prot/build/hosted
+cd build/hosted
 g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
-    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
 ./bareruby_program            # fd1 = puts, fd2 = peripheral call trace
 ```
 
@@ -147,7 +156,7 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 ### Building the firmware
 
 ```sh
-cd bareruby_prot/build/rp2040
+cd build/rp2040
 export PICO_SDK_PATH=$HOME/pico/pico-sdk
 export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
@@ -184,8 +193,8 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-bareruby_prot/flash.sh                       # defaults to the rp2040 artifact
-bareruby_prot/flash.sh path/to/other.uf2
+./flash.sh                       # defaults to the rp2040 artifact
+./flash.sh path/to/other.uf2
 ```
 
 The script locates the device by SCSI vendor `RPI` and model `RP2` rather than by a

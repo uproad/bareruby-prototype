@@ -1,0 +1,2 @@
+# Second-stage (cmake/pico-sdk) build tree
+/build/rp2040/build/

@@ -2,7 +2,7 @@
 # Flash a .uf2 onto a Raspberry Pi Pico that is in BOOTSEL mode and attached to
 # this WSL instance with usbipd. Defaults to the prototype's rp2040 artifact.
 #
-#     bareruby_prot/flash.sh [path/to/firmware.uf2]
+#     ./flash.sh [path/to/firmware.uf2]
 #
 # Mounting the bootloader volume is the only step that needs privileges. Give
 # /etc/fstab this line once and the whole script runs as a normal user:

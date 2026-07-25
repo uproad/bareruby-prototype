@@ -43,7 +43,7 @@ export PICO_SDK_PATH PICO_TOOLCHAIN_PATH
 for path in "$PICO_SDK_PATH" "$PICO_TOOLCHAIN_PATH"; do
     if [ ! -d "$path" ]; then
         echo "brd: no such directory: $path" >&2
-        echo "     See bareruby_prot/README.md for how to install the toolchain." >&2
+        echo "     See README.md for how to install the toolchain." >&2
         exit 1
     fi
 done
