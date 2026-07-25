@@ -386,12 +386,16 @@ module BareRubyProt
             self->pin = pin;
             self->params = params;
             gpio_init((uint)pin);
-            gpio_set_dir((uint)pin, (params & 1) ? GPIO_OUT : GPIO_IN);
+            gpio_set_dir((uint)pin, (params & 2) ? GPIO_OUT : GPIO_IN);
             if (params & 4) {
-                gpio_pull_up((uint)pin);
+                gpio_set_input_enabled((uint)pin, false);
             }
             if (params & 8) {
+                gpio_pull_up((uint)pin);
+            } else if (params & 16) {
                 gpio_pull_down((uint)pin);
+            } else {
+                gpio_disable_pulls((uint)pin);
             }
         }
 

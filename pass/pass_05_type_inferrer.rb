@@ -22,10 +22,15 @@ module BareRubyProt
         Int64: (-(2**63)..(2**63 - 1))
       }.freeze
 
+      # LANGUAGE.md section 8.2: one-hot, matching PicoRuby. A direction constant of 0 would
+      # make "IN" and "no direction given" the same value, so the mandatory-direction check
+      # the standard guideline requires could not be expressed at all.
+      GPIO_DIRECTION_MASK = 0b111
+
       PERIPHERAL_CLASSES = {
         GPIO: {
           struct: :bareruby_gpio_t,
-          constants: { IN: 0, OUT: 1, HIGH_Z: 2, PULL_UP: 4, PULL_DOWN: 8, OPEN_DRAIN: 16 },
+          constants: { IN: 1, OUT: 2, HIGH_Z: 4, PULL_UP: 8, PULL_DOWN: 16, OPEN_DRAIN: 32 },
           constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
           methods: {
             write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
@@ -601,12 +606,39 @@ module BareRubyProt
         peripheral = PERIPHERALS.fetch(class_name)
         constructor = peripheral[:constructor]
         argument_tirs = resolve_keywords(arguments, constructor[:keywords] || {}, env:, self_class:, span:)
+        verify_gpio_direction(argument_tirs) if class_name == :GPIO
         instance_type = @tir.create_instance_type(class_name, peripheral[:struct])
         callee = @tir.create_callee(
           :binding_new, class_name, :new, constructor[:function],
           argument_types(argument_tirs), instance_type
         )
         @tir.create_call(nil, callee, argument_tirs, nil, instance_type, span)
+      end
+
+      # LANGUAGE.md section 8.2: exactly one of IN / OUT / HIGH_Z is mandatory. The standard
+      # guideline raises ArgumentError at run time; one-hot constants let us fold the params
+      # expression and reject it while compiling instead.
+      def verify_gpio_direction(argument_tirs)
+        params = constant_integer(argument_tirs[1])
+        return if params.nil?
+
+        directions = (params & GPIO_DIRECTION_MASK).digits(2).count(1)
+        return if directions == 1
+
+        raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
+      end
+
+      def constant_integer(node)
+        return nil if node.nil?
+        return @tir.children_of(node)[0] if @tir.node_type(node) == :integer
+        return nil unless @tir.node_type(node) == :call
+
+        receiver, callee, arguments = @tir.children_of(node)
+        return nil unless callee[:kind] == :builtin_operator && callee[:name] == :|
+
+        left = constant_integer(receiver)
+        right = constant_integer(arguments[0])
+        left && right && (left | right)
       end
 
       # A fixed key set (LANGUAGE.md section 5.7): every declared keyword becomes a
