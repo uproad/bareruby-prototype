@@ -66,6 +66,22 @@ module BareRubyProt
 
     def create_while_true(body, span) = build(:while_true, [body], span)
 
+    def create_boolean(value, type, span) = build(:boolean, [value, type], span)
+
+    def create_string(value, type, span) = build(:string, [value, type], span)
+
+    def create_symbol(name, type, span) = build(:symbol, [name, type], span)
+
+    def create_if(condition, then_body, else_body, type, span)
+      build(:if, [condition, then_body, else_body, type], span)
+    end
+
+    def create_while(condition, body, span) = build(:while, [condition, body], span)
+
+    def create_logical(operator, left, right, type, span)
+      build(:logical, [operator, left, right, type], span)
+    end
+
     def replace_program(body)
       @tree = build(:program, [body], nil)
       self
@@ -121,6 +137,19 @@ module BareRubyProt
       when :while_true
         [gutter(node) + "#{indent}while_true"] +
           node[:children][0].flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+      when :if
+        condition, then_body, else_body, type = node[:children]
+        lines = [gutter(node) + "#{indent}if(#{inspect_inline(condition)}) -> #{inspect_type(type)}"]
+        lines += then_body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+        if else_body
+          lines << "#{gutter(node)}#{indent}else"
+          lines += else_body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+        end
+        lines
+      when :while
+        condition, body = node[:children]
+        [gutter(node) + "#{indent}while(#{inspect_inline(condition)})"] +
+          body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       else
         [gutter(node) + "#{indent}#{inspect_inline(node)}"]
       end
@@ -145,6 +174,21 @@ module BareRubyProt
         "return(#{value ? inspect_inline(value) : 'nil'}, #{inspect_type(type)})"
       when :iteration_control
         "iteration_control(#{node[:children][0].inspect})"
+      when :boolean
+        value, type = node[:children]
+        "boolean(#{value.inspect}, #{inspect_type(type)})"
+      when :string
+        value, type = node[:children]
+        "string(#{value.inspect}, #{inspect_type(type)})"
+      when :symbol
+        name, type = node[:children]
+        "symbol(#{name.inspect}, #{inspect_type(type)})"
+      when :logical
+        operator, left, right, type = node[:children]
+        "logical(#{operator}, #{inspect_inline(left)}, #{inspect_inline(right)}, #{inspect_type(type)})"
+      when :if
+        condition, _then_body, _else_body, type = node[:children]
+        "if(#{inspect_inline(condition)}) -> #{inspect_type(type)}"
       when :call
         receiver, callee, arguments, block, type = node[:children]
         parts = [receiver ? inspect_inline(receiver) : "nil", "#{callee[:kind]}:#{callee[:name]}"]

@@ -23,8 +23,29 @@ module BareRubyProt
         when :assignment then inline_assignment(node)
         when :return then inline_return(node)
         when :call then inline_call(node)
+        when :if then inline_if(node)
+        when :while then inline_while(node)
+        when :logical then inline_logical(node)
         else node
         end
+      end
+
+      def inline_if(node)
+        condition, then_body, else_body, type = @tir.children_of(node)
+        @tir.create_if(
+          inline_node(condition), inline_body(then_body), else_body && inline_body(else_body),
+          type, span_of(node)
+        )
+      end
+
+      def inline_while(node)
+        condition, body = @tir.children_of(node)
+        @tir.create_while(inline_node(condition), inline_body(body), span_of(node))
+      end
+
+      def inline_logical(node)
+        operator, left, right, type = @tir.children_of(node)
+        @tir.create_logical(operator, inline_node(left), inline_node(right), type, span_of(node))
       end
 
       def inline_class_definition(node)

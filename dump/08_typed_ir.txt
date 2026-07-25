@@ -1,4 +1,4 @@
-=== boundary: 05_typed_ir / schema: TIR / version: 1 ===
+=== boundary: 08_typed_ir / schema: TIR / version: 1 ===
   1| class_definition(:Servo, ivars[@pwm: instance(PWM), @angle: Int32])
   2|   method_definition(:Servo#initialize, [parameter(pin, Int32)]) -> Nil
   3|     assignment(instance @pwm, call(nil, binding_new:new, [reference(local pin, Int32), integer(50, Int32), integer(0, Int32)], instance(PWM)), instance(PWM))
@@ -8,8 +8,8 @@
   9|     call(reference(instance @pwm, instance(PWM)), binding_method:pulse_width_us, [call(integer(1000, Int32), builtin_operator:+, [call(call(reference(local angle, Int32), builtin_operator:*, [integer(1000, Int32)], Int32), builtin_operator:/, [integer(180, Int32)], Int32)], Int32)], Nil)
  10|     return(nil, Nil)
  18| assignment(local servo, call(nil, new:new, [integer(15, Int32)], instance(Servo)), instance(Servo))
- 20| call(nil, builtin_iterator:loop, [], block(), Nil)
- 21|   call(integer(0, Int32), builtin_iterator:upto, [integer(180, Int32)], block(parameter(angle, Int32)), Nil)
+ 20| while_true
+ 21|   for_range(angle: Int32, integer(0, Int32), integer(180, Int32), inclusive)
  22|     call(reference(local servo, instance(Servo)), user_method:move, [reference(local angle, Int32)], Nil)
  23|     call(nil, binding_function:delay_us, [integer(500, Int32)], Nil)
  25|   call(nil, binding_function:sleep_ms, [integer(300, Int32)], Nil)

@@ -21,8 +21,21 @@ module BareRubyProt
 
       def preevaluate_node(node)
         case @bareruby_ast.node_type(node)
-        when :integer, :reference, :constant_path, :parameter, :iteration_control
+        when :integer, :float, :boolean, :string, :symbol, :reference, :constant_path, :parameter, :iteration_control
           node
+        when :if
+          preevaluate_if(node)
+        when :while
+          preevaluate_while(node)
+        when :logical
+          preevaluate_logical(node)
+        when :keyword_argument
+          name, value = @bareruby_ast.children_of(node)
+          @bareruby_ast.create_keyword_argument(name, preevaluate_node(value), span_of(node))
+        when :interpolation
+          @bareruby_ast.create_interpolation(
+            @bareruby_ast.children_of(node)[0].map { |part| preevaluate_node(part) }, span_of(node)
+          )
         when :assignment
           preevaluate_assignment(node)
         when :method_definition
@@ -75,6 +88,26 @@ module BareRubyProt
       def preevaluate_return(node)
         value = @bareruby_ast.children_of(node)[0]
         @bareruby_ast.create_return(value && preevaluate_node(value), span_of(node))
+      end
+
+      def preevaluate_if(node)
+        condition, then_body, else_body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_if(
+          preevaluate_node(condition),
+          preevaluate_body(then_body),
+          else_body && preevaluate_body(else_body),
+          span_of(node)
+        )
+      end
+
+      def preevaluate_while(node)
+        condition, body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_while(preevaluate_node(condition), preevaluate_body(body), span_of(node))
+      end
+
+      def preevaluate_logical(node)
+        operator, left, right = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_logical(operator, preevaluate_node(left), preevaluate_node(right), span_of(node))
       end
 
       def preevaluate_body(statements)

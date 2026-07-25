@@ -4,7 +4,7 @@ language_standard = gnu++20
 compile_options = -std=gnu++20 -fno-rtti
 include_directories = ..
 sources = main.cpp ../bareruby_binding_rp2040.cpp ../bareruby_runtime_stdio.cpp
-link_libraries = pico_stdlib hardware_gpio
+link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
 stdout_channel = usb
 debug = enabled
 exceptions = enabled

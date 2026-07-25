@@ -3,12 +3,16 @@
 module BareRubyProt
   module Pass
     class CppSourceGenerator
-      PUTS_FUNCTIONS = %i[bareruby_puts_int32 bareruby_puts_int64].freeze
+      PUTS_FUNCTIONS = %i[
+        bareruby_puts_int32 bareruby_puts_int64 bareruby_puts_string bareruby_puts_bool
+        bareruby_puts_fixed bareruby_printf
+      ].freeze
 
       RUNTIME_HEADER = <<~CPP
         #ifndef BARERUBY_RUNTIME_H
         #define BARERUBY_RUNTIME_H
 
+        #include <stdbool.h>
         #include <stdint.h>
 
         #ifdef __cplusplus
@@ -17,6 +21,16 @@ module BareRubyProt
 
         void bareruby_puts_int32(int32_t value);
         void bareruby_puts_int64(int64_t value);
+        void bareruby_puts_string(const char *value);
+        void bareruby_puts_bool(bool value);
+        void bareruby_puts_fixed(int32_t value);
+        const char *bareruby_bool_to_s(bool value);
+        const char *bareruby_fixed_to_s(int32_t value);
+        int32_t bareruby_int32_to_fixed(int32_t value);
+        int32_t bareruby_fixed_to_i32(int32_t value);
+        int32_t bareruby_fixed_mul(int32_t left, int32_t right);
+        int32_t bareruby_fixed_div(int32_t left, int32_t right);
+        void bareruby_printf(const char *format, ...);
 
         #ifdef __cplusplus
         }
@@ -28,6 +42,9 @@ module BareRubyProt
       RUNTIME_STDIO_SOURCE = <<~CPP
         #include "bareruby_runtime.h"
 
+        #include <stdarg.h>
+        #include <stdbool.h>
+        #include <stdint.h>
         #include <stdio.h>
 
         void bareruby_puts_int32(int32_t value) {
@@ -36,6 +53,93 @@ module BareRubyProt
 
         void bareruby_puts_int64(int64_t value) {
             printf("%lld\\n", (long long)value);
+        }
+
+        void bareruby_puts_string(const char *value) {
+            printf("%s\\n", value);
+        }
+
+        const char *bareruby_bool_to_s(bool value) {
+            return value ? "true" : "false";
+        }
+
+        void bareruby_puts_bool(bool value) {
+            printf("%s\\n", bareruby_bool_to_s(value));
+        }
+
+        void bareruby_printf(const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            vprintf(format, arguments);
+            va_end(arguments);
+        }
+
+        /* Fixed is Q16.16 held in an int32_t. Narrowing saturates rather than wrapping,
+           and the half LSB is added before the shift so rounding happens first. */
+        static int32_t bareruby_fixed_saturate(int64_t value) {
+            if (value > (int64_t)INT32_MAX) {
+                return INT32_MAX;
+            }
+            if (value < (int64_t)INT32_MIN) {
+                return INT32_MIN;
+            }
+            return (int32_t)value;
+        }
+
+        int32_t bareruby_int32_to_fixed(int32_t value) {
+            return (int32_t)((uint32_t)value << 16);
+        }
+
+        int32_t bareruby_fixed_to_i32(int32_t value) {
+            return value >= 0 ? (value >> 16) : -((-(int64_t)value) >> 16);
+        }
+
+        int32_t bareruby_fixed_mul(int32_t left, int32_t right) {
+            int64_t product = (int64_t)left * (int64_t)right;
+            return bareruby_fixed_saturate((product + (1 << 15)) >> 16);
+        }
+
+        int32_t bareruby_fixed_div(int32_t left, int32_t right) {
+            if (right == 0) {
+                return left < 0 ? INT32_MIN : INT32_MAX;
+            }
+            int64_t numerator = (int64_t)left << 16;
+            int64_t half = (int64_t)(right < 0 ? -right : right) / 2;
+            numerator += (numerator < 0) ? -half : half;
+            return bareruby_fixed_saturate(numerator / right);
+        }
+
+        static const uint32_t BARERUBY_FIXED_POWERS[6] = { 1u, 10u, 100u, 1000u, 10000u, 100000u };
+
+        /* Shortest decimal that parses back to the same Q16.16 value. Five fraction
+           digits always suffice, so try one digit first and stop at the first match. */
+        const char *bareruby_fixed_to_s(int32_t value) {
+            static char buffer[24];
+            int64_t magnitude = value < 0 ? -(int64_t)value : (int64_t)value;
+            uint32_t whole = (uint32_t)(magnitude >> 16);
+            uint32_t fraction = (uint32_t)(magnitude & 0xFFFF);
+
+            for (int length = 1; length <= 5; ++length) {
+                uint32_t power = BARERUBY_FIXED_POWERS[length];
+                uint32_t digits = (uint32_t)(((uint64_t)fraction * power + 32768u) >> 16);
+                if (digits >= power) {
+                    continue;
+                }
+                uint32_t restored = (uint32_t)((((uint64_t)digits << 16) + power / 2u) / power);
+                if (restored == fraction) {
+                    snprintf(buffer, sizeof(buffer), "%s%u.%0*u",
+                             value < 0 ? "-" : "", whole, length, digits);
+                    return buffer;
+                }
+            }
+
+            snprintf(buffer, sizeof(buffer), "%s%u.%05u", value < 0 ? "-" : "", whole,
+                     (uint32_t)(((uint64_t)fraction * 100000u + 32768u) >> 16));
+            return buffer;
+        }
+
+        void bareruby_puts_fixed(int32_t value) {
+            printf("%s\\n", bareruby_fixed_to_s(value));
         }
       CPP
 
@@ -55,6 +159,18 @@ module BareRubyProt
             int32_t params;
         } bareruby_gpio_t;
 
+        typedef struct {
+            int32_t pin;
+            int32_t slice;
+            int32_t frequency;
+        } bareruby_pwm_t;
+
+        typedef struct {
+            int32_t id;
+            int32_t baud;
+            int32_t parity;
+        } bareruby_uart_t;
+
         void bareruby_startup(void);
 
         void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
@@ -63,6 +179,23 @@ module BareRubyProt
         bool bareruby_gpio_high(bareruby_gpio_t *self);
         bool bareruby_gpio_low(bareruby_gpio_t *self);
 
+        void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty);
+        void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency);
+        void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us);
+        void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty);
+        void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us);
+
+        void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity);
+        int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
+        void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
+        void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
+        int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
+        bool bareruby_uart_can_read_line(bareruby_uart_t *self);
+        void bareruby_uart_flush(bareruby_uart_t *self);
+        void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
+        void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
+
+        void bareruby_machine_delay_us(int32_t microseconds);
         void bareruby_sleep(int32_t seconds);
         void bareruby_sleep_ms(int32_t milliseconds);
 
@@ -76,7 +209,9 @@ module BareRubyProt
       BINDING_HOST_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
+        #include <stdarg.h>
         #include <stdio.h>
+        #include <string.h>
 
         void bareruby_startup(void) {
             fprintf(stderr, "startup()\\n");
@@ -107,6 +242,93 @@ module BareRubyProt
             return true;
         }
 
+        void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+            self->pin = pin;
+            self->slice = pin / 2;
+            self->frequency = frequency;
+            fprintf(stderr, "pwm_init(pin=%d, frequency=%d, duty=%d)\\n", (int)pin, (int)frequency, (int)duty);
+        }
+
+        void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+            self->frequency = frequency;
+            fprintf(stderr, "pwm_frequency(pin=%d, frequency=%d)\\n", (int)self->pin, (int)frequency);
+        }
+
+        void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+            fprintf(stderr, "pwm_period_us(pin=%d, period_us=%d)\\n", (int)self->pin, (int)period_us);
+        }
+
+        void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+            fprintf(stderr, "pwm_duty(pin=%d, duty=%d)\\n", (int)self->pin, (int)duty);
+        }
+
+        void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+            fprintf(stderr, "pwm_pulse_width_us(pin=%d, pulse_width_us=%d)\\n", (int)self->pin, (int)pulse_width_us);
+        }
+
+        static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self, const char *text) {
+            fprintf(stderr, "%s(id=%d, text=\\"", label, (int)self->id);
+            for (const char *cursor = text; *cursor != '\\0'; ++cursor) {
+                if (*cursor == '\\n') {
+                    fputs("\\\\n", stderr);
+                } else {
+                    fputc(*cursor, stderr);
+                }
+            }
+            fputs("\\")\\n", stderr);
+        }
+
+        void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+            self->id = id;
+            self->baud = baud;
+            self->parity = parity;
+            fprintf(stderr, "uart_init(id=%d, baud=%d, parity=%d)\\n", (int)id, (int)baud, (int)parity);
+        }
+
+        int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
+            bareruby_trace_payload("uart_write", self, value);
+            return (int32_t)strlen(value);
+        }
+
+        void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
+            bareruby_trace_payload("uart_puts", self, value);
+        }
+
+        void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
+            char payload[256];
+            va_list arguments;
+            va_start(arguments, format);
+            vsnprintf(payload, sizeof(payload), format, arguments);
+            va_end(arguments);
+            bareruby_trace_payload("uart_printf", self, payload);
+        }
+
+        int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+            fprintf(stderr, "uart_bytes_available(id=%d) -> 0\\n", (int)self->id);
+            return 0;
+        }
+
+        bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
+            fprintf(stderr, "uart_can_read_line(id=%d) -> false\\n", (int)self->id);
+            return false;
+        }
+
+        void bareruby_uart_flush(bareruby_uart_t *self) {
+            fprintf(stderr, "uart_flush(id=%d)\\n", (int)self->id);
+        }
+
+        void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+            fprintf(stderr, "uart_clear_rx_buffer(id=%d)\\n", (int)self->id);
+        }
+
+        void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
+            fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
+        }
+
+        void bareruby_machine_delay_us(int32_t microseconds) {
+            fprintf(stderr, "machine_delay_us(microseconds=%d)\\n", (int)microseconds);
+        }
+
         void bareruby_sleep(int32_t seconds) {
             fprintf(stderr, "sleep(seconds=%d)\\n", (int)seconds);
         }
@@ -119,7 +341,14 @@ module BareRubyProt
       BINDING_RP2040_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
+        #include <stdarg.h>
+        #include <stdio.h>
+        #include <string.h>
+
+        #include "hardware/clocks.h"
         #include "hardware/gpio.h"
+        #include "hardware/pwm.h"
+        #include "hardware/uart.h"
         #include "pico/stdlib.h"
 
         void bareruby_startup(void) {
@@ -153,6 +382,99 @@ module BareRubyProt
 
         bool bareruby_gpio_low(bareruby_gpio_t *self) {
             return !gpio_get((uint)self->pin);
+        }
+
+        void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+            self->pin = pin;
+            self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
+            gpio_set_function((uint)pin, GPIO_FUNC_PWM);
+            bareruby_pwm_frequency(self, frequency);
+            bareruby_pwm_duty(self, duty);
+        }
+
+        void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+            self->frequency = frequency;
+            if (frequency <= 0) {
+                pwm_set_enabled((uint)self->slice, false);
+                return;
+            }
+            uint32_t divider = (clock_get_hz(clk_sys) / 1000000u);
+            pwm_set_clkdiv((uint)self->slice, (float)divider);
+            pwm_set_wrap((uint)self->slice, (uint16_t)((1000000u / (uint32_t)frequency) - 1u));
+            pwm_set_enabled((uint)self->slice, true);
+        }
+
+        void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+            bareruby_pwm_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
+        }
+
+        void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+            uint16_t top = (uint16_t)pwm_hw->slice[self->slice].top;
+            pwm_set_gpio_level((uint)self->pin, (uint16_t)((uint32_t)top * (uint32_t)duty / 100u));
+        }
+
+        void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+            pwm_set_gpio_level((uint)self->pin, (uint16_t)pulse_width_us);
+        }
+
+        void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+            self->id = id;
+            self->baud = baud;
+            self->parity = parity;
+            uart_inst_t *port = (id == 0) ? uart0 : uart1;
+            uart_init(port, (uint)baud);
+            gpio_set_function((id == 0) ? 0u : 4u, GPIO_FUNC_UART);
+            gpio_set_function((id == 0) ? 1u : 5u, GPIO_FUNC_UART);
+        }
+
+        static uart_inst_t *bareruby_uart_port(const bareruby_uart_t *self) {
+            return (self->id == 0) ? uart0 : uart1;
+        }
+
+        int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
+            size_t length = strlen(value);
+            uart_write_blocking(bareruby_uart_port(self), (const uint8_t *)value, length);
+            return (int32_t)length;
+        }
+
+        void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
+            uart_puts(bareruby_uart_port(self), value);
+            uart_putc(bareruby_uart_port(self), '\\n');
+        }
+
+        void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
+            char payload[256];
+            va_list arguments;
+            va_start(arguments, format);
+            vsnprintf(payload, sizeof(payload), format, arguments);
+            va_end(arguments);
+            uart_puts(bareruby_uart_port(self), payload);
+        }
+
+        int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+            return uart_is_readable(bareruby_uart_port(self)) ? 1 : 0;
+        }
+
+        bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
+            return uart_is_readable(bareruby_uart_port(self));
+        }
+
+        void bareruby_uart_flush(bareruby_uart_t *self) {
+            uart_tx_wait_blocking(bareruby_uart_port(self));
+        }
+
+        void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+            while (uart_is_readable(bareruby_uart_port(self))) {
+                (void)uart_getc(bareruby_uart_port(self));
+            }
+        }
+
+        void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
+            uart_tx_wait_blocking(bareruby_uart_port(self));
+        }
+
+        void bareruby_machine_delay_us(int32_t microseconds) {
+            sleep_us((uint64_t)microseconds);
         }
 
         void bareruby_sleep(int32_t seconds) {
@@ -218,7 +540,7 @@ module BareRubyProt
           compile_options = -std=gnu++20 -fno-rtti
           include_directories = ..
           sources = #{rp2040_sources.join(' ')}
-          link_libraries = pico_stdlib hardware_gpio
+          link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
           exceptions = enabled
@@ -245,7 +567,7 @@ module BareRubyProt
 
           target_include_directories(bareruby_program PRIVATE ..)
           target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
-          target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
+          target_link_libraries(bareruby_program pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks)
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
         CMAKE
@@ -336,6 +658,15 @@ module BareRubyProt
           condition, body = @lir.children_of(statement)
           ["#{indent}while (#{expression_text(condition)}) {"] +
             body.flat_map { |child| statement_lines(child, "#{indent}    ") } + ["#{indent}}"]
+        when :if
+          condition, then_body, else_body = @lir.children_of(statement)
+          lines = ["#{indent}if (#{expression_text(condition)}) {"] +
+                  then_body.flat_map { |child| statement_lines(child, "#{indent}    ") }
+          if else_body
+            lines << "#{indent}} else {"
+            lines += else_body.flat_map { |child| statement_lines(child, "#{indent}    ") }
+          end
+          lines + ["#{indent}}"]
         when :break
           ["#{indent}break;"]
         when :next
@@ -378,6 +709,8 @@ module BareRubyProt
           type == :int64 ? "#{value}LL" : value.to_s
         when :const_bool
           @lir.children_of(node)[0].to_s
+        when :const_string
+          string_literal(@lir.children_of(node)[0])
         when :local
           @lir.children_of(node)[0].to_s
         when :self_pointer
@@ -406,11 +739,19 @@ module BareRubyProt
         pointer_type?(type) ? "#{type_text(type[:target])} *#{name}" : "#{type_text(type)} #{name}"
       end
 
+      ESCAPES = { "\\" => "\\\\", '"' => '\\"', "\n" => "\\n", "\t" => "\\t", "\r" => "\\r" }.freeze
+
+      def string_literal(value)
+        "\"#{value.gsub(/[\\"\n\t\r]/) { |character| ESCAPES.fetch(character) }}\""
+      end
+
       def type_text(type)
         case type
         when :int32 then "int32_t"
         when :int64 then "int64_t"
         when :bool then "bool"
+        when :fixed then "int32_t"
+        when :string_ptr then "const char *"
         when :void then "void"
         when Hash
           type[:kind] == :pointer ? "#{type_text(type[:target])} *" : type[:name].to_s

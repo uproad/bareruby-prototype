@@ -18,8 +18,21 @@ module BareRubyProt
 
       def desugar_node(node)
         case @bareruby_ast.node_type(node)
-        when :integer, :reference, :constant_path, :parameter, :iteration_control
+        when :integer, :float, :boolean, :string, :symbol, :reference, :constant_path, :parameter, :iteration_control
           node
+        when :if
+          desugar_if(node)
+        when :while
+          desugar_while(node)
+        when :logical
+          desugar_logical(node)
+        when :keyword_argument
+          name, value = @bareruby_ast.children_of(node)
+          @bareruby_ast.create_keyword_argument(name, desugar_node(value), span_of(node))
+        when :interpolation
+          @bareruby_ast.create_interpolation(
+            @bareruby_ast.children_of(node)[0].map { |part| desugar_node(part) }, span_of(node)
+          )
         when :assignment
           desugar_assignment(node)
         when :compound_assignment
@@ -81,6 +94,26 @@ module BareRubyProt
       def desugar_return(node)
         value = @bareruby_ast.children_of(node)[0]
         @bareruby_ast.create_return(value && desugar_node(value), span_of(node))
+      end
+
+      def desugar_if(node)
+        condition, then_body, else_body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_if(
+          desugar_node(condition),
+          desugar_body(then_body),
+          else_body && desugar_body(else_body),
+          span_of(node)
+        )
+      end
+
+      def desugar_while(node)
+        condition, body = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_while(desugar_node(condition), desugar_body(body), span_of(node))
+      end
+
+      def desugar_logical(node)
+        operator, left, right = @bareruby_ast.children_of(node)
+        @bareruby_ast.create_logical(operator, desugar_node(left), desugar_node(right), span_of(node))
       end
 
       def desugar_body(statements)

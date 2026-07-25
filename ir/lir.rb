@@ -46,6 +46,8 @@ module BareRubyProt
 
     def create_while(condition, body) = build(:while, [condition, body])
 
+    def create_if(condition, then_body, else_body) = build(:if, [condition, then_body, else_body])
+
     def create_break = build(:break, [])
 
     def create_next = build(:next, [])
@@ -53,6 +55,8 @@ module BareRubyProt
     def create_const_int(value, type) = build(:const_int, [value, type])
 
     def create_const_bool(value) = build(:const_bool, [value])
+
+    def create_const_string(value) = build(:const_string, [value, :string_ptr])
 
     def create_local(name, type) = build(:local, [name, type])
 
@@ -123,6 +127,15 @@ module BareRubyProt
         condition, body = statement[:children]
         ["#{indent}while (#{expression_text(condition)})"] +
           body.flat_map { |child| inspect_statement(child, "#{indent}    ") }
+      when :if
+        condition, then_body, else_body = statement[:children]
+        lines = ["#{indent}if (#{expression_text(condition)})"] +
+                then_body.flat_map { |child| inspect_statement(child, "#{indent}    ") }
+        if else_body
+          lines << "#{indent}else"
+          lines += else_body.flat_map { |child| inspect_statement(child, "#{indent}    ") }
+        end
+        lines
       when :break
         ["#{indent}break"]
       when :next
@@ -134,6 +147,7 @@ module BareRubyProt
       case node[:type]
       when :const_int then node[:children][0].to_s
       when :const_bool then node[:children][0].to_s
+      when :const_string then node[:children][0].inspect
       when :local then node[:children][0].to_s
       when :self_pointer then "self"
       when :field_access

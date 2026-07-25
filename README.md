@@ -13,6 +13,21 @@ Covered so far:
 - **M1** — the same eight passes produce an rp2040 firmware image for the blink
   program (`ref_blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a
   Raspberry Pi Pico, where it blinks.
+- **M2** — the MVP language and the three demos it is defined by: blink, servo
+  (`ref_servo.rb`) and UART logging (`ref_logger.rb`). Adds pass 8 and, in the language,
+  control flow, strings with printf-expanded interpolation, keyword arguments, symbols,
+  `Fixed`, and the PWM, UART and Machine bindings.
+
+Sample programs:
+
+| File | What it covers |
+| --- | --- |
+| `ref.rb` | The WP00 representative program (M0) |
+| `ref_blink.rb` | Demo 1 — GPIO |
+| `ref_servo.rb` | Demo 2 — PWM with keyword arguments, a peripheral held in an ivar |
+| `ref_logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
+| `ref_features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
+| `ref_fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 
 ## The short way
 

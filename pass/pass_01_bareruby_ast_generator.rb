@@ -35,6 +35,48 @@ module BareRubyProt
           @result.create_reference(:constant, node.name, span_of(node))
         when Prism::ConstantPathNode
           @result.create_constant_path(node.parent.name, node.name, span_of(node))
+        when Prism::FloatNode
+          @result.create_float(node.value, span_of(node))
+        when Prism::SymbolNode
+          @result.create_symbol(node.unescaped.to_sym, span_of(node))
+        when Prism::StringNode
+          @result.create_string(node.unescaped, span_of(node))
+        when Prism::InterpolatedStringNode
+          @result.create_interpolation(node.parts.map { |part| read_prism_ast(part) }, span_of(node))
+        when Prism::EmbeddedStatementsNode
+          read_statements(node.statements).fetch(0)
+        when Prism::TrueNode
+          @result.create_boolean(true, span_of(node))
+        when Prism::FalseNode
+          @result.create_boolean(false, span_of(node))
+        when Prism::IfNode
+          @result.create_if(
+            read_prism_ast(node.predicate),
+            read_statements(node.statements),
+            read_branch(node.subsequent),
+            span_of(node)
+          )
+        when Prism::UnlessNode
+          @result.create_if(
+            negate(read_prism_ast(node.predicate), span_of(node.predicate)),
+            read_statements(node.statements),
+            read_branch(node.else_clause),
+            span_of(node)
+          )
+        when Prism::ElseNode
+          read_statements(node.statements)
+        when Prism::WhileNode
+          @result.create_while(read_prism_ast(node.predicate), read_statements(node.statements), span_of(node))
+        when Prism::UntilNode
+          @result.create_while(
+            negate(read_prism_ast(node.predicate), span_of(node.predicate)),
+            read_statements(node.statements),
+            span_of(node)
+          )
+        when Prism::AndNode
+          @result.create_logical(:and, read_prism_ast(node.left), read_prism_ast(node.right), span_of(node))
+        when Prism::OrNode
+          @result.create_logical(:or, read_prism_ast(node.left), read_prism_ast(node.right), span_of(node))
         when Prism::LocalVariableWriteNode
           create_assignment(:local, node)
         when Prism::InstanceVariableWriteNode
@@ -96,12 +138,38 @@ module BareRubyProt
         node ? read_parameters(node.parameters) : []
       end
 
+      # Keyword arguments arrive bundled in a hash node; they become their own argument
+      # nodes so the call keeps one flat, ordered argument list.
       def read_arguments(node)
-        node ? node.arguments.map { |argument| read_prism_ast(argument) } : []
+        return [] unless node
+
+        node.arguments.flat_map do |argument|
+          if argument.is_a?(Prism::KeywordHashNode)
+            argument.elements.map do |element|
+              @result.create_keyword_argument(
+                element.key.unescaped.to_sym, read_prism_ast(element.value), span_of(element)
+              )
+            end
+          else
+            [read_prism_ast(argument)]
+          end
+        end
       end
 
       def read_optional_node(node)
         read_prism_ast(node) if node
+      end
+
+      # An elsif arrives as a nested IfNode, an else as an ElseNode. Both become the
+      # else body of the enclosing if.
+      def read_branch(node)
+        return unless node
+
+        node.is_a?(Prism::ElseNode) ? read_statements(node.statements) : [read_prism_ast(node)]
+      end
+
+      def negate(node, span)
+        @result.create_call(node, :!, [], nil, span)
       end
 
       def create_assignment(kind, node)

@@ -38,6 +38,26 @@ module BareRubyProt
 
     def create_constant_path(owner, name, span) = build(:constant_path, [owner, name], span)
 
+    def create_boolean(value, span) = build(:boolean, [value], span)
+
+    def create_string(value, span) = build(:string, [value], span)
+
+    def create_symbol(name, span) = build(:symbol, [name], span)
+
+    def create_float(value, span) = build(:float, [value], span)
+
+    def create_interpolation(parts, span) = build(:interpolation, [parts], span)
+
+    def create_keyword_argument(name, value, span) = build(:keyword_argument, [name, value], span)
+
+    def create_if(condition, then_body, else_body, span)
+      build(:if, [condition, then_body, else_body], span)
+    end
+
+    def create_while(condition, body, span) = build(:while, [condition, body], span)
+
+    def create_logical(operator, left, right, span) = build(:logical, [operator, left, right], span)
+
     def create_assignment(target, value, span) = build(:assignment, [target, value], span)
 
     def create_compound_assignment(target, operator, value, span)
@@ -100,6 +120,19 @@ module BareRubyProt
         parameter_text = parameters.map { |parameter| inspect_inline(parameter) }.join(", ")
         [gutter(node) + "#{indent}method_definition(#{name.inspect}, [#{parameter_text}])"] +
           body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+      when :if
+        condition, then_body, else_body = node[:children]
+        lines = [gutter(node) + "#{indent}if(#{inspect_inline(condition)})"]
+        lines += then_body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+        if else_body
+          lines << "#{gutter(node)}#{indent}else"
+          lines += else_body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+        end
+        lines
+      when :while
+        condition, body = node[:children]
+        [gutter(node) + "#{indent}while(#{inspect_inline(condition)})"] +
+          body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       when :call
         block = node[:children][3]
         header = [gutter(node) + "#{indent}#{inspect_inline(node)}"]
@@ -127,6 +160,28 @@ module BareRubyProt
       when :constant_path
         owner, name = node[:children]
         "constant_path(#{owner.inspect}, #{name.inspect})"
+      when :boolean
+        "boolean(#{node[:children][0].inspect})"
+      when :string
+        "string(#{node[:children][0].inspect})"
+      when :symbol
+        "symbol(#{node[:children][0].inspect})"
+      when :float
+        "float(#{node[:children][0].inspect})"
+      when :interpolation
+        "interpolation(#{node[:children][0].map { |part| inspect_inline(part) }.join(', ')})"
+      when :keyword_argument
+        name, value = node[:children]
+        "keyword_argument(#{name.inspect}, #{inspect_inline(value)})"
+      when :logical
+        operator, left, right = node[:children]
+        "logical(#{operator.inspect}, #{inspect_inline(left)}, #{inspect_inline(right)})"
+      when :if
+        condition, = node[:children]
+        "if(#{inspect_inline(condition)})"
+      when :while
+        condition, = node[:children]
+        "while(#{inspect_inline(condition)})"
       when :parameter
         "parameter(#{node[:children][0].inspect})"
       when :assignment

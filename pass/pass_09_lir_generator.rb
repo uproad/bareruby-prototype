@@ -8,7 +8,8 @@ module BareRubyProt
       OPERATOR_TEXT = {
         :+ => "+", :- => "-", :* => "*", :/ => "/", :% => "%",
         :<< => "<<", :>> => ">>", :& => "&", :| => "|", :^ => "^",
-        :-@ => "-", :~ => "~"
+        :== => "==", :!= => "!=", :< => "<", :<= => "<=", :> => ">", :>= => ">=",
+        :-@ => "-", :~ => "~", :! => "!"
       }.freeze
 
       attr_reader :result
@@ -77,6 +78,8 @@ module BareRubyProt
         when :return then lower_return(node)
         when :for_range then lower_for_range(node)
         when :while_true then lower_while_true(node)
+        when :while then lower_while(node)
+        when :if then lower_if_statement(node)
         when :iteration_control then lower_iteration_control(node)
         else
           statements, value = lower_expression(node)
@@ -87,6 +90,8 @@ module BareRubyProt
       def lower_return(node)
         value = @tir.children_of(node)[0]
         return [@lir.create_return(nil)] if value.nil?
+        # An implicit return wrapped around a construct that always leaves on its own.
+        return lower_statement(value) if @tir.value_type(value) == :NoReturn
 
         statements, expression = lower_expression(value)
         statements + [@lir.create_return(@void_return ? nil : expression)]
@@ -117,6 +122,33 @@ module BareRubyProt
         [@lir.create_while(@lir.create_const_bool(true), lower_body(@tir.children_of(node)[0]))]
       end
 
+      # Only Bool can be false (LANGUAGE.md section 5.10), so a condition of any other
+      # type is statically true and the test disappears.
+      def lower_condition(node)
+        statements, expression = lower_expression(node)
+        @tir.value_type(node) == :Bool ? [statements, expression] : [statements, @lir.create_const_bool(true)]
+      end
+
+      # C re-evaluates a while condition every iteration, so a condition that needs
+      # statements of its own becomes an explicit test-and-break at the top of the body.
+      def lower_while(node)
+        condition, body = @tir.children_of(node)
+        condition_statements, condition_expression = lower_condition(condition)
+        return [@lir.create_while(condition_expression, lower_body(body))] if condition_statements.empty?
+
+        guard = @lir.create_if(
+          @lir.create_unary("!", condition_expression, :bool), [@lir.create_break], nil
+        )
+        [@lir.create_while(@lir.create_const_bool(true), condition_statements + [guard] + lower_body(body))]
+      end
+
+      def lower_if_statement(node)
+        condition, then_body, else_body, = @tir.children_of(node)
+        condition_statements, condition_expression = lower_condition(condition)
+        condition_statements +
+          [@lir.create_if(condition_expression, lower_body(then_body), else_body && lower_body(else_body))]
+      end
+
       def lower_iteration_control(node)
         [@tir.children_of(node)[0] == :break ? @lir.create_break : @lir.create_next]
       end
@@ -131,11 +163,52 @@ module BareRubyProt
         when :reference
           binding, type = @tir.children_of(node)
           [[], place_of(binding, lir_type(type))]
+        when :boolean
+          value, = @tir.children_of(node)
+          [[], @lir.create_const_bool(value)]
+        when :string
+          value, = @tir.children_of(node)
+          [[], @lir.create_const_string(value)]
         when :assignment
           lower_assignment(node)
         when :call
           lower_call(node)
+        when :logical
+          lower_logical(node)
+        when :if
+          lower_if_expression(node)
         end
+      end
+
+      def lower_logical(node)
+        operator, left, right, type = @tir.children_of(node)
+        left_statements, left_expression = lower_expression(left)
+        right_statements, right_expression = lower_expression(right)
+        [left_statements + right_statements,
+         @lir.create_binary(operator == :and ? "&&" : "||", left_expression, right_expression, lir_type(type))]
+      end
+
+      # An if used as a value becomes a declaration plus branches that assign into it.
+      def lower_if_expression(node)
+        condition, then_body, else_body, type = @tir.children_of(node)
+        result_type = lir_type(type)
+        result_name = next_temp
+        condition_statements, condition_expression = lower_condition(condition)
+
+        statements = condition_statements + [@lir.create_declare(result_name, result_type, nil)]
+        statements << @lir.create_if(
+          condition_expression,
+          lower_body_into(then_body, result_name, result_type),
+          else_body && lower_body_into(else_body, result_name, result_type)
+        )
+        [statements, @lir.create_local(result_name, result_type)]
+      end
+
+      def lower_body_into(statements, result_name, result_type)
+        leading = statements[0...-1].flat_map { |statement| lower_statement(statement) }
+        value_statements, value_expression = lower_expression(statements.last)
+        leading + value_statements +
+          [@lir.create_assign(@lir.create_local(result_name, result_type), value_expression)]
       end
 
       def lower_assignment(node)
@@ -155,9 +228,10 @@ module BareRubyProt
         receiver, callee, arguments, _block, type = @tir.children_of(node)
         case callee[:kind]
         when :builtin_operator then lower_operator(receiver, callee, arguments, type)
-        when :builtin_puts, :binding_function then lower_function_call(callee, arguments)
+        when :builtin_puts, :builtin_printf, :builtin_function, :binding_function
+          lower_function_call(callee, arguments)
         when :new, :binding_new then lower_constructor(callee, arguments, type)
-        when :user_method, :binding_method then lower_method_call(receiver, callee, arguments)
+        when :user_method, :binding_method, :binding_printf then lower_method_call(receiver, callee, arguments)
         end
       end
 
@@ -223,6 +297,8 @@ module BareRubyProt
         when :Int8, :Int16, :Int32 then :int32
         when :Int64 then :int64
         when :Bool then :bool
+        when :Fixed then :fixed
+        when :String then :string_ptr
         when Hash then @lir.struct_type(type[:struct] || type[:class_name])
         else :void
         end
@@ -230,7 +306,10 @@ module BareRubyProt
 
       def field_name(name) = name.to_s.delete_prefix("@").to_sym
 
-      def function_name(owner, name) = :"#{owner}_#{name}"
+      # Must agree with the name the type inferrer put in the callee.
+      def function_name(owner, name)
+        :"#{owner}_#{name.to_s.sub(/\?\z/, '_p').sub(/!\z/, '_bang').sub(/=\z/, '_set')}"
+      end
 
       def next_temp
         @temp_index += 1

@@ -12,6 +12,7 @@ require_relative "pass/pass_03_literal_folder"
 require_relative "pass/pass_05_type_inferrer"
 require_relative "pass/pass_06_block_inliner"
 require_relative "pass/pass_07_symbol_to_id_converter"
+require_relative "pass/pass_08_typed_constant_folder"
 require_relative "pass/pass_09_lir_generator"
 require_relative "pass/pass_12_cpp_source_generator"
 
@@ -56,6 +57,9 @@ module BareRubyProt
       result = pass_07(result)
       result = boundary("07_typed_ir", result)
 
+      result = pass_08(result)
+      result = boundary("08_typed_ir", result)
+
       result = pass_09(result)
       result = boundary("09_low_ir", result)
 
@@ -87,6 +91,8 @@ module BareRubyProt
     def pass_06(typed_ir) = Pass::BlockInliner.new(typed_ir).run.result
 
     def pass_07(typed_ir) = Pass::SymbolToIdConverter.new(typed_ir).run.result
+
+    def pass_08(typed_ir) = Pass::TypedConstantFolder.new(typed_ir).run.result
 
     def pass_09(typed_ir) = Pass::LirGenerator.new(typed_ir).run.result
 
