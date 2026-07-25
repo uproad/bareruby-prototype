@@ -477,17 +477,16 @@ module BareRubyProt
         @tir.create_array(elements, type, span_of(node))
       end
 
-      # LANGUAGE.md section 6.2.1: the capacity must be settled while compiling, and the
-      # initial value is mandatory because Nil does not exist before M3 and the element
-      # type has to come from somewhere.
+      # LANGUAGE.md section 6.2.1: the capacity must be settled while compiling. The initial
+      # value may be left out, in which case the storage is not written and the element type
+      # comes from the first assignment instead.
       def infer_array_new_call(arguments, env:, self_class:, span:)
         capacity = constant_capacity(arguments[0], env:, self_class:)
         raise "Array.new: the capacity must be known at compile time" if capacity.nil?
-        raise "Array.new: an initial value is required" if arguments.length < 2
+        return @tir.create_array_fill(nil, @tir.create_array_type(nil, capacity), span) if arguments.length < 2
 
         value = infer_node(arguments[1], env:, self_class:)
-        type = @tir.create_array_type(@tir.value_type(value), capacity)
-        @tir.create_array_fill(value, type, span)
+        @tir.create_array_fill(value, @tir.create_array_type(@tir.value_type(value), capacity), span)
       end
 
       def constant_capacity(node, env:, self_class:)
@@ -643,26 +642,31 @@ module BareRubyProt
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
       # size folds to the capacity because a fixed-capacity array can have no other length
-      # (LANGUAGE.md section 6.2.3). An index settled at compile time is range checked here;
-      # the runtime ones are checked by the generated code.
+      # (LANGUAGE.md section 6.2.3). Indexing is pointer arithmetic and is not range
+      # checked, at compile time or at run time; a negative index is out of range like any
+      # other and is left alone.
       def infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+        return @tir.create_array_dup(receiver_tir, receiver_type, span) if name == :dup
+
         capacity = receiver_type[:capacity]
         return @tir.create_integer(capacity, literal_type(capacity), span) if SIZE_NAMES.include?(name)
 
         index = infer_node(arguments[0], env:, self_class:)
-        verify_index(index, capacity)
-        element_type = receiver_type[:element]
-        return @tir.create_index(receiver_tir, index, element_type, span) if name == :[]
+        return infer_index_assign(receiver_tir, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
 
-        value = infer_node(arguments[1], env:, self_class:)
-        @tir.create_index_assign(receiver_tir, index, value, element_type, span)
+        element_type = receiver_type[:element]
+        raise "the element type of this array is not known yet" if element_type.nil?
+
+        @tir.create_index(receiver_tir, index, element_type, span)
       end
 
-      def verify_index(index, capacity)
-        value = constant_integer(index)
-        return if value.nil? || (0...capacity).cover?(value)
-
-        raise "array index #{value} is outside 0...#{capacity}"
+      # Array.new(n) leaves the element type open, and the first assignment settles it
+      # (LANGUAGE.md section 6.2.2). The type hash is shared with every reference to the
+      # array, so filling it in here reaches all of them.
+      def infer_index_assign(receiver_tir, receiver_type, index, value_node, env:, self_class:, span:)
+        value = infer_node(value_node, env:, self_class:)
+        receiver_type[:element] ||= @tir.value_type(value)
+        @tir.create_index_assign(receiver_tir, index, value, receiver_type[:element], span)
       end
 
       def constant_receiver?(receiver)

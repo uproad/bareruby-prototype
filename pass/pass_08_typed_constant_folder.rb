@@ -41,6 +41,7 @@ module BareRubyProt
         when :logical then fold_logical(node)
         when :array then fold_array(node)
         when :array_fill then fold_array_fill(node)
+        when :array_dup then fold_array_dup(node)
         when :index then fold_index(node)
         when :index_assign then fold_index_assign(node)
         else node
@@ -54,7 +55,12 @@ module BareRubyProt
 
       def fold_array_fill(node)
         value, type = @tir.children_of(node)
-        @tir.create_array_fill(fold_node(value), type, span_of(node))
+        @tir.create_array_fill(value && fold_node(value), type, span_of(node))
+      end
+
+      def fold_array_dup(node)
+        receiver, type = @tir.children_of(node)
+        @tir.create_array_dup(fold_node(receiver), type, span_of(node))
       end
 
       def fold_index(node)

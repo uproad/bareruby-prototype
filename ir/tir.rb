@@ -60,6 +60,8 @@ module BareRubyProt
 
     def create_array_fill(value, type, span) = build(:array_fill, [value, type], span)
 
+    def create_array_dup(receiver, type, span) = build(:array_dup, [receiver, type], span)
+
     def create_index(receiver, index, type, span) = build(:index, [receiver, index, type], span)
 
     def create_index_assign(receiver, index, value, type, span)
@@ -215,7 +217,10 @@ module BareRubyProt
         "array([#{elements.map { |element| inspect_inline(element) }.join(', ')}], #{inspect_type(type)})"
       when :array_fill
         value, type = node[:children]
-        "array_fill(#{inspect_inline(value)}, #{inspect_type(type)})"
+        "array_fill(#{value ? inspect_inline(value) : 'nil'}, #{inspect_type(type)})"
+      when :array_dup
+        receiver, type = node[:children]
+        "array_dup(#{inspect_inline(receiver)}, #{inspect_type(type)})"
       when :index
         receiver, index, type = node[:children]
         "index(#{inspect_inline(receiver)}, #{inspect_inline(index)}, #{inspect_type(type)})"

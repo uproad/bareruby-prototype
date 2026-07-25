@@ -45,3 +45,17 @@ ratios = Array.new(3, 0.5)
 ratios[1] = 1.25
 puts ratios[0]
 puts ratios[1]
+
+shared = squares
+shared[0] = 100
+puts squares[0]
+
+copied = squares.dup
+copied[1] = 200
+puts squares[1]
+puts copied[1]
+
+blank = Array.new(2)
+blank[0] = 8
+blank[1] = 9
+puts blank[0] + blank[1]

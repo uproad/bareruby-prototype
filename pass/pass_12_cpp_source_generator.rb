@@ -231,8 +231,6 @@ module BareRubyProt
         int32_t bareruby_adc_read(bareruby_adc_t *self);
         int32_t bareruby_adc_read_raw(bareruby_adc_t *self);
 
-        void bareruby_array_out_of_range(void);
-
         void bareruby_machine_delay_us(int32_t microseconds);
         void bareruby_sleep(int32_t seconds);
         void bareruby_sleep_ms(int32_t milliseconds);
@@ -362,14 +360,6 @@ module BareRubyProt
 
         void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
             fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
-        }
-
-        /* The bounds panic lives in the binding rather than the runtime because the
-           default freestanding build links no runtime at all (LANGUAGE.md section 6.2.3). */
-        void bareruby_array_out_of_range(void) {
-            fflush(stdout);
-            fprintf(stderr, "panic: array index out of range\\n");
-            exit(1);
         }
 
         void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
@@ -539,13 +529,6 @@ module BareRubyProt
 
         void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
             uart_tx_wait_blocking(bareruby_uart_port(self));
-        }
-
-        /* Nothing here can report, so the panic simply stops. A watchdog driven from the
-           program loop is what makes the halt visible. */
-        void bareruby_array_out_of_range(void) {
-            for (;;) {
-            }
         }
 
         void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {

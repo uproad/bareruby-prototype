@@ -32,10 +32,10 @@ Covered so far:
 - **M2.6** — the ADC binding (`ref_adc.rb`). `read` and `read_voltage` return `Fixed`
   rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
   converter channel is rejected while compiling. No new pass.
-- **M2.7** — fixed-capacity arrays (`ref_array.rb`): `Array.new(n, init)`, array
-  literals, `[]`, `[]=` and `size`. Single element type, capacity settled while
-  compiling, laid out as a struct wrapping one C array so assignment copies. A constant
-  index out of range is a compile error and a runtime one panics. No new pass.
+- **M2.7** — fixed-capacity arrays (`ref_array.rb`): `Array.new(n[, init])`, array
+  literals, `[]`, `[]=`, `size` and `dup`. Single element type, capacity settled while
+  compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
+  indexing is pointer arithmetic and is not range checked. No new pass.
 
 Sample programs:
 

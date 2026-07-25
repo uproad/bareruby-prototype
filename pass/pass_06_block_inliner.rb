@@ -29,6 +29,7 @@ module BareRubyProt
         when :logical then inline_logical(node)
         when :array then inline_array(node)
         when :array_fill then inline_array_fill(node)
+        when :array_dup then inline_array_dup(node)
         when :index then inline_index(node)
         when :index_assign then inline_index_assign(node)
         else node
@@ -42,7 +43,12 @@ module BareRubyProt
 
       def inline_array_fill(node)
         value, type = @tir.children_of(node)
-        @tir.create_array_fill(inline_node(value), type, span_of(node))
+        @tir.create_array_fill(value && inline_node(value), type, span_of(node))
+      end
+
+      def inline_array_dup(node)
+        receiver, type = @tir.children_of(node)
+        @tir.create_array_dup(inline_node(receiver), type, span_of(node))
       end
 
       def inline_index(node)
