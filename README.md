@@ -52,8 +52,9 @@ find out what the language is still missing. What the port had to change:
 | a `def` at the top level | a class | Top-level methods are not implemented |
 
 `GPIO.new(25, 2)` needed no change: 2 is `GPIO::OUT` in both languages now. The port
-keeps the original structure and behaviour otherwise, including a copy-paste slip in the
-decay block where all three guards read `m26`.
+keeps the original structure and behaviour otherwise, with one deliberate exception: the
+original's decay block guards all three channels on `m26`, which is a copy-paste slip, so
+each guard here reads its own maximum.
 
 Sample programs:
 

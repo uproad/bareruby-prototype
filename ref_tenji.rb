@@ -118,8 +118,8 @@ loop do
     i = 0
 
     m26 = m26 - 0.1 if m26 > 0.5
-    m27 = m27 - 0.1 if m26 > 0.5
-    m28 = m28 - 0.1 if m26 > 0.5
+    m27 = m27 - 0.1 if m27 > 0.5
+    m28 = m28 - 0.1 if m28 > 0.5
   end
 
   if wd_i < wd_res / 2
