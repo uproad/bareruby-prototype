@@ -249,6 +249,9 @@ module BareRubyProt
         void bareruby_machine_delay_us(int32_t microseconds);
         void bareruby_sleep(int32_t seconds);
         void bareruby_sleep_ms(int32_t milliseconds);
+        void bareruby_asleep(int32_t seconds);
+        void bareruby_asleep_ms(int32_t milliseconds);
+        void bareruby_asleep_us(int32_t microseconds);
 
         #ifdef __cplusplus
         }
@@ -403,6 +406,18 @@ module BareRubyProt
 
         void bareruby_sleep_ms(int32_t milliseconds) {
             fprintf(stderr, "sleep_ms(milliseconds=%d)\\n", (int)milliseconds);
+        }
+
+        void bareruby_asleep(int32_t seconds) {
+            fprintf(stderr, "asleep(seconds=%d)\\n", (int)seconds);
+        }
+
+        void bareruby_asleep_ms(int32_t milliseconds) {
+            fprintf(stderr, "asleep_ms(milliseconds=%d)\\n", (int)milliseconds);
+        }
+
+        void bareruby_asleep_us(int32_t microseconds) {
+            fprintf(stderr, "asleep_us(microseconds=%d)\\n", (int)microseconds);
         }
       CPP
 
@@ -573,6 +588,34 @@ module BareRubyProt
 
         void bareruby_sleep_ms(int32_t milliseconds) {
             sleep_ms((uint32_t)milliseconds);
+        }
+
+        // One mark serves all three units, and it counts microseconds since boot in 64
+        // bits: 32 would wrap after 71 minutes, which the seconds form is meant to
+        // outlast. Zero is boot time, so the first call needs no flag of its own. A late
+        // turn does not try to catch up — the mark moves to the actual return and the
+        // missed time is gone, which keeps one slow turn from firing the next ones back
+        // to back.
+        static uint64_t bareruby_asleep_mark = 0;
+
+        static void bareruby_asleep_until(uint64_t interval) {
+            uint64_t deadline = bareruby_asleep_mark + interval;
+            if (time_us_64() < deadline) {
+                sleep_until(from_us_since_boot(deadline));
+            }
+            bareruby_asleep_mark = time_us_64();
+        }
+
+        void bareruby_asleep(int32_t seconds) {
+            bareruby_asleep_until((uint64_t)seconds * 1000000u);
+        }
+
+        void bareruby_asleep_ms(int32_t milliseconds) {
+            bareruby_asleep_until((uint64_t)milliseconds * 1000u);
+        }
+
+        void bareruby_asleep_us(int32_t microseconds) {
+            bareruby_asleep_until((uint64_t)microseconds);
         }
       CPP
 

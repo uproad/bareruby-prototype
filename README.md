@@ -64,6 +64,18 @@ and three 64-bit multiplications per iteration. `text` drops from 16220 B to 148
 the loop from roughly 2900 to roughly 2050 cycles. What remains is dominated by the three
 ADC conversions, which cost 2 µs each in the converter itself.
 
+`asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
+defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
+mruby/c and pico-sdk both do underneath — so a loop's period is its body plus the wait,
+and it drifts by whatever the body costs. `asleep`, `asleep_ms` and `asleep_us` wait from
+the moment the previous one returned instead, so the body comes out of the wait and the
+loop holds its period. All three share one mark, counted in microseconds since boot; it
+starts at boot and moves to each return. A turn that overruns does not catch up: it
+returns at once and the missed time is gone. Holding the phase across an overrun, and
+keeping more than one mark, are left out on purpose — a single mark serves one call per
+loop, which is what these programs need. The name is provisional, and the leading `a`
+means nothing at all.
+
 Sample programs:
 
 | File | What it covers |
@@ -77,6 +89,7 @@ Sample programs:
 | `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
 | `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `ref_array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
+| `ref_asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `ref_tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
