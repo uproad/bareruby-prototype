@@ -25,7 +25,7 @@ module BareRubyProt
         #endif
       CPP
 
-      RUNTIME_HOSTED_SOURCE = <<~CPP
+      RUNTIME_STDIO_SOURCE = <<~CPP
         #include "bareruby_runtime.h"
 
         #include <stdio.h>
@@ -123,6 +123,7 @@ module BareRubyProt
         #include "pico/stdlib.h"
 
         void bareruby_startup(void) {
+            stdio_init_all();
         }
 
         void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
@@ -169,58 +170,19 @@ module BareRubyProt
         language_standard = gnu++20
         compile_options = -std=gnu++20 -fno-rtti
         include_directories = ..
-        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
         link_libraries =
         stdout_channel = printf
         exceptions = enabled
         artifact = bareruby_program
-        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
       MANIFEST
-
-      RP2040_MANIFEST = <<~MANIFEST
-        target = freestanding-rp2040
-        toolchain = arm-none-eabi-g++
-        language_standard = gnu++20
-        compile_options = -std=gnu++20 -fno-rtti
-        include_directories = ..
-        sources = main.cpp ../bareruby_binding_rp2040.cpp
-        link_libraries = pico_stdlib hardware_gpio
-        stdout_channel = none
-        exceptions = enabled
-        artifact = bareruby_program.uf2
-        build_command = cmake -B build -S . && cmake --build build
-      MANIFEST
-
-      CMAKE_LISTS = <<~CMAKE
-        cmake_minimum_required(VERSION 3.13)
-
-        include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-
-        project(bareruby_program C CXX ASM)
-        set(CMAKE_C_STANDARD 11)
-        set(CMAKE_CXX_STANDARD 20)
-
-        pico_sdk_init()
-
-        add_executable(bareruby_program
-            main.cpp
-            ../bareruby_binding_rp2040.cpp
-        )
-
-        target_include_directories(bareruby_program PRIVATE ..)
-        target_compile_options(bareruby_program PRIVATE -fno-rtti)
-        target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
-
-        pico_enable_stdio_usb(bareruby_program 0)
-        pico_enable_stdio_uart(bareruby_program 0)
-
-        pico_add_extra_outputs(bareruby_program)
-      CMAKE
 
       attr_reader :result, :stdout_notice
 
-      def initialize(low_ir)
+      def initialize(low_ir, debug:)
         @lir = low_ir
+        @debug = debug
         @stdout_notice = false
       end
 
@@ -228,18 +190,83 @@ module BareRubyProt
         rp2040_program = program_source(:rp2040)
         @result = {
           "bareruby_runtime.h" => RUNTIME_HEADER,
-          "bareruby_runtime_hosted.cpp" => RUNTIME_HOSTED_SOURCE,
+          "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
           "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
           "bareruby_binding_rp2040.cpp" => BINDING_RP2040_SOURCE,
           "hosted/main.cpp" => program_source(:hosted),
           "hosted/manifest.txt" => HOSTED_MANIFEST,
           "rp2040/main.cpp" => rp2040_program,
-          "rp2040/manifest.txt" => RP2040_MANIFEST,
-          "rp2040/CMakeLists.txt" => CMAKE_LISTS
+          "rp2040/manifest.txt" => rp2040_manifest,
+          "rp2040/CMakeLists.txt" => cmake_lists
         }
 
         self
+      end
+
+      def rp2040_sources
+        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp"]
+        sources << "../bareruby_runtime_stdio.cpp" if @debug
+        sources
+      end
+
+      def rp2040_manifest
+        <<~MANIFEST
+          target = freestanding-rp2040
+          toolchain = arm-none-eabi-g++
+          language_standard = gnu++20
+          compile_options = -std=gnu++20 -fno-rtti
+          include_directories = ..
+          sources = #{rp2040_sources.join(' ')}
+          link_libraries = pico_stdlib hardware_gpio
+          stdout_channel = #{@debug ? 'usb' : 'none'}
+          debug = #{@debug ? 'enabled' : 'disabled'}
+          exceptions = enabled
+          artifact = bareruby_program.uf2
+          build_command = cmake -B build -S . && cmake --build build
+        MANIFEST
+      end
+
+      def cmake_lists
+        <<~CMAKE
+          cmake_minimum_required(VERSION 3.13)
+
+          include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+          project(bareruby_program C CXX ASM)
+          set(CMAKE_C_STANDARD 11)
+          set(CMAKE_CXX_STANDARD 20)
+
+          pico_sdk_init()
+
+          add_executable(bareruby_program
+          #{rp2040_sources.map { |source| "    #{source}" }.join("\n")}
+          )
+
+          target_include_directories(bareruby_program PRIVATE ..)
+          target_compile_options(bareruby_program PRIVATE -fno-rtti)
+          target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
+          #{cmake_stdio_text}
+          pico_add_extra_outputs(bareruby_program)
+        CMAKE
+      end
+
+      def cmake_stdio_text
+        return "\npico_enable_stdio_usb(bareruby_program 0)\npico_enable_stdio_uart(bareruby_program 0)\n" unless @debug
+
+        <<~CMAKE
+
+          pico_enable_stdio_usb(bareruby_program 1)
+          pico_enable_stdio_uart(bareruby_program 0)
+
+          # Keep the USB device enumerated so the board can be reset into BOOTSEL from
+          # the host instead of by replugging it with the button held.
+          target_compile_definitions(bareruby_program PRIVATE
+              PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
+              PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
+              PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+          )
+        CMAKE
       end
 
       def program_source(target)
@@ -254,9 +281,11 @@ module BareRubyProt
 
       def include_text(target)
         lines = ["#include <stdbool.h>", "#include <stdint.h>", "", "#include \"bareruby_binding.h\""]
-        lines << "#include \"bareruby_runtime.h\"" if target == :hosted
+        lines << "#include \"bareruby_runtime.h\"" if stdout_enabled?(target)
         "#{lines.join("\n")}\n"
       end
+
+      def stdout_enabled?(target) = target == :hosted || @debug
 
       def entry_text(target)
         return "int main(void) {\n    bareruby_main();\n    return 0;\n}\n" if target == :hosted
@@ -316,7 +345,8 @@ module BareRubyProt
 
       def expression_statement_lines(statement, indent)
         value = @lir.children_of(statement)[0]
-        if @target != :hosted && @lir.node_type(value) == :call && PUTS_FUNCTIONS.include?(@lir.children_of(value)[0])
+        if !stdout_enabled?(@target) && @lir.node_type(value) == :call &&
+           PUTS_FUNCTIONS.include?(@lir.children_of(value)[0])
           @stdout_notice = true
           return []
         end

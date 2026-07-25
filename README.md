@@ -19,7 +19,19 @@ Covered so far:
 ```sh
 ruby bareruby_prot/compile.rb                          # defaults to ref.rb
 ruby bareruby_prot/compile.rb bareruby_prot/ref_blink.rb
+ruby bareruby_prot/compile.rb -d bareruby_prot/ref_blink.rb   # debug firmware
 ```
+
+`-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
+`puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
+the board **stays enumerated as a USB device while the program runs**, which is what
+lets `flash.sh` reflash it without the BOOTSEL button. It costs code size:
+
+| | default | `--debug` |
+| --- | --- | --- |
+| `.uf2` | 17408 B | 45056 B |
+| `text` (flash) | 8604 B | 22460 B |
+| `bss` (RAM) | 1160 B | 3652 B |
 
 Only Ruby is needed for this (Prism ships with Ruby 4.0). Every run rewrites two
 directories:
@@ -143,19 +155,58 @@ bareruby_prot/flash.sh                       # defaults to the rp2040 artifact
 bareruby_prot/flash.sh path/to/other.uf2
 ```
 
-Mounting the volume needs root, so the script re-executes itself under `sudo`. It
-locates the device by SCSI vendor `RPI` and model `RP2` rather than by a fixed path,
-refuses to write unless the mounted volume carries the bootloader's `INFO_UF2.TXT`,
-and treats the device disappearing as the success signal — the RP2040 resets the
-moment the last block lands, so the copy, the sync and the unmount are all expected to
-fail at the end.
+The script locates the device by SCSI vendor `RPI` and model `RP2` rather than by a
+fixed path, refuses to write unless the mounted volume carries the bootloader's
+`INFO_UF2.TXT`, and treats the device disappearing as the success signal — the RP2040
+resets the moment the last block lands, so the copy, the sync and the unmount are all
+expected to fail at the end.
 
-Verified end to end on a Raspberry Pi Pico: after flashing, `2e8a:0003` disappears from
-`lsusb` and GP25 (the on-board LED) blinks at the 500 ms period written in
-`ref_blink.rb`. The firmware never re-enumerates, which is correct — both stdio
-channels are disabled, so it presents no USB interface at all.
+### Reflashing without the BOOTSEL button
 
-To flash again, replug the Pico while holding BOOTSEL and re-attach it with `usbipd`.
+A firmware built with `-d` keeps its USB CDC interface up, and pico-sdk reboots the
+board into BOOTSEL when that port is opened at 1200 baud. `flash.sh` does this itself:
+if no bootloader volume is present it looks for a `/dev/ttyACM*`, resets it, waits for
+the board to come back as mass storage, and flashes. Edit, rebuild, rerun `flash.sh` —
+no button, no replugging.
+
+usbipd sees BOOTSEL (`2e8a:0003`) and the running program (`2e8a:000a`) as two
+different devices, so **bind both of them once**, and keep an auto-attach running so
+the flip between them is picked up:
+
+```powershell
+usbipd bind   --busid <BUSID>               # once while in BOOTSEL
+usbipd bind   --busid <BUSID>               # once more while the program runs
+usbipd attach --busid <BUSID> --wsl --auto-attach
+```
+
+### Mounting without sudo
+
+Only the mount needs privileges. One line in `/etc/fstab` removes even that:
+
+```
+/dev/disk/by-label/RPI-RP2 /mnt/pico vfat noauto,user,umask=000 0 0
+```
+
+The `user` option lets any user mount that one entry, and nothing else — much narrower
+than a `NOPASSWD` sudoers rule. `/dev/ttyACM*` is already reachable through the
+`dialout` group, so with this entry `flash.sh` needs no root at all. Without it, the
+script falls back to re-executing itself under `sudo`.
+
+Two traps worth knowing:
+
+- The mount must be the **setuid** system binary. If another `mount` comes first on
+  `PATH` (Homebrew's util-linux, for instance) it is not setuid and refuses with
+  `must be superuser to use mount`. The script calls `/usr/bin/mount` explicitly.
+- udev publishes `/dev/disk/by-label/RPI-RP2` slightly after the block device appears,
+  so a mount issued immediately after a reset can lose the race. The script retries.
+
+Verified end to end on a Raspberry Pi Pico. With a default build, `2e8a:0003`
+disappears from `lsusb` after flashing and GP25 (the on-board LED) blinks at the
+500 ms period written in `ref_blink.rb`; the board presents no USB interface at all,
+which is correct with both stdio channels disabled, and the button is needed to flash
+again. With `-d` it comes back as `2e8a:000a` with a `/dev/ttyACM0`, and successive
+edits were flashed by rerunning `flash.sh` alone — verified by changing the blink
+period to 100 ms and then 800 ms and watching the LED follow.
 
 ## Versions this was verified against
 

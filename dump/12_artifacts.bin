@@ -15,7 +15,7 @@ void bareruby_puts_int64(int64_t value);
 #endif
 
 #endif
-;TI" bareruby_runtime_hosted.cpp;TI"Ô#include "bareruby_runtime.h"
+;TI"bareruby_runtime_stdio.cpp;TI"Ô#include "bareruby_runtime.h"
 
 #include <stdio.h>
 
@@ -97,12 +97,13 @@ void bareruby_sleep(int32_t seconds) {
 void bareruby_sleep_ms(int32_t milliseconds) {
     fprintf(stderr, "sleep_ms(milliseconds=%d)\n", (int)milliseconds);
 }
-;TI" bareruby_binding_rp2040.cpp;TI"þ#include "bareruby_binding.h"
+;TI" bareruby_binding_rp2040.cpp;TI"#include "bareruby_binding.h"
 
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
 void bareruby_startup(void) {
+    stdio_init_all();
 }
 
 void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
@@ -165,21 +166,22 @@ int main(void) {
     bareruby_main();
     return 0;
 }
-;TI"hosted/manifest.txt;TI"°target = hosted
+;TI"hosted/manifest.txt;TI"®target = hosted
 toolchain = g++
 language_standard = gnu++20
 compile_options = -std=gnu++20 -fno-rtti
 include_directories = ..
-sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
 link_libraries =
 stdout_channel = printf
 exceptions = enabled
 artifact = bareruby_program
-build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
-;TI"rp2040/main.cpp;TI" #include <stdbool.h>
+build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
+;TI"rp2040/main.cpp;TI">#include <stdbool.h>
 #include <stdint.h>
 
 #include "bareruby_binding.h"
+#include "bareruby_runtime.h"
 
 static void bareruby_main(void);
 
@@ -202,18 +204,19 @@ int main(void) {
         bareruby_sleep_ms(1000);
     }
 }
-;TI"rp2040/manifest.txt;TI"|target = freestanding-rp2040
+;TI"rp2040/manifest.txt;TI"©target = freestanding-rp2040
 toolchain = arm-none-eabi-g++
 language_standard = gnu++20
 compile_options = -std=gnu++20 -fno-rtti
 include_directories = ..
-sources = main.cpp ../bareruby_binding_rp2040.cpp
+sources = main.cpp ../bareruby_binding_rp2040.cpp ../bareruby_runtime_stdio.cpp
 link_libraries = pico_stdlib hardware_gpio
-stdout_channel = none
+stdout_channel = usb
+debug = enabled
 exceptions = enabled
 artifact = bareruby_program.uf2
 build_command = cmake -B build -S . && cmake --build build
-;TI"rp2040/CMakeLists.txt;TI"Ucmake_minimum_required(VERSION 3.13)
+;TI"rp2040/CMakeLists.txt;TI"Ícmake_minimum_required(VERSION 3.13)
 
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -226,14 +229,23 @@ pico_sdk_init()
 add_executable(bareruby_program
     main.cpp
     ../bareruby_binding_rp2040.cpp
+    ../bareruby_runtime_stdio.cpp
 )
 
 target_include_directories(bareruby_program PRIVATE ..)
 target_compile_options(bareruby_program PRIVATE -fno-rtti)
 target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
 
-pico_enable_stdio_usb(bareruby_program 0)
+pico_enable_stdio_usb(bareruby_program 1)
 pico_enable_stdio_uart(bareruby_program 0)
+
+# Keep the USB device enumerated so the board can be reset into BOOTSEL from
+# the host instead of by replugging it with the button held.
+target_compile_definitions(bareruby_program PRIVATE
+    PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
+    PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
+    PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+)
 
 pico_add_extra_outputs(bareruby_program)
 ;T

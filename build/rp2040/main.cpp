@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "bareruby_binding.h"
+#include "bareruby_runtime.h"
 
 static void bareruby_main(void);
 

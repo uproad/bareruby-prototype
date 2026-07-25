@@ -28,8 +28,9 @@ module BareRubyProt
       LIR::SCHEMA => LIR
     }.freeze
 
-    def initialize(source_file_name)
+    def initialize(source_file_name, debug:)
       @source_file_name = source_file_name
+      @debug = debug
     end
 
     def run
@@ -89,7 +90,7 @@ module BareRubyProt
 
     def pass_09(typed_ir) = Pass::LirGenerator.new(typed_ir).run.result
 
-    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir).run
+    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug).run
 
     def boundary(name, representation)
       write_binary_dump(name, representation.class::SCHEMA, representation.dump_payload)
@@ -126,4 +127,8 @@ module BareRubyProt
   end
 end
 
-exit BareRubyProt::Compiler.new(ARGV[0] || File.expand_path("ref.rb", __dir__)).run
+arguments = ARGV.dup
+debug = [arguments.delete("-d"), arguments.delete("--debug")].any?
+source_file_name = arguments[0] || File.expand_path("ref.rb", __dir__)
+
+exit BareRubyProt::Compiler.new(source_file_name, debug:).run

@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 
 void bareruby_startup(void) {
+    stdio_init_all();
 }
 
 void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
