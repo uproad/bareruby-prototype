@@ -37,6 +37,25 @@ Covered so far:
   compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
   indexing is pointer arithmetic and is not range checked. No new pass.
 
+`ref_tenji.rb` is the first program here that was not written for BareRuby: it is a
+PicoRuby product (three audio channels read through the ADC, peak-to-peak over a
+20-sample window, driving three PWM LEDs, with a watchdog LED on GP25) ported over to
+find out what the language is still missing. What the port had to change:
+
+| Original | Ported | Why |
+| --- | --- | --- |
+| `require "pwm"` / `require "adc"` | dropped | Peripherals are built in |
+| `sleep(0.01)` | `sleep_ms(10)` | `sleep` takes whole seconds |
+| `d26.minmax` | an explicit loop in `Window#span` | No iteration or folding methods yet |
+| `x.clamp(0.0, 1.0)` | two modifier `if`s | `clamp` would need one method with two types |
+| `p6.duty(duty26)` | `p6.duty(duty26.to_i32)` | Bindings take one argument type |
+| `wd_res = 1.0 / loop_sleep_time` | `wd_res = 1000 / loop_sleep_ms` | Integer where a fraction was not needed |
+| a `def` at the top level | a class | Top-level methods are not implemented |
+
+`GPIO.new(25, 2)` needed no change: 2 is `GPIO::OUT` in both languages now. The port
+keeps the original structure and behaviour otherwise, including a copy-paste slip in the
+decay block where all three guards read `m26`.
+
 Sample programs:
 
 | File | What it covers |
@@ -50,6 +69,7 @@ Sample programs:
 | `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
 | `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `ref_array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
+| `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
