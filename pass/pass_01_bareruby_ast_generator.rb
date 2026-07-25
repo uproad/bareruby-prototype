@@ -164,10 +164,9 @@ module BareRubyProt
         [node.name, argument.unescaped] if argument.is_a?(Prism::StringNode)
       end
 
-      # require is a compile-time splice with no runtime machinery (LANGUAGE.md section
-      # 5.11). A file expands once; the second require of it is a no-op, which is also
-      # what makes a cycle harmless rather than an error, since the compiler counts the
-      # top-level file as require #0.
+      # require is a compile-time splice with no runtime machinery. A file expands once;
+      # the second require of it is a no-op, which is also what makes a cycle harmless
+      # rather than an error, since the compiler counts the top-level file as require #0.
       def expand_require(kind, target, node)
         if kind == :require && BUILTIN_REQUIRES.include?(target)
           @notices << "notice: require #{target.inspect} is unnecessary; it is built in."

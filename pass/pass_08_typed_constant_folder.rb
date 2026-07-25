@@ -3,7 +3,7 @@
 module BareRubyProt
   module Pass
     class TypedConstantFolder
-      # Folding never changes a type (LANGUAGE.md section 5.4). Signed add, subtract and
+      # Folding never changes a type. Signed add, subtract and
       # multiply are undefined on overflow, so a result outside the type is left alone
       # rather than invented; the defined operations always fold.
       SIGNED_RANGES = {

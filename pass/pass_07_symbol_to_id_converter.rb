@@ -11,7 +11,7 @@ module BareRubyProt
       end
 
       # Symbols become unique integers at compile time and leave no runtime
-      # representation behind (LANGUAGE.md section 5.6). Ids follow first appearance in
+      # representation behind. Ids follow first appearance in
       # the traversal, which is fixed for a given input.
       def run
         @result = @tir.replace_program(@tir.program_body.map { |statement| convert(statement) })
