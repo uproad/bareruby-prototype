@@ -11,7 +11,8 @@ Covered so far:
 - **M0** — Prism → BRAST → TIR → LIR → C++ for the WP00 representative program
   (`ref.rb`), compiled with the host `g++` and executed.
 - **M1** — the same eight passes produce an rp2040 firmware image for the blink
-  program (`ref_blink.rb`), built with pico-sdk into a real `.uf2`.
+  program (`ref_blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a
+  Raspberry Pi Pico, where it blinks.
 
 ## Running the first stage
 
@@ -108,9 +109,8 @@ cmake -B build -S .
 cmake --build build
 ```
 
-The result is `build/bareruby_program.uf2`, ready to drag onto a Pico in BOOTSEL mode.
-The `build/rp2040/build/` tree is gitignored; `compile.rb` deletes it on the next run
-along with the rest of `build/`.
+The result is `build/bareruby_program.uf2`. The `build/rp2040/build/` tree is gitignored;
+`compile.rb` deletes it on the next run along with the rest of `build/`.
 
 Verified output for `ref_blink.rb`:
 
@@ -123,6 +123,39 @@ Verified output for `ref_blink.rb`:
 
 `arm-none-eabi-objdump -d bareruby_program.elf` shows the blink loop as Cortex-M0+
 instructions, with `bareruby_main` inlined into `main` by the release build.
+
+## Flashing a Pico from WSL
+
+Windows owns the USB device until it is handed to WSL, so a Pico in BOOTSEL mode does
+not appear here on its own. Attach it first, from an elevated Windows shell:
+
+```powershell
+usbipd list                    # find the bus id of "RP2 Boot"
+usbipd bind   --busid <BUSID>  # once per device
+usbipd attach --busid <BUSID> --wsl
+```
+
+The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspberry Pi
+RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
+
+```sh
+bareruby_prot/flash.sh                       # defaults to the rp2040 artifact
+bareruby_prot/flash.sh path/to/other.uf2
+```
+
+Mounting the volume needs root, so the script re-executes itself under `sudo`. It
+locates the device by SCSI vendor `RPI` and model `RP2` rather than by a fixed path,
+refuses to write unless the mounted volume carries the bootloader's `INFO_UF2.TXT`,
+and treats the device disappearing as the success signal — the RP2040 resets the
+moment the last block lands, so the copy, the sync and the unmount are all expected to
+fail at the end.
+
+Verified end to end on a Raspberry Pi Pico: after flashing, `2e8a:0003` disappears from
+`lsusb` and GP25 (the on-board LED) blinks at the 500 ms period written in
+`ref_blink.rb`. The firmware never re-enumerates, which is correct — both stdio
+channels are disabled, so it presents no USB interface at all.
+
+To flash again, replug the Pico while holding BOOTSEL and re-attach it with `usbipd`.
 
 ## Versions this was verified against
 
