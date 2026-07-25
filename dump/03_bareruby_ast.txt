@@ -1,7 +1,0 @@
-=== boundary: 03_bareruby_ast / schema: BRAST / version: 1 ===
-  1| assignment(reference(:local, :led), call(reference(:constant, :GPIO), :new, [integer(25), constant_path(:GPIO, :OUT)]))
-  3| call(nil, :loop, [], block())
-  4|   call(reference(:local, :led), :write, [integer(1)])
-  5|   call(nil, :sleep_ms, [integer(500)])
-  6|   call(reference(:local, :led), :write, [integer(0)])
-  7|   call(nil, :sleep_ms, [integer(500)])

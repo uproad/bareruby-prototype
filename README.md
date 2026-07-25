@@ -142,7 +142,8 @@ lets `flash.sh` reflash it without the BOOTSEL button. It costs code size:
 | `bss` (RAM) | 1160 B | 3652 B |
 
 Only Ruby is needed for this (Prism ships with Ruby 4.0). Every run rewrites two
-directories:
+directories, neither of which is tracked in git — they are outputs, and they changed on
+every commit while they were:
 
 - `dump/` — one binary snapshot (`.bin`) and one inspector text dump (`.txt`) per
   pass boundary. The pipeline reloads each representation from its own binary dump

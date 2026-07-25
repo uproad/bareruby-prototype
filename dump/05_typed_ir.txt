@@ -1,7 +1,0 @@
-=== boundary: 05_typed_ir / schema: TIR / version: 1 ===
-  1| assignment(local led, call(nil, binding_new:new, [integer(25, Int32), integer(1, Int32)], instance(GPIO)), instance(GPIO))
-  3| call(nil, builtin_iterator:loop, [], block(), Nil)
-  4|   call(reference(local led, instance(GPIO)), binding_method:write, [integer(1, Int32)], Nil)
-  5|   call(nil, binding_function:sleep_ms, [integer(500, Int32)], Nil)
-  6|   call(reference(local led, instance(GPIO)), binding_method:write, [integer(0, Int32)], Nil)
-  7|   call(nil, binding_function:sleep_ms, [integer(500, Int32)], Nil)
