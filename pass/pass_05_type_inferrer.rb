@@ -175,12 +175,24 @@ module BareRubyProt
       def collect_constant_locals
         assignments = Hash.new { |hash, name| hash[name] = [] }
         each_local_assignment(@bareruby_ast.program_body) { |name, value| assignments[name] << value }
+        bound = parameter_names(@bareruby_ast.program_body)
 
         assignments.filter_map do |name, values|
+          next if bound.include?(name)
           next unless values.one? && @bareruby_ast.node_type(values[0]) == :integer
 
           [name, @bareruby_ast.children_of(values[0])[0]]
         end.to_h
+      end
+
+      # Names are collected across the whole program rather than per scope, so a name that
+      # is ever a parameter is dropped: its value comes from the caller, not the literal.
+      def parameter_names(value, names = [])
+        return value.each { |element| parameter_names(element, names) } && names if value.is_a?(Array)
+        return names unless value.is_a?(Hash) && value.key?(:children)
+
+        names << value[:children][0] if value[:type] == :parameter
+        parameter_names(value[:children], names)
       end
 
       def each_local_assignment(value, &block)

@@ -42,41 +42,13 @@ module BareRubyProt
         #endif
       CPP
 
-      RUNTIME_STDIO_SOURCE = <<~CPP
+      # Fixed arithmetic is pure and has no stdout to depend on, so it is linked into every
+      # build. The rest of the runtime needs stdio and is only linked when a stdout channel
+      # exists, which is why the two are separate translation units.
+      RUNTIME_FIXED_SOURCE = <<~CPP
         #include "bareruby_runtime.h"
 
-        #include <stdarg.h>
-        #include <stdbool.h>
         #include <stdint.h>
-        #include <stdio.h>
-        #include <stdlib.h>
-
-        void bareruby_puts_int32(int32_t value) {
-            printf("%d\\n", (int)value);
-        }
-
-        void bareruby_puts_int64(int64_t value) {
-            printf("%lld\\n", (long long)value);
-        }
-
-        void bareruby_puts_string(const char *value) {
-            printf("%s\\n", value);
-        }
-
-        const char *bareruby_bool_to_s(bool value) {
-            return value ? "true" : "false";
-        }
-
-        void bareruby_puts_bool(bool value) {
-            printf("%s\\n", bareruby_bool_to_s(value));
-        }
-
-        void bareruby_printf(const char *format, ...) {
-            va_list arguments;
-            va_start(arguments, format);
-            vprintf(format, arguments);
-            va_end(arguments);
-        }
 
         /* Fixed is Q16.16 held in an int32_t. Narrowing saturates rather than wrapping,
            and the half LSB is added before the shift so rounding happens first. */
@@ -111,6 +83,43 @@ module BareRubyProt
             int64_t half = (int64_t)(right < 0 ? -right : right) / 2;
             numerator += (numerator < 0) ? -half : half;
             return bareruby_fixed_saturate(numerator / right);
+        }
+      CPP
+
+      RUNTIME_STDIO_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        #include <stdarg.h>
+        #include <stdbool.h>
+        #include <stdint.h>
+        #include <stdio.h>
+        #include <stdlib.h>
+
+        void bareruby_puts_int32(int32_t value) {
+            printf("%d\\n", (int)value);
+        }
+
+        void bareruby_puts_int64(int64_t value) {
+            printf("%lld\\n", (long long)value);
+        }
+
+        void bareruby_puts_string(const char *value) {
+            printf("%s\\n", value);
+        }
+
+        const char *bareruby_bool_to_s(bool value) {
+            return value ? "true" : "false";
+        }
+
+        void bareruby_puts_bool(bool value) {
+            printf("%s\\n", bareruby_bool_to_s(value));
+        }
+
+        void bareruby_printf(const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            vprintf(format, arguments);
+            va_end(arguments);
         }
 
         static const uint32_t BARERUBY_FIXED_POWERS[6] = { 1u, 10u, 100u, 1000u, 10000u, 100000u };
@@ -567,12 +576,12 @@ module BareRubyProt
         language_standard = gnu++20
         compile_options = -std=gnu++20 -fno-rtti
         include_directories = ..
-        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
+        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp ../bareruby_runtime_stdio.cpp
         link_libraries =
         stdout_channel = printf
         exceptions = enabled
         artifact = bareruby_program
-        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
+        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp ../bareruby_runtime_stdio.cpp
       MANIFEST
 
       attr_reader :result, :stdout_notice
@@ -588,6 +597,7 @@ module BareRubyProt
         rp2040_program = program_source(:rp2040)
         @result = {
           "bareruby_runtime.h" => RUNTIME_HEADER,
+          "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
           "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
           "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
@@ -603,7 +613,7 @@ module BareRubyProt
       end
 
       def rp2040_sources
-        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp"]
+        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp"]
         sources << "../bareruby_runtime_stdio.cpp" if @debug
         sources
       end
@@ -681,9 +691,11 @@ module BareRubyProt
         sections.join("\n")
       end
 
-      def include_text(target)
-        lines = ["#include <stdbool.h>", "#include <stdint.h>", "", "#include \"bareruby_binding.h\""]
-        lines << "#include \"bareruby_runtime.h\"" if stdout_enabled?(target)
+      # The runtime header is always included: Fixed arithmetic is declared there and is
+      # needed whether or not the build has a stdout channel.
+      def include_text(_target)
+        lines = ["#include <stdbool.h>", "#include <stdint.h>", "",
+                 "#include \"bareruby_binding.h\"", "#include \"bareruby_runtime.h\""]
         "#{lines.join("\n")}\n"
       end
 
