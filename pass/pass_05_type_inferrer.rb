@@ -101,10 +101,10 @@ module BareRubyProt
 
       PERIPHERALS = PERIPHERAL_CLASSES.merge(PERIPHERAL_CLASSES_EXTRA).freeze
 
-      ClassInfo = Struct.new(:superclass, :methods, :ivars)
+      ClassInfo = Struct.new(:sources, :methods, :ivars)
       MethodInfo = Struct.new(
         :owner, :name, :parameters, :body,
-        :parameter_types, :return_type, :parameter_bindings, :typed_body
+        :parameter_types, :return_type, :parameter_bindings, :typed_body, :ancestor, :depth
       )
 
       attr_reader :result
@@ -113,18 +113,24 @@ module BareRubyProt
         @bareruby_ast = bareruby_ast
         @tir = TIR.new
         @classes = {}
+        @modules = {}
+        @class_bodies = {}
+        @current_method = nil
       end
 
       def run
+        @rescues_present = contains_begin?(@bareruby_ast.program_body)
         register_builtin_classes
         register_classes(@bareruby_ast.program_body)
 
         env = {}
         typed = @bareruby_ast.program_body.map do |statement|
-          class_definition?(statement) ? statement : infer_node(statement, env:, self_class: nil)
+          definition?(statement) ? statement : infer_node(statement, env:, self_class: nil)
         end
 
-        body = @bareruby_ast.program_body.zip(typed).map do |original, typed_statement|
+        body = @bareruby_ast.program_body.zip(typed).filter_map do |original, typed_statement|
+          next if module_definition?(original)
+
           class_definition?(original) ? build_class_definition(original) : typed_statement
         end
 
@@ -133,63 +139,137 @@ module BareRubyProt
         self
       end
 
+      def contains_begin?(value)
+        return value.any? { |element| contains_begin?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash) && value.key?(:children)
+
+        value[:type] == :begin || contains_begin?(value[:children])
+      end
+
       def class_definition?(node) = @bareruby_ast.node_type(node) == :class_definition
 
       def register_builtin_classes
-        @classes[:BasicObject] = ClassInfo.new(nil, {}, {})
-        initialize_info = MethodInfo.new(:Object, :initialize, [], [], [], :Nil, [], [])
-        @classes[:Object] = ClassInfo.new(:BasicObject, { initialize: initialize_info }, {})
+        @classes[:BasicObject] = ClassInfo.new([], {}, {})
+        initialize_info = MethodInfo.new(:Object, :initialize, [], [], [], :Nil, [], [], nil, 0)
+        @classes[:Object] = ClassInfo.new([:BasicObject], { initialize: initialize_info }, {})
       end
 
+      def module_definition?(node) = @bareruby_ast.node_type(node) == :module_definition
+
       def register_classes(statements)
+        statements.each do |statement|
+          @modules[member_name(statement)] = statement if module_definition?(statement)
+          @class_bodies[member_name(statement)] = statement if class_definition?(statement)
+        end
         statements.each { |statement| register_class(statement) if class_definition?(statement) }
       end
 
-      def register_class(node)
-        name, body = @bareruby_ast.children_of(node)
-        methods = body[1..].to_h do |method_node|
-          method_name, parameters, method_body = @bareruby_ast.children_of(method_node)
-          [method_name, MethodInfo.new(name, method_name, parameters, method_body, nil, nil, nil, nil)]
-        end
-        @classes[name] = ClassInfo.new(superclass_name_of(body.first), methods, {})
+      def member_name(node)
+        module_definition?(node) || class_definition?(node) ? @bareruby_ast.children_of(node)[0] : nil
       end
 
-      def superclass_name_of(include_call)
-        arguments = @bareruby_ast.children_of(include_call)[2]
-        @bareruby_ast.children_of(arguments.first)[1]
+      # Inheritance and include are the same mechanism: compile-time flat expansion
+      # (LANGUAGE.md section 5.2). Pass 2 already turned the superclass into a leading
+      # include, so a class body is a list of include calls followed by its own
+      # definitions. Later sources win over earlier ones and the class's own definitions
+      # win over all of them. Every definition is copied into the class, which is what
+      # lets an included method infer instance variables against the including class.
+      def register_class(node)
+        name, body = @bareruby_ast.children_of(node)
+        definitions = expand(body)
+
+        # Every class descends from Object, whose initialize takes no arguments and
+        # assigns nothing (LANGUAGE.md section 5.2). It is the base of every chain, so a
+        # class without its own initialize still has one and super always has a floor.
+        methods = { initialize: MethodInfo.new(name, :initialize, [], [], [], :Nil, [], [], nil, 0) }
+        definitions.each do |definition|
+          method_name, parameters, method_body = @bareruby_ast.children_of(definition)
+          info = MethodInfo.new(name, method_name, parameters, method_body, nil, nil, nil, nil, nil, 0)
+          info.ancestor = methods[method_name]
+          methods[method_name] = info
+        end
+        methods.each_value { |info| number_chain(info) }
+
+        @classes[name] = ClassInfo.new(included_names(body), methods, {})
+      end
+
+      # The winner is depth 0; each definition it shadowed sits one deeper, which is
+      # what super walks and what keeps the generated function names apart.
+      def number_chain(info)
+        depth = 0
+        while info
+          info.depth = depth
+          depth += 1
+          info = info.ancestor
+        end
+      end
+
+      def definition?(node) = class_definition?(node) || module_definition?(node)
+
+      # The definitions a body contributes, ancestors first. A class source expands
+      # transitively, so a chain of classes flattens in one pass.
+      def expand(body)
+        included_names(body).flat_map { |source| expand_source(source) } +
+          body.select { |member| @bareruby_ast.node_type(member) == :method_definition }
+      end
+
+      def expand_source(source)
+        definition = @modules[source] || @class_bodies[source]
+        definition ? expand(@bareruby_ast.children_of(definition)[1]) : []
+      end
+
+      def included_names(body)
+        body.select { |member| include_call?(member) }.map { |member| included_name(member) }
+      end
+
+      def include_call?(node)
+        return false unless @bareruby_ast.node_type(node) == :call
+
+        receiver, call_name, = @bareruby_ast.children_of(node)
+        receiver.nil? && call_name == :include
+      end
+
+      def included_name(node)
+        @bareruby_ast.children_of(@bareruby_ast.children_of(node)[2].first)[1]
       end
 
       def find_method(class_name, name)
-        current = class_name
-        while current
-          class_info = @classes.fetch(current)
-          method_info = class_info.methods[name]
-          return method_info if method_info
-
-          current = class_info.superclass
-        end
+        @classes.fetch(class_name).methods[name]
       end
 
+      # Every definition the class flattened is emitted, including the ones a subclass
+      # or a later include shadowed, because super still reaches them.
       def build_class_definition(node)
-        name, body = @bareruby_ast.children_of(node)
+        name, = @bareruby_ast.children_of(node)
         class_info = @classes.fetch(name)
-        methods = body[1..].filter_map { |method_node| build_method_definition(method_node, class_info) }
+        methods = class_info.methods.values.flat_map { |info| chain_of(info) }
+                            .filter_map { |info| build_method_definition(info) }
         ivars = class_info.ivars.map { |ivar_name, type| { name: ivar_name, type: } }
         @tir.create_class_definition(name, ivars, methods, span_of(node))
       end
 
-      def build_method_definition(method_node, class_info)
-        name, parameters, = @bareruby_ast.children_of(method_node)
-        method_info = class_info.methods.fetch(name)
+      def chain_of(info)
+        chain = []
+        while info
+          chain << info
+          info = info.ancestor
+        end
+        chain
+      end
+
+      def build_method_definition(method_info)
         return unless method_info.return_type
 
         identity = @tir.create_identity(
-          method_info.owner, name, method_info.parameter_types, method_info.return_type
+          method_info.owner, method_name_at(method_info), method_info.parameter_types, method_info.return_type
         )
-        typed_parameters = method_info.parameter_bindings.zip(parameters, method_info.parameter_types)
+        typed_parameters = method_info.parameter_bindings.zip(method_info.parameters, method_info.parameter_types)
                                      .map { |binding, parameter, type| @tir.create_parameter(binding, type, span_of(parameter)) }
-        @tir.create_method_definition(identity, typed_parameters, method_info.typed_body, span_of(method_node))
+        @tir.create_method_definition(identity, typed_parameters, method_info.typed_body, nil)
       end
+
+      # A shadowed definition needs a name of its own in the generated code.
+      def method_name_at(info) = info.depth.zero? ? info.name : :"#{info.name}__super#{info.depth}"
 
       def resolve_method_call(method_info, argument_types)
         infer_method!(method_info, argument_types) if method_info.return_type.nil?
@@ -201,10 +281,16 @@ module BareRubyProt
           @tir.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
         end
         env = bindings.each_with_index.to_h { |binding, index| [binding[:name], [binding, argument_types[index]]] }
-        typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
-
+        # Recorded before the body is inferred, because a bare super inside it forwards
+        # these very parameters.
         method_info.parameter_types = argument_types
         method_info.parameter_bindings = bindings
+
+        enclosing = @current_method
+        @current_method = method_info
+        typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
+        @current_method = enclosing
+
         method_info.typed_body = typed_body
         method_info.return_type =
           method_info.name == :initialize ? :Nil : method_return_type(typed_body)
@@ -251,6 +337,8 @@ module BareRubyProt
         when :boolean then infer_boolean(node)
         when :string then infer_string(node)
         when :symbol then infer_symbol(node)
+        when :super then infer_super(node, env:, self_class:)
+        when :begin then infer_begin(node, env:, self_class:)
         when :constant_path then infer_constant_path(node)
         when :if then infer_if(node, env:, self_class:)
         when :while then infer_while(node, env:, self_class:)
@@ -277,6 +365,47 @@ module BareRubyProt
       def infer_float(node)
         value = @bareruby_ast.children_of(node)[0]
         @tir.create_integer((value * FIXED_ONE).round, :Fixed, span_of(node))
+      end
+
+      # begin/rescue lowers to try/catch. Only the untyped rescue form is handled: an
+      # exception class hierarchy is still undecided, so nothing here invents one.
+      def infer_begin(node, env:, self_class:)
+        body, rescue_body = @bareruby_ast.children_of(node)
+        @tir.create_begin(
+          infer_body(body, env:, self_class:), infer_body(rescue_body, env:, self_class:), span_of(node)
+        )
+      end
+
+      # raise degrades to panic when the program has no begin at all, and throws
+      # otherwise (LANGUAGE.md section 5.5). Only the string form is accepted; the other
+      # forms are Q-011 and are not settled.
+      def infer_raise_call(arguments, env:, self_class:, span:)
+        argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        function = @rescues_present ? :bareruby_throw : :bareruby_panic
+        callee = @tir.create_callee(:builtin_function, nil, :raise, function, %i[String], :NoReturn)
+        @tir.create_call(nil, callee, argument_tirs, nil, :NoReturn, span)
+      end
+
+      # super is a static call to the definition this one shadowed (LANGUAGE.md section
+      # 5.2). No arguments means forward the ones the method received.
+      def infer_super(node, env:, self_class:)
+        ancestor = @current_method.ancestor
+        arguments = @bareruby_ast.children_of(node)[0]
+        argument_tirs =
+          if arguments.empty?
+            @current_method.parameter_bindings.zip(@current_method.parameter_types)
+                           .map { |binding, type| @tir.create_reference(binding, type, span_of(node)) }
+          else
+            arguments.map { |argument| infer_node(argument, env:, self_class:) }
+          end
+
+        resolved = resolve_method_call(ancestor, argument_types(argument_tirs))
+        callee = @tir.create_callee(
+          :user_method, resolved.owner, resolved.name,
+          function_name(resolved.owner, method_name_at(resolved)),
+          resolved.parameter_types, resolved.return_type
+        )
+        @tir.create_call(nil, callee, argument_tirs, nil, resolved.return_type, span_of(node))
       end
 
       def infer_symbol(node)
@@ -342,7 +471,12 @@ module BareRubyProt
 
       def infer_assignment(node, env:, self_class:)
         target, value = @bareruby_ast.children_of(node)
-        value_tir = infer_node(value, env:, self_class:)
+        value_tir =
+          if @bareruby_ast.node_type(value) == :interpolation
+            infer_format(value, env:, self_class:)
+          else
+            infer_node(value, env:, self_class:)
+          end
         value_type = @tir.value_type(value_tir)
         kind, name = @bareruby_ast.children_of(target)
 
@@ -377,6 +511,7 @@ module BareRubyProt
           case name
           when :puts then infer_puts_call(arguments, env:, self_class:, span:)
           when :loop then infer_loop_call(block, env:, self_class:, span:)
+          when :raise then infer_raise_call(arguments, env:, self_class:, span:)
           else
             if PERIPHERAL_FUNCTIONS.key?(name)
               infer_binding_function_call(name, arguments, env:, self_class:, span:)
@@ -649,6 +784,37 @@ module BareRubyProt
         kind = receiver_tir ? :binding_printf : :builtin_printf
         callee = @tir.create_callee(kind, nil, :printf, function, argument_types(arguments), :Nil)
         @tir.create_call(receiver_tir, callee, arguments, nil, :Nil, span)
+      end
+
+      # Widest rendering of each type, used to size the temporary buffer an interpolation
+      # assigns into. A String of unknown capacity has no honest bound here; a real
+      # implementation would carry the capacity in the type, so this is the one number in
+      # the estimate that is a placeholder rather than a derivation.
+      MAX_LENGTHS = { Int32: 11, Int64: 20, Bool: 5, Fixed: 12, String: 64 }.freeze
+
+      # An interpolation outside a puts argument becomes a fixed-capacity buffer plus a
+      # compile-time bound on what can land in it (LANGUAGE.md section 5.9).
+      def infer_format(node, env:, self_class:)
+        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
+        format = +""
+        values = []
+        capacity = 1
+
+        parts.each do |part|
+          if @tir.node_type(part) == :string
+            text = @tir.children_of(part)[0]
+            format << escape_format(text)
+            capacity += text.bytesize
+          else
+            format << conversion_of(@tir.value_type(part))
+            capacity += MAX_LENGTHS.fetch(@tir.value_type(part), 32)
+            values << to_s_of(part)
+          end
+        end
+
+        @tir.create_format(
+          capacity, @tir.create_string(format, :String, span_of(node)), values, :String, span_of(node)
+        )
       end
 
       def escape_format(text) = text.gsub("%", "%%")

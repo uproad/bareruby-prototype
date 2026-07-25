@@ -21,6 +21,8 @@ module BareRubyProt
     DUMP_DIRECTORY = File.expand_path("dump", __dir__)
     BUILD_DIRECTORY = File.expand_path("build", __dir__)
     ARTIFACT_SCHEMA = "ARTIFACTS"
+    STATUS_COMPILE_ERROR = 10
+    BEGIN_ERROR = "error: begin requires the exception mechanism, which --no-exceptions removes."
     STDOUT_NOTICE = "notice: puts is not emitted in the freestanding build (stdout_channel = none). " \
                     "Enable a stdout channel to observe it."
     SCHEMAS = {
@@ -29,9 +31,10 @@ module BareRubyProt
       LIR::SCHEMA => LIR
     }.freeze
 
-    def initialize(source_file_name, debug:)
+    def initialize(source_file_name, debug:, exceptions:)
       @source_file_name = source_file_name
       @debug = debug
+      @exceptions = exceptions
     end
 
     def run
@@ -39,7 +42,9 @@ module BareRubyProt
       FileUtils.rm_rf(BUILD_DIRECTORY)
       FileUtils.mkdir_p(BUILD_DIRECTORY)
 
-      result = pass_01
+      generator = Pass::BareRubyAstGenerator.new(@source_file_name).run
+      generator.notices.each { |notice| warn notice }
+      result = generator.result
       result = boundary("01_bareruby_ast", result)
 
       result = pass_02(result)
@@ -47,6 +52,8 @@ module BareRubyProt
 
       result = pass_03(result)
       result = boundary("03_bareruby_ast", result)
+
+      reject_begin_without_exceptions(result)
 
       result = pass_05(result)
       result = boundary("05_typed_ir", result)
@@ -96,7 +103,17 @@ module BareRubyProt
 
     def pass_09(typed_ir) = Pass::LirGenerator.new(typed_ir).run.result
 
-    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug).run
+    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug, exceptions: @exceptions).run
+
+    # --no-exceptions removes the mechanism, so begin has nothing to land on and is
+    # rejected outright rather than quietly doing nothing (LANGUAGE.md section 5.5).
+    def reject_begin_without_exceptions(bareruby_ast)
+      return if @exceptions
+      return unless Pass::TypeInferrer.new(bareruby_ast).contains_begin?(bareruby_ast.program_body)
+
+      warn BEGIN_ERROR
+      exit STATUS_COMPILE_ERROR
+    end
 
     def boundary(name, representation)
       write_binary_dump(name, representation.class::SCHEMA, representation.dump_payload)
@@ -135,6 +152,7 @@ end
 
 arguments = ARGV.dup
 debug = [arguments.delete("-d"), arguments.delete("--debug")].any?
+exceptions = arguments.delete("--no-exceptions").nil?
 source_file_name = arguments[0] || File.expand_path("ref.rb", __dir__)
 
-exit BareRubyProt::Compiler.new(source_file_name, debug:).run
+exit BareRubyProt::Compiler.new(source_file_name, debug:, exceptions:).run

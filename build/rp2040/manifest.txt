@@ -3,10 +3,10 @@ toolchain = arm-none-eabi-g++
 language_standard = gnu++20
 compile_options = -std=gnu++20 -fno-rtti
 include_directories = ..
-sources = main.cpp ../bareruby_binding_rp2040.cpp ../bareruby_runtime_stdio.cpp
+sources = main.cpp ../bareruby_binding_rp2040.cpp
 link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
-stdout_channel = usb
-debug = enabled
-exceptions = enabled
+stdout_channel = none
+debug = disabled
+exceptions = disabled
 artifact = bareruby_program.uf2
 build_command = cmake -B build -S . && cmake --build build

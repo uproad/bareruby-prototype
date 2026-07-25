@@ -31,6 +31,9 @@ module BareRubyProt
         int32_t bareruby_fixed_mul(int32_t left, int32_t right);
         int32_t bareruby_fixed_div(int32_t left, int32_t right);
         void bareruby_printf(const char *format, ...);
+        void bareruby_panic(const char *message);
+        void bareruby_throw(const char *message);
+        void bareruby_format(char *buffer, int32_t capacity, const char *format, ...);
 
         #ifdef __cplusplus
         }
@@ -46,6 +49,7 @@ module BareRubyProt
         #include <stdbool.h>
         #include <stdint.h>
         #include <stdio.h>
+        #include <stdlib.h>
 
         void bareruby_puts_int32(int32_t value) {
             printf("%d\\n", (int)value);
@@ -140,6 +144,29 @@ module BareRubyProt
 
         void bareruby_puts_fixed(int32_t value) {
             printf("%s\\n", bareruby_fixed_to_s(value));
+        }
+
+        /* A panic stops immediately without unwinding: stdout is flushed, the message
+           goes to fd2, and the process exits 1 (LANGUAGE.md section 5.5). */
+        void bareruby_panic(const char *message) {
+            fflush(stdout);
+            fprintf(stderr, "panic: %s\\n", message);
+            exit(1);
+        }
+
+        /* Exceptions are one of the two things the generated code borrows from C++, so
+           the throw is confined here rather than spread through the output. */
+        void bareruby_throw(const char *message) {
+            throw message;
+        }
+
+        /* The buffer is sized at compile time from the widest rendering of each part, so
+           this never allocates and never grows. */
+        void bareruby_format(char *buffer, int32_t capacity, const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            vsnprintf(buffer, (size_t)capacity, format, arguments);
+            va_end(arguments);
         }
       CPP
 
@@ -502,9 +529,10 @@ module BareRubyProt
 
       attr_reader :result, :stdout_notice
 
-      def initialize(low_ir, debug:)
+      def initialize(low_ir, debug:, exceptions: true)
         @lir = low_ir
         @debug = debug
+        @exceptions = exceptions
         @stdout_notice = false
       end
 
@@ -543,7 +571,7 @@ module BareRubyProt
           link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
-          exceptions = enabled
+          exceptions = #{@exceptions ? 'enabled' : 'disabled'}
           artifact = bareruby_program.uf2
           build_command = cmake -B build -S . && cmake --build build
         MANIFEST
@@ -554,6 +582,10 @@ module BareRubyProt
           cmake_minimum_required(VERSION 3.13)
 
           include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+          # pico-sdk leaves C++ exceptions off unless asked, so whether the unwinder and
+          # its tables are linked is a decision the first stage records here.
+          set(PICO_CXX_ENABLE_EXCEPTIONS #{@exceptions ? 1 : 0})
 
           project(bareruby_program C CXX ASM)
           set(CMAKE_C_STANDARD 11)
@@ -566,7 +598,7 @@ module BareRubyProt
           )
 
           target_include_directories(bareruby_program PRIVATE ..)
-          target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
+          target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
           target_link_libraries(bareruby_program pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks)
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
@@ -647,6 +679,9 @@ module BareRubyProt
         case @lir.node_type(statement)
         when :declare, :assign, :return
           ["#{indent}#{simple_statement_text(statement)};"]
+        when :declare_buffer
+          name, capacity = @lir.children_of(statement)
+          ["#{indent}char #{name}[#{capacity}];"]
         when :expression
           expression_statement_lines(statement, indent)
         when :for
@@ -667,6 +702,11 @@ module BareRubyProt
             lines += else_body.flat_map { |child| statement_lines(child, "#{indent}    ") }
           end
           lines + ["#{indent}}"]
+        when :try
+          body, rescue_body = @lir.children_of(statement)
+          ["#{indent}try {"] + body.flat_map { |child| statement_lines(child, "#{indent}    ") } +
+            ["#{indent}} catch (...) {"] +
+            rescue_body.flat_map { |child| statement_lines(child, "#{indent}    ") } + ["#{indent}}"]
         when :break
           ["#{indent}break;"]
         when :next

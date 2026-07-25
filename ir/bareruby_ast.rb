@@ -76,6 +76,12 @@ module BareRubyProt
 
     def create_class_definition(name, body, span) = build(:class_definition, [name, body], span)
 
+    def create_module_definition(name, body, span) = build(:module_definition, [name, body], span)
+
+    def create_super(arguments, span) = build(:super, [arguments], span)
+
+    def create_begin(body, rescue_body, span) = build(:begin, [body, rescue_body], span)
+
     def create_call(receiver, name, arguments, block, span)
       build(:call, [receiver, name, arguments, block], span)
     end
@@ -114,6 +120,15 @@ module BareRubyProt
       when :class_definition
         name, body = node[:children]
         [gutter(node) + "#{indent}class_definition(#{name.inspect})"] +
+          body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+      when :begin
+        body, rescue_body = node[:children]
+        lines = [gutter(node) + indent + "begin"] + body.flat_map { |s| inspect_lines(s, indent + "  ") }
+        lines << gutter(node) + indent + "rescue"
+        lines + rescue_body.flat_map { |s| inspect_lines(s, indent + "  ") }
+      when :module_definition
+        name, body = node[:children]
+        [gutter(node) + "#{indent}module_definition(#{name.inspect})"] +
           body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       when :method_definition
         name, parameters, body = node[:children]
@@ -195,6 +210,8 @@ module BareRubyProt
         "return(#{value ? inspect_inline(value) : 'nil'})"
       when :iteration_control
         "iteration_control(#{node[:children][0].inspect})"
+      when :super
+        "super([#{node[:children][0].map { |argument| inspect_inline(argument) }.join(', ')}])"
       when :call
         receiver, name, arguments, block = node[:children]
         parts = [receiver ? inspect_inline(receiver) : "nil", name.inspect]

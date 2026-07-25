@@ -25,6 +25,7 @@ module BareRubyProt
         when :call then inline_call(node)
         when :if then inline_if(node)
         when :while then inline_while(node)
+        when :begin then inline_begin(node)
         when :logical then inline_logical(node)
         else node
         end
@@ -36,6 +37,11 @@ module BareRubyProt
           inline_node(condition), inline_body(then_body), else_body && inline_body(else_body),
           type, span_of(node)
         )
+      end
+
+      def inline_begin(node)
+        body, rescue_body = @tir.children_of(node)
+        @tir.create_begin(inline_body(body), inline_body(rescue_body), span_of(node))
       end
 
       def inline_while(node)

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void bareruby_puts_int32(int32_t value) {
     printf("%d\n", (int)value);
@@ -98,4 +99,27 @@ const char *bareruby_fixed_to_s(int32_t value) {
 
 void bareruby_puts_fixed(int32_t value) {
     printf("%s\n", bareruby_fixed_to_s(value));
+}
+
+/* A panic stops immediately without unwinding: stdout is flushed, the message
+   goes to fd2, and the process exits 1 (LANGUAGE.md section 5.5). */
+void bareruby_panic(const char *message) {
+    fflush(stdout);
+    fprintf(stderr, "panic: %s\n", message);
+    exit(1);
+}
+
+/* Exceptions are one of the two things the generated code borrows from C++, so
+   the throw is confined here rather than spread through the output. */
+void bareruby_throw(const char *message) {
+    throw message;
+}
+
+/* The buffer is sized at compile time from the widest rendering of each part, so
+   this never allocates and never grows. */
+void bareruby_format(char *buffer, int32_t capacity, const char *format, ...) {
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(buffer, (size_t)capacity, format, arguments);
+    va_end(arguments);
 }
