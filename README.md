@@ -22,7 +22,7 @@ Covered so far:
 cd bareruby_prot
 ./brd app.rb -d      # debug firmware: USB stays up, reflashable without the button
 ./brd app.rb         # default firmware
-./brd                # falls back to ref.rb
+./brd                # prints usage
 ```
 
 It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
