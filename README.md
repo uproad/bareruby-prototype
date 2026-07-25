@@ -56,6 +56,14 @@ keeps the original structure and behaviour otherwise, with one deliberate except
 original's decay block guards all three channels on `m26`, which is a copy-paste slip, so
 each guard here reads its own maximum.
 
+`ref_tenji_int.rb` is the same program with `Fixed` replaced by integer arithmetic. The
+converter is read with `read_raw`, and every ratio is carried in units of 1/4096 — which
+is the resolution the 12-bit converter already delivers, so nothing is lost. `span / 3.3`
+then disappears, because the raw span *is* the ratio, and with it go nine 64-bit divisions
+and three 64-bit multiplications per iteration. `text` drops from 16220 B to 14852 B, and
+the loop from roughly 2900 to roughly 2050 cycles. What remains is dominated by the three
+ADC conversions, which cost 2 µs each in the converter itself.
+
 Sample programs:
 
 | File | What it covers |
@@ -70,6 +78,7 @@ Sample programs:
 | `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `ref_array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
 | `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
+| `ref_tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
