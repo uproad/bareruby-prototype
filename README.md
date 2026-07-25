@@ -80,8 +80,13 @@ ruby compile.rb -d ref_blink.rb   # debug firmware
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
 the unwinder and its tables are left out. On an rp2040 build of `ref_blink.rb` that is
-13164 B of text against 8612 B, so the mechanism costs about 4.5 KB of flash and 316 B
+13220 B of text against 8668 B, so the mechanism costs about 4.5 KB of flash and 316 B
 of RAM even in a program that never raises.
+
+A program that actually raises pays far more. `bareruby_throw` pulls in the C++ ABI, and
+with it the terminate handler's name demangler and malloc: `ref_m25.rb` comes to 73848 B
+of text. That is why the throw lives in its own translation unit and is linked only into
+programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
@@ -113,9 +118,13 @@ The build command is recorded in the manifest, so just run what it says:
 ```sh
 cd build/hosted
 g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
-    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
+    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp \
+    ../bareruby_runtime_stdio.cpp
 ./bareruby_program            # fd1 = puts, fd2 = peripheral call trace
 ```
+
+The runtime is split across translation units by what each part costs to link, so the
+source list varies with the program. Take it from `manifest.txt` rather than from here.
 
 `ref_blink.rb` loops forever by design; use `timeout 1 ./bareruby_program` to look at
 the head of the trace.

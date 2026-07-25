@@ -86,6 +86,18 @@ module BareRubyProt
         }
       CPP
 
+      # A throw expression pulls in the C++ ABI, and with it the terminate handler's name
+      # demangler and malloc: about 60 KB on an rp2040, whether or not anything throws.
+      # --gc-sections cannot reach it, so this is its own translation unit and is linked
+      # only into programs that actually raise.
+      RUNTIME_THROW_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        void bareruby_throw(const char *message) {
+            throw message;
+        }
+      CPP
+
       RUNTIME_STDIO_SOURCE = <<~CPP
         #include "bareruby_runtime.h"
 
@@ -161,12 +173,6 @@ module BareRubyProt
             fflush(stdout);
             fprintf(stderr, "panic: %s\\n", message);
             exit(1);
-        }
-
-        /* Exceptions are one of the two things the generated code borrows from C++, so
-           the throw is confined here rather than spread through the output. */
-        void bareruby_throw(const char *message) {
-            throw message;
         }
 
         /* The buffer is sized at compile time from the widest rendering of each part, so
@@ -570,20 +576,6 @@ module BareRubyProt
         }
       CPP
 
-      HOSTED_MANIFEST = <<~MANIFEST
-        target = hosted
-        toolchain = g++
-        language_standard = gnu++20
-        compile_options = -std=gnu++20 -fno-rtti
-        include_directories = ..
-        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp ../bareruby_runtime_stdio.cpp
-        link_libraries =
-        stdout_channel = printf
-        exceptions = enabled
-        artifact = bareruby_program
-        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp ../bareruby_runtime_stdio.cpp
-      MANIFEST
-
       attr_reader :result, :stdout_notice
 
       def initialize(low_ir, debug:, exceptions: true)
@@ -598,12 +590,13 @@ module BareRubyProt
         @result = {
           "bareruby_runtime.h" => RUNTIME_HEADER,
           "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
+          "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
           "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
           "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
           "bareruby_binding_rp2040.cpp" => BINDING_RP2040_SOURCE,
           "hosted/main.cpp" => program_source(:hosted),
-          "hosted/manifest.txt" => HOSTED_MANIFEST,
+          "hosted/manifest.txt" => hosted_manifest,
           "rp2040/main.cpp" => rp2040_program,
           "rp2040/manifest.txt" => rp2040_manifest,
           "rp2040/CMakeLists.txt" => cmake_lists
@@ -612,9 +605,46 @@ module BareRubyProt
         self
       end
 
+      def hosted_sources
+        sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
+                   "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_throw.cpp" if throws?
+        sources
+      end
+
+      def hosted_manifest
+        <<~MANIFEST
+          target = hosted
+          toolchain = g++
+          language_standard = gnu++20
+          compile_options = -std=gnu++20 -fno-rtti
+          include_directories = ..
+          sources = #{hosted_sources.join(' ')}
+          link_libraries =
+          stdout_channel = printf
+          exceptions = enabled
+          artifact = bareruby_program
+          build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program #{hosted_sources.join(' ')}
+        MANIFEST
+      end
+
+      # Only a program that raises needs the throw translation unit linked.
+      def throws?
+        @lir.functions.any? { |function| calls_throw?(@lir.children_of(function)[3]) }
+      end
+
+      def calls_throw?(value)
+        return value.any? { |element| calls_throw?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :call && value[:children][0] == :bareruby_throw
+
+        calls_throw?(value[:children])
+      end
+
       def rp2040_sources
-        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp"]
-        sources << "../bareruby_runtime_stdio.cpp" if @debug
+        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
+                   "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
 
