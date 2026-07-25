@@ -216,7 +216,7 @@ debug = enabled
 exceptions = enabled
 artifact = bareruby_program.uf2
 build_command = cmake -B build -S . && cmake --build build
-;TI"rp2040/CMakeLists.txt;TI"Ícmake_minimum_required(VERSION 3.13)
+;TI"rp2040/CMakeLists.txt;TI"ècmake_minimum_required(VERSION 3.13)
 
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -233,7 +233,7 @@ add_executable(bareruby_program
 )
 
 target_include_directories(bareruby_program PRIVATE ..)
-target_compile_options(bareruby_program PRIVATE -fno-rtti)
+target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
 target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
 
 pico_enable_stdio_usb(bareruby_program 1)

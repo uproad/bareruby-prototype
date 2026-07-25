@@ -14,6 +14,24 @@ Covered so far:
   program (`ref_blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a
   Raspberry Pi Pico, where it blinks.
 
+## The short way
+
+`brd` runs the whole cycle — first stage, second stage, flash — for one program:
+
+```sh
+cd bareruby_prot
+./brd app.rb -d      # debug firmware: USB stays up, reflashable without the button
+./brd app.rb         # default firmware
+./brd                # falls back to ref.rb
+```
+
+It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
+takes them from the environment when they are already set. cmake output is shown only
+when a step fails.
+
+The rest of this file is what `brd` does, step by step, and how to install what it
+needs.
+
 ## Running the first stage
 
 ```sh

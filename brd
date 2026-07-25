@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run the whole cycle for one BareRuby program: first stage, second stage, flash.
+#
+#     ./brd app.rb          default firmware, no USB, needs BOOTSEL to reflash
+#     ./brd app.rb -d       debug firmware, USB stays up, reflashable on its own
+#     ./brd                 falls back to ref.rb
+#
+# PICO_SDK_PATH and PICO_TOOLCHAIN_PATH are taken from the environment when set.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+: "${PICO_SDK_PATH:=$HOME/pico/pico-sdk}"
+: "${PICO_TOOLCHAIN_PATH:=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}"
+export PICO_SDK_PATH PICO_TOOLCHAIN_PATH
+
+for path in "$PICO_SDK_PATH" "$PICO_TOOLCHAIN_PATH"; do
+    if [ ! -d "$path" ]; then
+        echo "brd: no such directory: $path" >&2
+        echo "     See bareruby_prot/README.md for how to install the toolchain." >&2
+        exit 1
+    fi
+done
+
+DEBUG=()
+SOURCE=()
+for argument in "$@"; do
+    case "$argument" in
+        -d|--debug) DEBUG=(-d) ;;
+        -*)
+            echo "brd: unknown option: $argument" >&2
+            exit 1
+            ;;
+        *) SOURCE=("$(realpath "$argument")") ;;
+    esac
+done
+
+echo "brd: first stage"
+ruby "$HERE/compile.rb" "${DEBUG[@]}" "${SOURCE[@]}"
+
+# cmake and pico-sdk are chatty even when everything is fine. Keep the output for
+# the failure case and say nothing otherwise.
+run_quietly() {
+    local output
+    if ! output=$("$@" 2>&1); then
+        echo "$output" >&2
+        return 1
+    fi
+}
+
+echo "brd: second stage"
+cd "$HERE/build/rp2040"
+run_quietly cmake -B build -S .
+run_quietly cmake --build build
+
+echo "brd: flash"
+"$HERE/flash.sh"

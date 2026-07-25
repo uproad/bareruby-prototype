@@ -15,7 +15,7 @@ add_executable(bareruby_program
 )
 
 target_include_directories(bareruby_program PRIVATE ..)
-target_compile_options(bareruby_program PRIVATE -fno-rtti)
+target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
 target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
 
 pico_enable_stdio_usb(bareruby_program 1)

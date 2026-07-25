@@ -244,7 +244,7 @@ module BareRubyProt
           )
 
           target_include_directories(bareruby_program PRIVATE ..)
-          target_compile_options(bareruby_program PRIVATE -fno-rtti)
+          target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>)
           target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
