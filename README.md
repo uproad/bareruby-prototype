@@ -29,6 +29,32 @@ Covered so far:
 - **M2.5** — inheritance and modules flattened at compile time with `super`, begin and
   rescue with `--no-exceptions`, the interpolation assignment form, and require
   expansion. No new pass; pass 5 does the flattening.
+- **M2.6** — the ADC binding (`ref_adc.rb`). `read` and `read_voltage` return `Fixed`
+  rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
+  converter channel is rejected while compiling. No new pass.
+- **M2.7** — fixed-capacity arrays (`ref_array.rb`): `Array.new(n[, init])`, array
+  literals, `[]`, `[]=`, `size` and `dup`. Single element type, capacity settled while
+  compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
+  indexing is pointer arithmetic and is not range checked. No new pass.
+
+`ref_tenji.rb` is the first program here that was not written for BareRuby: it is a
+PicoRuby product (three audio channels read through the ADC, peak-to-peak over a
+20-sample window, driving three PWM LEDs, with a watchdog LED on GP25) ported over to
+find out what the language is still missing. What the port had to change:
+
+| Original | Ported | Why |
+| --- | --- | --- |
+| `require "pwm"` / `require "adc"` | dropped | Peripherals are built in |
+| `sleep(0.01)` | `sleep_ms(10)` | `sleep` takes whole seconds |
+| `d26.minmax` | an explicit loop in `Window#span` | No iteration or folding methods yet |
+| `x.clamp(0.0, 1.0)` | two modifier `if`s | `clamp` would need one method with two types |
+| `p6.duty(duty26)` | `p6.duty(duty26.to_i32)` | Bindings take one argument type |
+| `wd_res = 1.0 / loop_sleep_time` | `wd_res = 1000 / loop_sleep_ms` | Integer where a fraction was not needed |
+| a `def` at the top level | a class | Top-level methods are not implemented |
+
+`GPIO.new(25, 2)` needed no change: 2 is `GPIO::OUT` in both languages now. The port
+keeps the original structure and behaviour otherwise, including a copy-paste slip in the
+decay block where all three guards read `m26`.
 
 Sample programs:
 
@@ -41,6 +67,9 @@ Sample programs:
 | `ref_features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
 | `ref_fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 | `ref_m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
+| `ref_adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
+| `ref_array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
+| `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
@@ -71,8 +100,13 @@ ruby compile.rb -d ref_blink.rb   # debug firmware
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
 the unwinder and its tables are left out. On an rp2040 build of `ref_blink.rb` that is
-13164 B of text against 8612 B, so the mechanism costs about 4.5 KB of flash and 316 B
+13220 B of text against 8668 B, so the mechanism costs about 4.5 KB of flash and 316 B
 of RAM even in a program that never raises.
+
+A program that actually raises pays far more. `bareruby_throw` pulls in the C++ ABI, and
+with it the terminate handler's name demangler and malloc: `ref_m25.rb` comes to 73848 B
+of text. That is why the throw lives in its own translation unit and is linked only into
+programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
@@ -104,9 +138,13 @@ The build command is recorded in the manifest, so just run what it says:
 ```sh
 cd build/hosted
 g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
-    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
+    main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp \
+    ../bareruby_runtime_stdio.cpp
 ./bareruby_program            # fd1 = puts, fd2 = peripheral call trace
 ```
+
+The runtime is split across translation units by what each part costs to link, so the
+source list varies with the program. Take it from `manifest.txt` rather than from here.
 
 `ref_blink.rb` loops forever by design; use `timeout 1 ./bareruby_program` to look at
 the head of the trace.

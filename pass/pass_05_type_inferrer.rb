@@ -6,6 +6,7 @@ module BareRubyProt
   module Pass
     class TypeInferrer
       RECEIVER_ITERATOR_NAMES = %i[times upto].freeze
+      SIZE_NAMES = %i[size length].freeze
       UNARY_OPERATORS = %i[-@ ~].freeze
       BINARY_OPERATORS = %i[+ - * / % << >> & | ^].freeze
       COMPARISON_OPERATORS = %i[== != < <= > >=].freeze
@@ -41,7 +42,22 @@ module BareRubyProt
         }
       }.freeze
 
+      # LANGUAGE.md section 8.6: the guideline returns a Float from read_voltage, but section
+      # 5.4 makes Fixed the default fractional type, so the binding returns Fixed. Q16.16
+      # resolves to 1/65536 V, finer than the 12-bit converter's least significant bit.
+      ADC_CHANNEL_PINS = (26..29).freeze
+
       PERIPHERAL_CLASSES_EXTRA = {
+        ADC: {
+          struct: :bareruby_adc_t,
+          constants: {},
+          constructor: { function: :bareruby_adc_init, parameter_types: %i[Int32] },
+          methods: {
+            read: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
+            read_voltage: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
+            read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
+          }
+        },
         PWM: {
           struct: :bareruby_pwm_t,
           constants: {},
@@ -125,6 +141,7 @@ module BareRubyProt
 
       def run
         @rescues_present = contains_begin?(@bareruby_ast.program_body)
+        @constant_locals = collect_constant_locals
         register_builtin_classes
         register_classes(@bareruby_ast.program_body)
 
@@ -149,6 +166,44 @@ module BareRubyProt
         return false unless value.is_a?(Hash) && value.key?(:children)
 
         value[:type] == :begin || contains_begin?(value[:children])
+      end
+
+      # An array capacity may be written as a local that holds a literal, so the locals
+      # assigned exactly once from an integer literal are collected up front. Requiring a
+      # single assignment is what makes the value safe to use anywhere in the program,
+      # including before the assignment has been walked.
+      def collect_constant_locals
+        assignments = Hash.new { |hash, name| hash[name] = [] }
+        each_local_assignment(@bareruby_ast.program_body) { |name, value| assignments[name] << value }
+        bound = parameter_names(@bareruby_ast.program_body)
+
+        assignments.filter_map do |name, values|
+          next if bound.include?(name)
+          next unless values.one? && @bareruby_ast.node_type(values[0]) == :integer
+
+          [name, @bareruby_ast.children_of(values[0])[0]]
+        end.to_h
+      end
+
+      # Names are collected across the whole program rather than per scope, so a name that
+      # is ever a parameter is dropped: its value comes from the caller, not the literal.
+      def parameter_names(value, names = [])
+        return value.each { |element| parameter_names(element, names) } && names if value.is_a?(Array)
+        return names unless value.is_a?(Hash) && value.key?(:children)
+
+        names << value[:children][0] if value[:type] == :parameter
+        parameter_names(value[:children], names)
+      end
+
+      def each_local_assignment(value, &block)
+        return value.each { |element| each_local_assignment(element, &block) } if value.is_a?(Array)
+        return unless value.is_a?(Hash) && value.key?(:children)
+
+        if value[:type] == :assignment
+          kind, name = @bareruby_ast.children_of(value[:children][0])
+          yield(name, value[:children][1]) if kind == :local
+        end
+        each_local_assignment(value[:children], &block)
       end
 
       def class_definition?(node) = @bareruby_ast.node_type(node) == :class_definition
@@ -350,6 +405,7 @@ module BareRubyProt
         when :logical then infer_logical(node, env:, self_class:)
         when :reference then infer_reference(node, env:, self_class:)
         when :assignment then infer_assignment(node, env:, self_class:)
+        when :array then infer_array(node, env:, self_class:)
         when :call then infer_call(node, env:, self_class:)
         when :return then infer_return(node, env:, self_class:)
         when :iteration_control then infer_iteration_control(node)
@@ -415,6 +471,46 @@ module BareRubyProt
 
       def infer_symbol(node)
         @tir.create_symbol(@bareruby_ast.children_of(node)[0], :Symbol, span_of(node))
+      end
+
+      # LANGUAGE.md section 6.2.2: the element type is the least upper bound of the
+      # elements, so a literal that mixes types with no common widening is an error here
+      # rather than something the backend has to represent.
+      def infer_array(node, env:, self_class:)
+        elements = @bareruby_ast.children_of(node)[0].map do |element|
+          infer_node(element, env:, self_class:)
+        end
+        types = argument_types(elements)
+        unless types.uniq.one? || types.all? { |element| INTEGER_WIDTHS.include?(element) }
+          raise "array literal mixes #{types.uniq.join(' and ')}, which have no common type"
+        end
+
+        type = @tir.create_array_type(types.reduce { |left, right| unify(left, right) }, elements.length)
+        @tir.create_array(elements, type, span_of(node))
+      end
+
+      # LANGUAGE.md section 6.2.1: the capacity must be settled while compiling. The initial
+      # value may be left out, in which case the storage is not written and the element type
+      # comes from the first assignment instead.
+      def infer_array_new_call(arguments, env:, self_class:, span:)
+        capacity = constant_capacity(arguments[0], env:, self_class:)
+        raise "Array.new: the capacity must be known at compile time" if capacity.nil?
+        return @tir.create_array_fill(nil, @tir.create_array_type(nil, capacity), span) if arguments.length < 2
+
+        value = infer_node(arguments[1], env:, self_class:)
+        @tir.create_array_fill(value, @tir.create_array_type(@tir.value_type(value), capacity), span)
+      end
+
+      def constant_capacity(node, env:, self_class:)
+        return nil if node.nil?
+        return @constant_locals[@bareruby_ast.children_of(node)[1]] if reference_to_local?(node)
+
+        constant_integer(infer_node(node, env:, self_class:))
+      end
+
+      def reference_to_local?(node)
+        @bareruby_ast.node_type(node) == :reference &&
+          @bareruby_ast.children_of(node)[0] == :local
       end
 
       def infer_string(node)
@@ -530,7 +626,9 @@ module BareRubyProt
           )
         elsif constant_receiver?(receiver) && name == :new
           class_name = @bareruby_ast.children_of(receiver)[1]
-          if PERIPHERALS.key?(class_name)
+          if class_name == :Array
+            infer_array_new_call(arguments, env:, self_class:, span:)
+          elsif PERIPHERALS.key?(class_name)
             infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
           else
             infer_new_call(class_name, arguments, env:, self_class:, span:)
@@ -539,7 +637,9 @@ module BareRubyProt
           receiver_tir = infer_node(receiver, env:, self_class:)
           receiver_type = @tir.value_type(receiver_tir)
 
-          if CONVERSIONS.key?(name)
+          if array_type?(receiver_type)
+            infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+          elsif CONVERSIONS.key?(name)
             infer_conversion_call(name, receiver_tir, receiver_type, span)
           elsif operator?(name)
             infer_operator_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
@@ -549,6 +649,36 @@ module BareRubyProt
             infer_instance_method_call(receiver_tir, receiver_type, name, arguments, env:, self_class:, span:)
           end
         end
+      end
+
+      def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
+
+      # size folds to the capacity because a fixed-capacity array can have no other length
+      # (LANGUAGE.md section 6.2.3). Indexing is pointer arithmetic and is not range
+      # checked, at compile time or at run time; a negative index is out of range like any
+      # other and is left alone.
+      def infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+        return @tir.create_array_dup(receiver_tir, receiver_type, span) if name == :dup
+
+        capacity = receiver_type[:capacity]
+        return @tir.create_integer(capacity, literal_type(capacity), span) if SIZE_NAMES.include?(name)
+
+        index = infer_node(arguments[0], env:, self_class:)
+        return infer_index_assign(receiver_tir, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
+
+        element_type = receiver_type[:element]
+        raise "the element type of this array is not known yet" if element_type.nil?
+
+        @tir.create_index(receiver_tir, index, element_type, span)
+      end
+
+      # Array.new(n) leaves the element type open, and the first assignment settles it
+      # (LANGUAGE.md section 6.2.2). The type hash is shared with every reference to the
+      # array, so filling it in here reaches all of them.
+      def infer_index_assign(receiver_tir, receiver_type, index, value_node, env:, self_class:, span:)
+        value = infer_node(value_node, env:, self_class:)
+        receiver_type[:element] ||= @tir.value_type(value)
+        @tir.create_index_assign(receiver_tir, index, value, receiver_type[:element], span)
       end
 
       def constant_receiver?(receiver)
@@ -607,6 +737,7 @@ module BareRubyProt
         constructor = peripheral[:constructor]
         argument_tirs = resolve_keywords(arguments, constructor[:keywords] || {}, env:, self_class:, span:)
         verify_gpio_direction(argument_tirs) if class_name == :GPIO
+        verify_adc_pin(argument_tirs) if class_name == :ADC
         instance_type = @tir.create_instance_type(class_name, peripheral[:struct])
         callee = @tir.create_callee(
           :binding_new, class_name, :new, constructor[:function],
@@ -626,6 +757,14 @@ module BareRubyProt
         return if directions == 1
 
         raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
+      end
+
+      # LANGUAGE.md section 8.6: pins without a converter channel are rejected while compiling.
+      def verify_adc_pin(argument_tirs)
+        pin = constant_integer(argument_tirs[0])
+        return if pin.nil? || ADC_CHANNEL_PINS.include?(pin)
+
+        raise "ADC.new: pin #{pin} has no converter channel (expected #{ADC_CHANNEL_PINS})"
       end
 
       def constant_integer(node)

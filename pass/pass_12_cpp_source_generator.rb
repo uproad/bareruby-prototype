@@ -42,41 +42,13 @@ module BareRubyProt
         #endif
       CPP
 
-      RUNTIME_STDIO_SOURCE = <<~CPP
+      # Fixed arithmetic is pure and has no stdout to depend on, so it is linked into every
+      # build. The rest of the runtime needs stdio and is only linked when a stdout channel
+      # exists, which is why the two are separate translation units.
+      RUNTIME_FIXED_SOURCE = <<~CPP
         #include "bareruby_runtime.h"
 
-        #include <stdarg.h>
-        #include <stdbool.h>
         #include <stdint.h>
-        #include <stdio.h>
-        #include <stdlib.h>
-
-        void bareruby_puts_int32(int32_t value) {
-            printf("%d\\n", (int)value);
-        }
-
-        void bareruby_puts_int64(int64_t value) {
-            printf("%lld\\n", (long long)value);
-        }
-
-        void bareruby_puts_string(const char *value) {
-            printf("%s\\n", value);
-        }
-
-        const char *bareruby_bool_to_s(bool value) {
-            return value ? "true" : "false";
-        }
-
-        void bareruby_puts_bool(bool value) {
-            printf("%s\\n", bareruby_bool_to_s(value));
-        }
-
-        void bareruby_printf(const char *format, ...) {
-            va_list arguments;
-            va_start(arguments, format);
-            vprintf(format, arguments);
-            va_end(arguments);
-        }
 
         /* Fixed is Q16.16 held in an int32_t. Narrowing saturates rather than wrapping,
            and the half LSB is added before the shift so rounding happens first. */
@@ -111,6 +83,55 @@ module BareRubyProt
             int64_t half = (int64_t)(right < 0 ? -right : right) / 2;
             numerator += (numerator < 0) ? -half : half;
             return bareruby_fixed_saturate(numerator / right);
+        }
+      CPP
+
+      # A throw expression pulls in the C++ ABI, and with it the terminate handler's name
+      # demangler and malloc: about 60 KB on an rp2040, whether or not anything throws.
+      # --gc-sections cannot reach it, so this is its own translation unit and is linked
+      # only into programs that actually raise.
+      RUNTIME_THROW_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        void bareruby_throw(const char *message) {
+            throw message;
+        }
+      CPP
+
+      RUNTIME_STDIO_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        #include <stdarg.h>
+        #include <stdbool.h>
+        #include <stdint.h>
+        #include <stdio.h>
+        #include <stdlib.h>
+
+        void bareruby_puts_int32(int32_t value) {
+            printf("%d\\n", (int)value);
+        }
+
+        void bareruby_puts_int64(int64_t value) {
+            printf("%lld\\n", (long long)value);
+        }
+
+        void bareruby_puts_string(const char *value) {
+            printf("%s\\n", value);
+        }
+
+        const char *bareruby_bool_to_s(bool value) {
+            return value ? "true" : "false";
+        }
+
+        void bareruby_puts_bool(bool value) {
+            printf("%s\\n", bareruby_bool_to_s(value));
+        }
+
+        void bareruby_printf(const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            vprintf(format, arguments);
+            va_end(arguments);
         }
 
         static const uint32_t BARERUBY_FIXED_POWERS[6] = { 1u, 10u, 100u, 1000u, 10000u, 100000u };
@@ -154,12 +175,6 @@ module BareRubyProt
             exit(1);
         }
 
-        /* Exceptions are one of the two things the generated code borrows from C++, so
-           the throw is confined here rather than spread through the output. */
-        void bareruby_throw(const char *message) {
-            throw message;
-        }
-
         /* The buffer is sized at compile time from the widest rendering of each part, so
            this never allocates and never grows. */
         void bareruby_format(char *buffer, int32_t capacity, const char *format, ...) {
@@ -198,6 +213,11 @@ module BareRubyProt
             int32_t parity;
         } bareruby_uart_t;
 
+        typedef struct {
+            int32_t pin;
+            int32_t channel;
+        } bareruby_adc_t;
+
         void bareruby_startup(void);
 
         void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
@@ -222,6 +242,10 @@ module BareRubyProt
         void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
         void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
 
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin);
+        int32_t bareruby_adc_read(bareruby_adc_t *self);
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self);
+
         void bareruby_machine_delay_us(int32_t microseconds);
         void bareruby_sleep(int32_t seconds);
         void bareruby_sleep_ms(int32_t milliseconds);
@@ -238,6 +262,7 @@ module BareRubyProt
 
         #include <stdarg.h>
         #include <stdio.h>
+        #include <stdlib.h>
         #include <string.h>
 
         void bareruby_startup(void) {
@@ -352,6 +377,22 @@ module BareRubyProt
             fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
         }
 
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+            self->pin = pin;
+            self->channel = pin - 26;
+            fprintf(stderr, "adc_init(pin=%d, channel=%d)\\n", (int)pin, (int)self->channel);
+        }
+
+        int32_t bareruby_adc_read(bareruby_adc_t *self) {
+            fprintf(stderr, "adc_read(pin=%d) -> 0\\n", (int)self->pin);
+            return 0;
+        }
+
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+            fprintf(stderr, "adc_read_raw(pin=%d) -> 0\\n", (int)self->pin);
+            return 0;
+        }
+
         void bareruby_machine_delay_us(int32_t microseconds) {
             fprintf(stderr, "machine_delay_us(microseconds=%d)\\n", (int)microseconds);
         }
@@ -372,6 +413,7 @@ module BareRubyProt
         #include <stdio.h>
         #include <string.h>
 
+        #include "hardware/adc.h"
         #include "hardware/clocks.h"
         #include "hardware/gpio.h"
         #include "hardware/pwm.h"
@@ -504,6 +546,23 @@ module BareRubyProt
             uart_tx_wait_blocking(bareruby_uart_port(self));
         }
 
+        void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+            self->pin = pin;
+            self->channel = pin - 26;
+            adc_init();
+            adc_gpio_init((uint)pin);
+        }
+
+        int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+            adc_select_input((uint)self->channel);
+            return (int32_t)adc_read();
+        }
+
+        int32_t bareruby_adc_read(bareruby_adc_t *self) {
+            int64_t raw = (int64_t)bareruby_adc_read_raw(self);
+            return (int32_t)((raw * 3300 * 65536) / (4095 * 1000));
+        }
+
         void bareruby_machine_delay_us(int32_t microseconds) {
             sleep_us((uint64_t)microseconds);
         }
@@ -516,20 +575,6 @@ module BareRubyProt
             sleep_ms((uint32_t)milliseconds);
         }
       CPP
-
-      HOSTED_MANIFEST = <<~MANIFEST
-        target = hosted
-        toolchain = g++
-        language_standard = gnu++20
-        compile_options = -std=gnu++20 -fno-rtti
-        include_directories = ..
-        sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
-        link_libraries =
-        stdout_channel = printf
-        exceptions = enabled
-        artifact = bareruby_program
-        build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_stdio.cpp
-      MANIFEST
 
       attr_reader :result, :stdout_notice
 
@@ -544,12 +589,14 @@ module BareRubyProt
         rp2040_program = program_source(:rp2040)
         @result = {
           "bareruby_runtime.h" => RUNTIME_HEADER,
+          "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
+          "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
           "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
           "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
           "bareruby_binding_rp2040.cpp" => BINDING_RP2040_SOURCE,
           "hosted/main.cpp" => program_source(:hosted),
-          "hosted/manifest.txt" => HOSTED_MANIFEST,
+          "hosted/manifest.txt" => hosted_manifest,
           "rp2040/main.cpp" => rp2040_program,
           "rp2040/manifest.txt" => rp2040_manifest,
           "rp2040/CMakeLists.txt" => cmake_lists
@@ -558,9 +605,46 @@ module BareRubyProt
         self
       end
 
+      def hosted_sources
+        sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
+                   "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_throw.cpp" if throws?
+        sources
+      end
+
+      def hosted_manifest
+        <<~MANIFEST
+          target = hosted
+          toolchain = g++
+          language_standard = gnu++20
+          compile_options = -std=gnu++20 -fno-rtti
+          include_directories = ..
+          sources = #{hosted_sources.join(' ')}
+          link_libraries =
+          stdout_channel = printf
+          exceptions = enabled
+          artifact = bareruby_program
+          build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program #{hosted_sources.join(' ')}
+        MANIFEST
+      end
+
+      # Only a program that raises needs the throw translation unit linked.
+      def throws?
+        @lir.functions.any? { |function| calls_throw?(@lir.children_of(function)[3]) }
+      end
+
+      def calls_throw?(value)
+        return value.any? { |element| calls_throw?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :call && value[:children][0] == :bareruby_throw
+
+        calls_throw?(value[:children])
+      end
+
       def rp2040_sources
-        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp"]
-        sources << "../bareruby_runtime_stdio.cpp" if @debug
+        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
+                   "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
 
@@ -572,7 +656,7 @@ module BareRubyProt
           compile_options = -std=gnu++20 -fno-rtti
           include_directories = ..
           sources = #{rp2040_sources.join(' ')}
-          link_libraries = pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks
+          link_libraries = pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_clocks
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
           exceptions = #{@exceptions ? 'enabled' : 'disabled'}
@@ -603,7 +687,7 @@ module BareRubyProt
 
           target_include_directories(bareruby_program PRIVATE ..)
           target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
-          target_link_libraries(bareruby_program pico_stdlib hardware_gpio hardware_pwm hardware_uart hardware_clocks)
+          target_link_libraries(bareruby_program pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_clocks)
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
         CMAKE
@@ -637,9 +721,11 @@ module BareRubyProt
         sections.join("\n")
       end
 
-      def include_text(target)
-        lines = ["#include <stdbool.h>", "#include <stdint.h>", "", "#include \"bareruby_binding.h\""]
-        lines << "#include \"bareruby_runtime.h\"" if stdout_enabled?(target)
+      # The runtime header is always included: Fixed arithmetic is declared there and is
+      # needed whether or not the build has a stdout channel.
+      def include_text(_target)
+        lines = ["#include <stdbool.h>", "#include <stdint.h>", "",
+                 "#include \"bareruby_binding.h\"", "#include \"bareruby_runtime.h\""]
         "#{lines.join("\n")}\n"
       end
 
@@ -765,6 +851,9 @@ module BareRubyProt
           "#{expression_text(base)}#{separator}#{name}"
         when :address_of
           "&#{expression_text(@lir.children_of(node)[0])}"
+        when :index
+          base, index, = @lir.children_of(node)
+          "#{expression_text(base)}[#{expression_text(index)}]"
         when :binary
           operator, left, right, = @lir.children_of(node)
           "(#{expression_text(left)} #{operator} #{expression_text(right)})"
@@ -780,8 +869,13 @@ module BareRubyProt
       def pointer_type?(type) = type.is_a?(Hash) && type[:kind] == :pointer
 
       def declaration_text(type, name)
-        pointer_type?(type) ? "#{type_text(type[:target])} *#{name}" : "#{type_text(type)} #{name}"
+        return "#{type_text(type[:target])} *#{name}" if pointer_type?(type)
+        return "#{type_text(type[:element])} #{name}[#{type[:capacity]}]" if c_array_type?(type)
+
+        "#{type_text(type)} #{name}"
       end
+
+      def c_array_type?(type) = type.is_a?(Hash) && type[:kind] == :c_array
 
       ESCAPES = { "\\" => "\\\\", '"' => '\\"', "\n" => "\\n", "\t" => "\\t", "\r" => "\\r" }.freeze
 

@@ -39,8 +39,40 @@ module BareRubyProt
         when :while_true then fold_while_true(node)
         when :for_range then fold_for_range(node)
         when :logical then fold_logical(node)
+        when :array then fold_array(node)
+        when :array_fill then fold_array_fill(node)
+        when :array_dup then fold_array_dup(node)
+        when :index then fold_index(node)
+        when :index_assign then fold_index_assign(node)
         else node
         end
+      end
+
+      def fold_array(node)
+        elements, type = @tir.children_of(node)
+        @tir.create_array(elements.map { |element| fold_node(element) }, type, span_of(node))
+      end
+
+      def fold_array_fill(node)
+        value, type = @tir.children_of(node)
+        @tir.create_array_fill(value && fold_node(value), type, span_of(node))
+      end
+
+      def fold_array_dup(node)
+        receiver, type = @tir.children_of(node)
+        @tir.create_array_dup(fold_node(receiver), type, span_of(node))
+      end
+
+      def fold_index(node)
+        receiver, index, type = @tir.children_of(node)
+        @tir.create_index(fold_node(receiver), fold_node(index), type, span_of(node))
+      end
+
+      def fold_index_assign(node)
+        receiver, index, value, type = @tir.children_of(node)
+        @tir.create_index_assign(
+          fold_node(receiver), fold_node(index), fold_node(value), type, span_of(node)
+        )
       end
 
       def fold_class_definition(node)
