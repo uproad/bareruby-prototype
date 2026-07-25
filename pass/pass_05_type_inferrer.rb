@@ -16,6 +16,25 @@ module BareRubyProt
         Int64: (-(2**63)..(2**63 - 1))
       }.freeze
 
+      PERIPHERAL_CLASSES = {
+        GPIO: {
+          struct: :bareruby_gpio_t,
+          constants: { IN: 0, OUT: 1, HIGH_Z: 2, PULL_UP: 4, PULL_DOWN: 8, OPEN_DRAIN: 16 },
+          constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
+          methods: {
+            write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
+            read: { function: :bareruby_gpio_read, parameter_types: [], return_type: :Int32 },
+            high?: { function: :bareruby_gpio_high, parameter_types: [], return_type: :Bool },
+            low?: { function: :bareruby_gpio_low, parameter_types: [], return_type: :Bool }
+          }
+        }
+      }.freeze
+
+      PERIPHERAL_FUNCTIONS = {
+        sleep: { function: :bareruby_sleep, parameter_types: %i[Int32], return_type: :Nil },
+        sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32], return_type: :Nil }
+      }.freeze
+
       ClassInfo = Struct.new(:superclass, :methods, :ivars)
       MethodInfo = Struct.new(
         :owner, :name, :parameters, :body,
@@ -136,6 +155,7 @@ module BareRubyProt
       def infer_node(node, env:, self_class:)
         case @bareruby_ast.node_type(node)
         when :integer then infer_integer(node)
+        when :constant_path then infer_constant_path(node)
         when :reference then infer_reference(node, env:, self_class:)
         when :assignment then infer_assignment(node, env:, self_class:)
         when :call then infer_call(node, env:, self_class:)
@@ -146,6 +166,12 @@ module BareRubyProt
 
       def infer_integer(node)
         value = @bareruby_ast.children_of(node)[0]
+        @tir.create_integer(value, literal_type(value), span_of(node))
+      end
+
+      def infer_constant_path(node)
+        owner, name = @bareruby_ast.children_of(node)
+        value = PERIPHERAL_CLASSES.fetch(owner)[:constants].fetch(name)
         @tir.create_integer(value, literal_type(value), span_of(node))
       end
 
@@ -198,10 +224,20 @@ module BareRubyProt
           case name
           when :puts then infer_puts_call(arguments, env:, self_class:, span:)
           when :loop then infer_loop_call(block, env:, self_class:, span:)
-          else infer_self_method_call(name, arguments, env:, self_class:, span:)
+          else
+            if PERIPHERAL_FUNCTIONS.key?(name)
+              infer_binding_function_call(name, arguments, env:, self_class:, span:)
+            else
+              infer_self_method_call(name, arguments, env:, self_class:, span:)
+            end
           end
         elsif constant_receiver?(receiver) && name == :new
-          infer_new_call(@bareruby_ast.children_of(receiver)[1], arguments, env:, self_class:, span:)
+          class_name = @bareruby_ast.children_of(receiver)[1]
+          if PERIPHERAL_CLASSES.key?(class_name)
+            infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
+          else
+            infer_new_call(class_name, arguments, env:, self_class:, span:)
+          end
         else
           receiver_tir = infer_node(receiver, env:, self_class:)
           receiver_type = @tir.value_type(receiver_tir)
@@ -224,14 +260,25 @@ module BareRubyProt
       def infer_self_method_call(name, arguments, env:, self_class:, span:)
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         resolved = resolve_method_call(find_method(self_class, name), argument_types(argument_tirs))
-        callee = @tir.create_callee(:user_method, resolved.owner, name, resolved.parameter_types, resolved.return_type)
+        callee = @tir.create_callee(
+          :user_method, resolved.owner, name, function_name(resolved.owner, name),
+          resolved.parameter_types, resolved.return_type
+        )
         @tir.create_call(nil, callee, argument_tirs, nil, resolved.return_type, span)
       end
 
       def infer_instance_method_call(receiver_tir, receiver_type, name, arguments, env:, self_class:, span:)
+        class_name = receiver_type[:class_name]
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        resolved = resolve_method_call(find_method(receiver_type[:class_name], name), argument_types(argument_tirs))
-        callee = @tir.create_callee(:user_method, resolved.owner, name, resolved.parameter_types, resolved.return_type)
+        if PERIPHERAL_CLASSES.key?(class_name)
+          return infer_binding_method_call(receiver_tir, class_name, name, argument_tirs, span)
+        end
+
+        resolved = resolve_method_call(find_method(class_name, name), argument_types(argument_tirs))
+        callee = @tir.create_callee(
+          :user_method, resolved.owner, name, function_name(resolved.owner, name),
+          resolved.parameter_types, resolved.return_type
+        )
         @tir.create_call(receiver_tir, callee, argument_tirs, nil, resolved.return_type, span)
       end
 
@@ -240,9 +287,43 @@ module BareRubyProt
         types = argument_types(argument_tirs)
         resolve_method_call(find_method(class_name, :initialize), types)
         instance_type = @tir.create_instance_type(class_name)
-        callee = @tir.create_callee(:new, class_name, :new, types, instance_type)
+        callee = @tir.create_callee(
+          :new, class_name, :new, function_name(class_name, :initialize), types, instance_type
+        )
         @tir.create_call(nil, callee, argument_tirs, nil, instance_type, span)
       end
+
+      def infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
+        peripheral = PERIPHERAL_CLASSES.fetch(class_name)
+        argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        instance_type = @tir.create_instance_type(class_name, peripheral[:struct])
+        callee = @tir.create_callee(
+          :binding_new, class_name, :new, peripheral[:constructor][:function],
+          peripheral[:constructor][:parameter_types], instance_type
+        )
+        @tir.create_call(nil, callee, argument_tirs, nil, instance_type, span)
+      end
+
+      def infer_binding_method_call(receiver_tir, class_name, name, argument_tirs, span)
+        signature = PERIPHERAL_CLASSES.fetch(class_name)[:methods].fetch(name)
+        callee = @tir.create_callee(
+          :binding_method, class_name, name, signature[:function],
+          signature[:parameter_types], signature[:return_type]
+        )
+        @tir.create_call(receiver_tir, callee, argument_tirs, nil, signature[:return_type], span)
+      end
+
+      def infer_binding_function_call(name, arguments, env:, self_class:, span:)
+        signature = PERIPHERAL_FUNCTIONS.fetch(name)
+        argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        callee = @tir.create_callee(
+          :binding_function, nil, name, signature[:function],
+          signature[:parameter_types], signature[:return_type]
+        )
+        @tir.create_call(nil, callee, argument_tirs, nil, signature[:return_type], span)
+      end
+
+      def function_name(owner, name) = :"#{owner}_#{name}"
 
       def infer_operator_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
@@ -252,7 +333,7 @@ module BareRubyProt
           else
             widen(receiver_type, @tir.value_type(argument_tirs.first))
           end
-        callee = @tir.create_callee(:builtin_operator, nil, name, argument_types(argument_tirs), result_type)
+        callee = @tir.create_callee(:builtin_operator, nil, name, nil, argument_types(argument_tirs), result_type)
         @tir.create_call(receiver_tir, callee, argument_tirs, nil, result_type, span)
       end
 
@@ -260,19 +341,19 @@ module BareRubyProt
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         element_type = name == :upto ? widen(receiver_type, @tir.value_type(argument_tirs.first)) : receiver_type
         block_tir = block && infer_iterator_block(block, element_type, env:, self_class:)
-        callee = @tir.create_callee(:builtin_iterator, nil, name, argument_types(argument_tirs), :Nil)
+        callee = @tir.create_callee(:builtin_iterator, nil, name, nil, argument_types(argument_tirs), :Nil)
         @tir.create_call(receiver_tir, callee, argument_tirs, block_tir, :Nil, span)
       end
 
       def infer_loop_call(block, env:, self_class:, span:)
         block_tir = block && infer_iterator_block(block, nil, env:, self_class:)
-        callee = @tir.create_callee(:builtin_iterator, nil, :loop, [], :Nil)
+        callee = @tir.create_callee(:builtin_iterator, nil, :loop, nil, [], :Nil)
         @tir.create_call(nil, callee, [], block_tir, :Nil, span)
       end
 
       def infer_puts_call(arguments, env:, self_class:, span:)
         argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        callee = @tir.create_callee(:builtin_puts, nil, :puts, argument_types(argument_tirs), :Nil)
+        callee = @tir.create_callee(:builtin_puts, nil, :puts, puts_function(argument_tirs), argument_types(argument_tirs), :Nil)
         @tir.create_call(nil, callee, argument_tirs, nil, :Nil, span)
       end
 
@@ -291,6 +372,10 @@ module BareRubyProt
       end
 
       def argument_types(argument_tirs) = argument_tirs.map { |argument| @tir.value_type(argument) }
+
+      def puts_function(argument_tirs)
+        @tir.value_type(argument_tirs.first) == :Int64 ? :bareruby_puts_int64 : :bareruby_puts_int32
+      end
 
       def literal_type(value)
         width = INTEGER_WIDTHS.find { |candidate| INTEGER_RANGES.fetch(candidate).cover?(value) }

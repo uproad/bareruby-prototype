@@ -155,9 +155,9 @@ module BareRubyProt
         receiver, callee, arguments, _block, type = @tir.children_of(node)
         case callee[:kind]
         when :builtin_operator then lower_operator(receiver, callee, arguments, type)
-        when :builtin_puts then lower_puts(arguments)
-        when :new then lower_new(callee, arguments)
-        when :user_method then lower_user_method(receiver, callee, arguments)
+        when :builtin_puts, :binding_function then lower_function_call(callee, arguments)
+        when :new, :binding_new then lower_constructor(callee, arguments, type)
+        when :user_method, :binding_method then lower_method_call(receiver, callee, arguments)
         end
       end
 
@@ -171,19 +171,17 @@ module BareRubyProt
          @lir.create_binary(operator, receiver_expression, argument_expressions.first, lir_type(type))]
       end
 
-      def lower_puts(arguments)
+      def lower_function_call(callee, arguments)
         statements, expressions = lower_arguments(arguments)
-        name = @lir.value_type(expressions.first) == :int64 ? :bareruby_puts_int64 : :bareruby_puts_int32
-        [statements, @lir.create_call(name, expressions, :void)]
+        [statements, @lir.create_call(callee[:function], expressions, lir_type(callee[:return_type]))]
       end
 
-      def lower_new(callee, arguments)
-        class_name = callee[:owner]
-        struct = @lir.struct_type(class_name)
+      def lower_constructor(callee, arguments, type)
+        struct = lir_type(type)
         instance_name = next_temp
         argument_statements, argument_expressions = lower_arguments(arguments)
         initializer = @lir.create_call(
-          function_name(class_name, :initialize),
+          callee[:function],
           [@lir.create_address_of(@lir.create_local(instance_name, struct))] + argument_expressions,
           :void
         )
@@ -193,17 +191,13 @@ module BareRubyProt
         [statements, @lir.create_local(instance_name, struct)]
       end
 
-      def lower_user_method(receiver, callee, arguments)
+      def lower_method_call(receiver, callee, arguments)
         receiver_statements, receiver_expression = receiver ? lower_expression(receiver) : [[], nil]
         self_argument = receiver_expression ? @lir.create_address_of(receiver_expression) : @lir.create_self_pointer(@self_type)
         argument_statements, argument_expressions = lower_arguments(arguments)
 
         [receiver_statements + argument_statements,
-         @lir.create_call(
-           function_name(callee[:owner], callee[:name]),
-           [self_argument] + argument_expressions,
-           lir_type(callee[:return_type])
-         )]
+         @lir.create_call(callee[:function], [self_argument] + argument_expressions, lir_type(callee[:return_type]))]
       end
 
       def lower_arguments(arguments)
@@ -228,7 +222,8 @@ module BareRubyProt
         case type
         when :Int8, :Int16, :Int32 then :int32
         when :Int64 then :int64
-        when Hash then @lir.struct_type(type[:class_name])
+        when :Bool then :bool
+        when Hash then @lir.struct_type(type[:struct] || type[:class_name])
         else :void
         end
       end

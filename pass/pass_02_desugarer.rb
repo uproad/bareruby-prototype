@@ -18,7 +18,7 @@ module BareRubyProt
 
       def desugar_node(node)
         case @bareruby_ast.node_type(node)
-        when :integer, :reference, :parameter, :iteration_control
+        when :integer, :reference, :constant_path, :parameter, :iteration_control
           node
         when :assignment
           desugar_assignment(node)

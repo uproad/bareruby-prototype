@@ -21,7 +21,7 @@ module BareRubyProt
 
       def preevaluate_node(node)
         case @bareruby_ast.node_type(node)
-        when :integer, :reference, :parameter, :iteration_control
+        when :integer, :reference, :constant_path, :parameter, :iteration_control
           node
         when :assignment
           preevaluate_assignment(node)

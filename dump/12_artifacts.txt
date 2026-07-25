@@ -1,0 +1,259 @@
+=== boundary: 12_artifacts / schema: ARTIFACTS / version: 1 ===
+--- file: bareruby_runtime.h ---
+#ifndef BARERUBY_RUNTIME_H
+#define BARERUBY_RUNTIME_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void bareruby_puts_int32(int32_t value);
+void bareruby_puts_int64(int64_t value);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+--- file: bareruby_runtime_hosted.cpp ---
+#include "bareruby_runtime.h"
+
+#include <stdio.h>
+
+void bareruby_puts_int32(int32_t value) {
+    printf("%d\n", (int)value);
+}
+
+void bareruby_puts_int64(int64_t value) {
+    printf("%lld\n", (long long)value);
+}
+
+--- file: bareruby_binding.h ---
+#ifndef BARERUBY_BINDING_H
+#define BARERUBY_BINDING_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    int32_t pin;
+    int32_t params;
+} bareruby_gpio_t;
+
+void bareruby_startup(void);
+
+void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
+void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value);
+int32_t bareruby_gpio_read(bareruby_gpio_t *self);
+bool bareruby_gpio_high(bareruby_gpio_t *self);
+bool bareruby_gpio_low(bareruby_gpio_t *self);
+
+void bareruby_sleep(int32_t seconds);
+void bareruby_sleep_ms(int32_t milliseconds);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+--- file: bareruby_binding_host.cpp ---
+#include "bareruby_binding.h"
+
+#include <stdio.h>
+
+void bareruby_startup(void) {
+    fprintf(stderr, "startup()\n");
+}
+
+void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
+    self->pin = pin;
+    self->params = params;
+    fprintf(stderr, "gpio_init(pin=%d, params=%d)\n", (int)pin, (int)params);
+}
+
+void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+    fprintf(stderr, "gpio_write(pin=%d, value=%d)\n", (int)self->pin, (int)value);
+}
+
+int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
+    fprintf(stderr, "gpio_read(pin=%d) -> 0\n", (int)self->pin);
+    return 0;
+}
+
+bool bareruby_gpio_high(bareruby_gpio_t *self) {
+    fprintf(stderr, "gpio_high(pin=%d) -> false\n", (int)self->pin);
+    return false;
+}
+
+bool bareruby_gpio_low(bareruby_gpio_t *self) {
+    fprintf(stderr, "gpio_low(pin=%d) -> true\n", (int)self->pin);
+    return true;
+}
+
+void bareruby_sleep(int32_t seconds) {
+    fprintf(stderr, "sleep(seconds=%d)\n", (int)seconds);
+}
+
+void bareruby_sleep_ms(int32_t milliseconds) {
+    fprintf(stderr, "sleep_ms(milliseconds=%d)\n", (int)milliseconds);
+}
+
+--- file: bareruby_binding_rp2040.cpp ---
+#include "bareruby_binding.h"
+
+#include "hardware/gpio.h"
+#include "pico/stdlib.h"
+
+void bareruby_startup(void) {
+}
+
+void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
+    self->pin = pin;
+    self->params = params;
+    gpio_init((uint)pin);
+    gpio_set_dir((uint)pin, (params & 1) ? GPIO_OUT : GPIO_IN);
+    if (params & 4) {
+        gpio_pull_up((uint)pin);
+    }
+    if (params & 8) {
+        gpio_pull_down((uint)pin);
+    }
+}
+
+void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+    gpio_put((uint)self->pin, value != 0);
+}
+
+int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
+    return gpio_get((uint)self->pin) ? 1 : 0;
+}
+
+bool bareruby_gpio_high(bareruby_gpio_t *self) {
+    return gpio_get((uint)self->pin);
+}
+
+bool bareruby_gpio_low(bareruby_gpio_t *self) {
+    return !gpio_get((uint)self->pin);
+}
+
+void bareruby_sleep(int32_t seconds) {
+    sleep_ms((uint32_t)seconds * 1000u);
+}
+
+void bareruby_sleep_ms(int32_t milliseconds) {
+    sleep_ms((uint32_t)milliseconds);
+}
+
+--- file: hosted/main.cpp ---
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "bareruby_binding.h"
+#include "bareruby_runtime.h"
+
+static void bareruby_main(void);
+
+static void bareruby_main(void) {
+    bareruby_gpio_t temporary_1;
+    bareruby_gpio_init(&temporary_1, 25, 1);
+    bareruby_gpio_t led = temporary_1;
+    while (true) {
+        bareruby_gpio_write(&led, 1);
+        bareruby_sleep_ms(500);
+        bareruby_gpio_write(&led, 0);
+        bareruby_sleep_ms(500);
+    }
+}
+
+int main(void) {
+    bareruby_main();
+    return 0;
+}
+
+--- file: hosted/manifest.txt ---
+target = hosted
+toolchain = g++
+language_standard = gnu++20
+compile_options = -std=gnu++20 -fno-rtti
+include_directories = ..
+sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+link_libraries =
+stdout_channel = printf
+exceptions = enabled
+artifact = bareruby_program
+build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+
+--- file: rp2040/main.cpp ---
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "bareruby_binding.h"
+
+static void bareruby_main(void);
+
+static void bareruby_main(void) {
+    bareruby_gpio_t temporary_1;
+    bareruby_gpio_init(&temporary_1, 25, 1);
+    bareruby_gpio_t led = temporary_1;
+    while (true) {
+        bareruby_gpio_write(&led, 1);
+        bareruby_sleep_ms(500);
+        bareruby_gpio_write(&led, 0);
+        bareruby_sleep_ms(500);
+    }
+}
+
+int main(void) {
+    bareruby_startup();
+    bareruby_main();
+    for (;;) {
+        bareruby_sleep_ms(1000);
+    }
+}
+
+--- file: rp2040/manifest.txt ---
+target = freestanding-rp2040
+toolchain = arm-none-eabi-g++
+language_standard = gnu++20
+compile_options = -std=gnu++20 -fno-rtti
+include_directories = ..
+sources = main.cpp ../bareruby_binding_rp2040.cpp
+link_libraries = pico_stdlib hardware_gpio
+stdout_channel = none
+exceptions = enabled
+artifact = bareruby_program.uf2
+build_command = cmake -B build -S . && cmake --build build
+
+--- file: rp2040/CMakeLists.txt ---
+cmake_minimum_required(VERSION 3.13)
+
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+project(bareruby_program C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
+
+pico_sdk_init()
+
+add_executable(bareruby_program
+    main.cpp
+    ../bareruby_binding_rp2040.cpp
+)
+
+target_include_directories(bareruby_program PRIVATE ..)
+target_compile_options(bareruby_program PRIVATE -fno-rtti)
+target_link_libraries(bareruby_program pico_stdlib hardware_gpio)
+
+pico_enable_stdio_usb(bareruby_program 0)
+pico_enable_stdio_uart(bareruby_program 0)
+
+pico_add_extra_outputs(bareruby_program)
+

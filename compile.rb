@@ -19,7 +19,9 @@ module BareRubyProt
   class Compiler
     DUMP_DIRECTORY = File.expand_path("dump", __dir__)
     BUILD_DIRECTORY = File.expand_path("build", __dir__)
-    SOURCE_SCHEMA = "CPP"
+    ARTIFACT_SCHEMA = "ARTIFACTS"
+    STDOUT_NOTICE = "notice: puts is not emitted in the freestanding build (stdout_channel = none). " \
+                    "Enable a stdout channel to observe it."
     SCHEMAS = {
       BareRubyAST::SCHEMA => BareRubyAST,
       TIR::SCHEMA => TIR,
@@ -32,6 +34,7 @@ module BareRubyProt
 
     def run
       FileUtils.mkdir_p(DUMP_DIRECTORY)
+      FileUtils.rm_rf(BUILD_DIRECTORY)
       FileUtils.mkdir_p(BUILD_DIRECTORY)
 
       result = pass_01
@@ -55,12 +58,21 @@ module BareRubyProt
       result = pass_09(result)
       result = boundary("09_low_ir", result)
 
-      result = pass_12(result)
-      result = source_boundary("12_cpp_source", result)
+      generator = pass_12(result)
+      warn STDOUT_NOTICE if generator.stdout_notice
+      artifacts = artifact_boundary("12_artifacts", generator.result)
 
-      File.write(File.join(BUILD_DIRECTORY, "main.cpp"), result)
+      write_artifacts(artifacts)
 
       0
+    end
+
+    def write_artifacts(artifacts)
+      artifacts.each do |relative_path, content|
+        path = File.join(BUILD_DIRECTORY, relative_path)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, content)
+      end
     end
 
     def pass_01 = Pass::BareRubyAstGenerator.new(@source_file_name).run.result
@@ -77,7 +89,7 @@ module BareRubyProt
 
     def pass_09(typed_ir) = Pass::LirGenerator.new(typed_ir).run.result
 
-    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir).run.result
+    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir).run
 
     def boundary(name, representation)
       write_binary_dump(name, representation.class::SCHEMA, representation.dump_payload)
@@ -85,10 +97,14 @@ module BareRubyProt
       restore(name)
     end
 
-    def source_boundary(name, source_text)
-      write_binary_dump(name, SOURCE_SCHEMA, source_text)
-      write_inspector_dump(name, SOURCE_SCHEMA, "#{name}.cpp", source_text, "// ")
+    def artifact_boundary(name, artifacts)
+      write_binary_dump(name, ARTIFACT_SCHEMA, artifacts)
+      write_inspector_dump(name, ARTIFACT_SCHEMA, "#{name}.txt", artifact_inspector_text(artifacts))
       restore(name)
+    end
+
+    def artifact_inspector_text(artifacts)
+      artifacts.map { |path, content| "--- file: #{path} ---\n#{content}" }.join("\n")
     end
 
     def write_binary_dump(name, schema, payload)
@@ -103,7 +119,7 @@ module BareRubyProt
 
     def restore(name)
       envelope = Marshal.load(File.binread(File.join(DUMP_DIRECTORY, "#{name}.bin")))
-      return envelope[:payload] if envelope[:schema] == SOURCE_SCHEMA
+      return envelope[:payload] if envelope[:schema] == ARTIFACT_SCHEMA
 
       SCHEMAS.fetch(envelope[:schema]).restore(envelope[:payload])
     end

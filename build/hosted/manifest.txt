@@ -1,0 +1,11 @@
+target = hosted
+toolchain = g++
+language_standard = gnu++20
+compile_options = -std=gnu++20 -fno-rtti
+include_directories = ..
+sources = main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp
+link_libraries =
+stdout_channel = printf
+exceptions = enabled
+artifact = bareruby_program
+build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_hosted.cpp

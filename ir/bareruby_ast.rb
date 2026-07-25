@@ -36,6 +36,8 @@ module BareRubyProt
 
     def create_reference(kind, name, span) = build(:reference, [kind, name], span)
 
+    def create_constant_path(owner, name, span) = build(:constant_path, [owner, name], span)
+
     def create_assignment(target, value, span) = build(:assignment, [target, value], span)
 
     def create_compound_assignment(target, operator, value, span)
@@ -122,6 +124,9 @@ module BareRubyProt
       when :reference
         kind, name = node[:children]
         "reference(#{kind.inspect}, #{name.inspect})"
+      when :constant_path
+        owner, name = node[:children]
+        "constant_path(#{owner.inspect}, #{name.inspect})"
       when :parameter
         "parameter(#{node[:children][0].inspect})"
       when :assignment

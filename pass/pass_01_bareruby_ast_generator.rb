@@ -33,6 +33,8 @@ module BareRubyProt
           @result.create_reference(:instance, node.name, span_of(node))
         when Prism::ConstantReadNode
           @result.create_reference(:constant, node.name, span_of(node))
+        when Prism::ConstantPathNode
+          @result.create_constant_path(node.parent.name, node.name, span_of(node))
         when Prism::LocalVariableWriteNode
           create_assignment(:local, node)
         when Prism::InstanceVariableWriteNode

@@ -24,14 +24,14 @@ module BareRubyProt
 
     def create_binding(kind, name) = { kind:, name: }
 
-    def create_instance_type(class_name) = { kind: :instance, class_name: }
+    def create_instance_type(class_name, struct = nil) = { kind: :instance, class_name:, struct: }
 
     def create_identity(owner, name, parameter_types, return_type)
       { owner:, name:, parameter_types:, return_type: }
     end
 
-    def create_callee(kind, owner, name, parameter_types, return_type)
-      { kind:, owner:, name:, parameter_types:, return_type: }
+    def create_callee(kind, owner, name, function, parameter_types, return_type)
+      { kind:, owner:, name:, function:, parameter_types:, return_type: }
     end
 
     def create_integer(value, type, span) = build(:integer, [value, type], span)
