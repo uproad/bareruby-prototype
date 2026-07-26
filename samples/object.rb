@@ -5,11 +5,10 @@ class Counter
 
   def bump
     @value = @value + 1
-    return
   end
 
   def value
-    return @value
+    @value
   end
 end
 
@@ -20,7 +19,6 @@ class Loader
       counter.bump
       i = i + 1
     end
-    return
   end
 end
 
@@ -33,15 +31,14 @@ class Tally
   def record
     @counter.bump
     @calls = @calls + 1
-    return
   end
 
   def counter
-    return @counter
+    @counter
   end
 
   def calls
-    return @calls
+    @calls
   end
 end
 
@@ -52,17 +49,16 @@ class Pair
   end
 
   def left
-    return @left
+    @left
   end
 
   def right
-    return @right
+    @right
   end
 
   def bump_both
     @left.bump
     @right.bump
-    return
   end
 end
 
