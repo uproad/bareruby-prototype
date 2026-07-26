@@ -84,20 +84,23 @@ and the binding sets the wrap to `1000000 / frequency - 1`, so at 100 kHz the to
 a percentage can only reach ten levels. At 5 kHz it is 199, which is every percent, and
 still far above flicker fusion. Four objects carry the program, divided by mechanism
 rather than by data: `PeakToPeakDetector` owns a converter and answers with the peak to
-peak of the last 30 ms, `Led` owns a PWM slice and takes a brightness in percent,
-`AudioVisualizer` holds one of each and decides what a span is worth in brightness, and
-`Heartbeat` blinks GP25. Input, policy and output change for different reasons — the
-window scheme, the mapping, the output device — and PWM is the last of those, a detail the
-other two never see. Detecting the peak to peak stays one class for the same test read the
-other way: splitting the frame's extremes and the ring back out of it yields classes too
-small to be read apart, and a min/max abstraction shared between the frame and the fold
-has to carry an emptiness flag and a branch per sample that only one of its two uses
+peak of the last 30 ms, `AudioVisualizer` turns a span into a brightness in percent and
+holds nothing else, `Led` owns a PWM slice and takes that brightness, and `Heartbeat`
+blinks GP25. None of them holds another. The loop is what joins them — it takes a span
+from a detector, passes it to the visualizer and hands the answer to an LED — which is
+the work a controller exists to do, and one visualizer serves all three channels because
+a policy has no per-channel state. Input, policy and output change for different reasons:
+the window scheme, the mapping, the output device. PWM is the last of those, a detail the
+other two never see. Detecting the peak to peak stays one class for the same test read
+the other way — splitting the frame's extremes and the ring back out of it yields classes
+too small to be read apart, and a min/max abstraction shared between the frame and the
+fold has to carry an emptiness flag and a branch per sample that only one of its two uses
 needs. Against synthetic input at 40 kHz, a full-swing 1 kHz sine holds duty 99, a
 100-count 8 kHz sine holds 4, and a 500-count 50 Hz sine reads 12 for two frames and then
 24 — 30 ms is one and a half periods of 50 Hz, and the first two frames hold part of one.
-`text` is 15276 B, and the per-sample path inlines to a conversion plus seven instructions
-per channel, roughly a quarter of the 25 µs; the delegation from the visualizer to the
-detector is inlined away and costs nothing.
+`text` is 15148 B, and the per-sample path inlines to a conversion plus seven instructions
+per channel, roughly a quarter of the 25 µs; every call between the four objects is
+inlined away and costs nothing.
 
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what

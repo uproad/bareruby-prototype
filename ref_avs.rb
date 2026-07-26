@@ -44,6 +44,18 @@ class PeakToPeakDetector
   end
 end
 
+class AudioVisualizer
+  def initialize(full_swing)
+    @full_swing = full_swing
+  end
+
+  def brightness_for(span)
+    percent = span * 100 / @full_swing
+    percent = 100 if percent > 100
+    return percent
+  end
+end
+
 class Led
   def initialize(pin, frequency)
     @pwm = PWM.new(pin, frequency: frequency, duty: 0)
@@ -51,27 +63,6 @@ class Led
 
   def brightness=(percent)
     @pwm.duty(percent)
-    return
-  end
-end
-
-class AudioVisualizer
-  def initialize(detector, led, full_swing)
-    @detector = detector
-    @led = led
-    @full_swing = full_swing
-  end
-
-  def measure
-    @detector.measure
-    return
-  end
-
-  def refresh
-    @detector.advance
-    percent = @detector.span * 100 / @full_swing
-    percent = 100 if percent > 100
-    @led.brightness = percent
     return
   end
 end
@@ -100,25 +91,36 @@ frame_samples = 200
 led_frequency = 5000
 full_swing = 4095
 
-visualizer26 = AudioVisualizer.new(PeakToPeakDetector.new(26), Led.new(6, led_frequency), full_swing)
-visualizer27 = AudioVisualizer.new(PeakToPeakDetector.new(27), Led.new(7, led_frequency), full_swing)
-visualizer28 = AudioVisualizer.new(PeakToPeakDetector.new(28), Led.new(8, led_frequency), full_swing)
+detector26 = PeakToPeakDetector.new(26)
+detector27 = PeakToPeakDetector.new(27)
+detector28 = PeakToPeakDetector.new(28)
 
+led6 = Led.new(6, led_frequency)
+led7 = Led.new(7, led_frequency)
+led8 = Led.new(8, led_frequency)
+
+visualizer = AudioVisualizer.new(full_swing)
 heartbeat = Heartbeat.new(25, 1000000 / sample_period_us)
 
 taken = 0
 
 loop do
-  visualizer26.measure
-  visualizer27.measure
-  visualizer28.measure
+  detector26.measure
+  detector27.measure
+  detector28.measure
 
   taken = taken + 1
   if taken >= frame_samples
     taken = 0
-    visualizer26.refresh
-    visualizer27.refresh
-    visualizer28.refresh
+
+    detector26.advance
+    led6.brightness = visualizer.brightness_for(detector26.span)
+
+    detector27.advance
+    led7.brightness = visualizer.brightness_for(detector27.span)
+
+    detector28.advance
+    led8.brightness = visualizer.brightness_for(detector28.span)
   end
 
   heartbeat.tick
