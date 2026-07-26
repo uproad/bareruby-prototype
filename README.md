@@ -64,6 +64,35 @@ and three 64-bit multiplications per iteration. `text` drops from 16220 B to 148
 the loop from roughly 2900 to roughly 2050 cycles. What remains is dominated by the three
 ADC conversions, which cost 2 µs each in the converter itself.
 
+`ref_avs.rb` does what that program was for rather than what it does. Reading three
+channels every 10 ms samples the audio at 100 Hz, so nothing above 50 Hz is measured and
+the peak-to-peak window sees aliases rather than the signal; the running maximum and
+minimum with their periodic decay are an automatic gain control wrapped around that,
+which keeps the LEDs moving convincingly whatever the window happens to hold. Both exist
+because PicoRuby could not go faster. Here `asleep_us(25)` samples at 40 kHz and holds
+the period instead of adding the body's cost to it, which puts Nyquist at 20 kHz and
+covers the audible band. Peak to peak over 30 ms cannot be a scan of the window at that
+rate — 1200 samples per channel on every sample — so the window is a ring of six 5 ms
+frames: a sample updates the current frame's extremes in two comparisons, and closing a
+frame folds twelve values, six lows and six highs, into the span of the whole window. The
+duty cycle is one multiplication and one division from there, with no running maximum, no
+decay and no fudge. `full_swing` names the peak-to-peak that means full brightness, and
+lowering it is the only sensitivity control there is.
+
+The PWM frequency drops from 100 kHz to 5 kHz for the same reason: `duty` is a percentage
+and the binding sets the wrap to `1000000 / frequency - 1`, so at 100 kHz the top is 9 and
+a percentage can only reach ten levels. At 5 kHz it is 199, which is every percent, and
+still far above flicker fusion. Four objects carry the program — `Extremes` records a
+series' lowest and highest, `Window` keeps the ring of frames, `PeakMeter` samples one
+channel and lights its LED, `Heartbeat` blinks GP25 — and `Extremes` appears twice, as the
+current frame and as the fold that reduces the ring to one span, which makes this the
+first program here to hold a class of its own inside another. Against synthetic input at
+40 kHz, a full-swing 1 kHz sine holds duty 99, a 100-count 8 kHz sine holds 4, and a
+500-count 50 Hz sine reads 12 for two frames and then 24 — 30 ms is one and a half periods
+of 50 Hz, and the first two frames hold part of one. `text` is 14964 B, and the per-sample
+path inlines to a conversion plus about a dozen instructions per channel, roughly a
+quarter of the 25 µs.
+
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
 mruby/c and pico-sdk both do underneath — so a loop's period is its body plus the wait,
@@ -92,6 +121,7 @@ Sample programs:
 | `ref_asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `ref_tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
+| `ref_avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, no gain fudge |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
