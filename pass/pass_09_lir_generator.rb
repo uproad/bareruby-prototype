@@ -152,7 +152,19 @@ module BareRubyProt
                     :"arena_scope_#{index}", scope_struct,
                     @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
                   )]
-        [@lir.create_scope(opening + lower_body(body))]
+        [@lir.create_scope(opening + block_local(body))]
+      end
+
+      # A local the block introduces does not exist after it, in Ruby or in the C++ scope
+      # the block becomes, so what was declared inside is forgotten on the way out and the
+      # next block is free to use the same names.
+      def block_local(body)
+        declared = @declared.dup
+        pointers = @pointer_locals.dup
+        statements = lower_body(body)
+        @declared = declared
+        @pointer_locals = pointers
+        statements
       end
 
       # A long-lived arena outlives no scope, so it takes no guard: reset is the only

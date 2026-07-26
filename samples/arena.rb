@@ -1,28 +1,59 @@
+class Series
+  def initialize
+    @pool = Arena.new(size: 64)
+  end
+
+  def squares(a, count)
+    values = a.array(count)
+    i = 0
+    while i < count
+      values[i] = i * i
+      i = i + 1
+    end
+    return values
+  end
+
+  def largest(values)
+    best = values[0]
+    i = 1
+    while i < values.size
+      best = values[i] if values[i] > best
+      i = i + 1
+    end
+    return best
+  end
+
+  def kept(count)
+    @pool.reset
+    return squares(@pool, count)
+  end
+end
+
 width = 3
 height = 2
-count = width * height
+series = Series.new
 
 arena(size: 256) do |a|
-  squares = a.array(count)
-  i = 0
-  while i < squares.size
-    squares[i] = i * i
-    i = i + 1
-  end
-  puts squares.size
-  puts squares[5]
+  values = series.squares(a, width * height)
+  puts values.size
+  puts series.largest(values)
 
-  shared = squares
+  shared = values
   shared[0] = 100
-  puts squares[0]
+  puts series.largest(shared)
 
   arena(size: 64) do |b|
     doubles = b.array(3)
-    doubles[0] = squares[2] * 2
-    doubles[1] = squares[3] * 2
-    doubles[2] = squares[4] * 2
-    puts doubles[2]
+    doubles[0] = values[2] * 2
+    doubles[1] = values[3] * 2
+    doubles[2] = values[4] * 2
+    puts series.largest(doubles)
   end
+
+  ratios = a.array(2)
+  ratios[0] = 0.5
+  ratios[1] = ratios[0] * 3
+  puts ratios[1]
 end
 
 begin
@@ -35,18 +66,5 @@ rescue
   puts "released"
 end
 
-pool = Arena.new(size: 128)
-first = pool.array(4)
-first[0] = 7
-puts first[0]
-pool.reset
-second = pool.array(4)
-second[0] = 11
-puts second[0]
-
-arena(size: 64) do |a|
-  ratios = a.array(2)
-  ratios[0] = 0.5
-  ratios[1] = ratios[0] * 3
-  puts ratios[1]
-end
+puts series.largest(series.kept(4))
+puts series.largest(series.kept(7))
