@@ -64,6 +64,54 @@ and three 64-bit multiplications per iteration. `text` drops from 16220 B to 148
 the loop from roughly 2900 to roughly 2050 cycles. What remains is dominated by the three
 ADC conversions, which cost 2 µs each in the converter itself.
 
+`ref_avs.rb` meets that program's purpose rather than approximating it. Reading three
+channels every 10 ms samples the audio at 100 Hz, so nothing above 50 Hz is measured and
+the peak-to-peak window sees aliases rather than the signal. That is the part PicoRuby's
+speed forced. Here `asleep_us(25)` samples at 40 kHz and holds the period instead of
+adding the body's cost to it, which puts Nyquist at 20 kHz and covers the audible band.
+Peak to peak over 30 ms cannot be a scan of the window at that rate — 1200 samples per
+channel on every sample — so the window is a ring of six 5 ms frames: a sample updates
+the current frame's extremes in two comparisons, and closing a frame folds twelve values,
+six lows and six highs, into the span of the whole window.
+
+Everything the original wraps around that window is kept, because none of it is a
+workaround. The three channels carry three different sources at three different sound
+pressures, so a fixed reference would leave the quiet ones dark: each channel keeps its
+own full swing, raised by any span that exceeds it and decayed towards a floor over ten
+seconds. Ten is the figure the original settled on, and it is what lets a quiet track
+light up after a loud one without a loud passage being forgotten inside a track. A span
+under the gate is silence and lights nothing, so a channel with nothing plugged into it
+stays dark instead of amplifying its own noise. The port's `duty * 120 / one - 10` is
+that gate in the original's terms — ten points cut off the bottom, and the 1.2 restoring
+the top those ten points cost.
+
+The PWM frequency drops from 100 kHz to 5 kHz for the same reason: `duty` is a percentage
+and the binding sets the wrap to `1000000 / frequency - 1`, so at 100 kHz the top is 9 and
+a percentage can only reach ten levels. At 5 kHz it is 199, which is every percent, and
+still far above flicker fusion. Four objects carry the program, divided by mechanism
+rather than by data: `PeakToPeakDetector` owns a converter and answers with the peak to
+peak of the last 30 ms, `AudioVisualizer` keeps one channel's swing and turns a span into
+a brightness in percent, `Led` owns a PWM slice and takes that brightness, and
+`Heartbeat` blinks GP25. None of them holds another. The loop is what joins them — it
+takes a span from a detector, passes it to the visualizer and hands the answer to an LED
+— which is the work a controller exists to do. Input, policy and output change for
+different reasons: the window scheme, the gain rule, the output device. PWM is the last
+of those, a detail the other two never see. Detecting the peak to peak stays one class
+for the same test read the other way — splitting the frame's extremes and the ring back
+out of it yields classes too small to be read apart, and a min/max abstraction shared
+between the frame and the fold has to carry an emptiness flag and a branch per sample
+that only one of its two uses needs.
+
+Against synthetic input at 40 kHz, a channel fed a 4000-count square wave holds duty 100
+and a channel fed 200 counts holds 100 as well, which is what a swing per channel is for;
+a channel fed nothing at all holds 0. Dropping the first channel from 4000 counts to 300
+drops it to 7, and it climbs back to 73 over the following nine seconds as its swing
+decays two counts a frame towards the 410 floor. The floor is what bounds the gain: the
+lower it is set the further a channel can recover, and the more room noise above the gate
+is amplified with it. `text` is 15100 B, and the per-sample path inlines to a conversion
+plus seven instructions per channel, roughly a quarter of the 25 µs; every call between
+the four objects is inlined away and costs nothing.
+
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
 mruby/c and pico-sdk both do underneath — so a loop's period is its body plus the wait,
@@ -92,6 +140,7 @@ Sample programs:
 | `ref_asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `ref_tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `ref_tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
+| `ref_avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel |
 | `ref_require.rb` | require expansion, with `ref_require_lib.rb` and `ref_require_helper.rb` requiring each other |
 
 ## The short way
