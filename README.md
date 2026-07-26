@@ -47,6 +47,19 @@ Covered so far:
   what it hands out is recorded in the arena, so a copy would let two callers hand out
   the same room. An allocation may not be stored in an instance variable or in a local
   the block did not introduce. No new pass.
+- **M3 — the variable-length string** (`samples/string.rb`), the other value the first two
+  layers cannot hold: `a.string`, `a.string("text")`, `a.string(other_string)` and
+  `a.string("count: #{n}")` create one, and it answers `<<`, `+`, `size`, `length`, `dup`,
+  `==`, `!=` and `to_s`. It grows: appending past the block it holds takes a bigger one from
+  the region and copies into it, and the block left behind stays until the region is
+  released, because an arena has no free. Both its bytes and its handle come from the
+  region, so a method can create one and hand it back, and every binding is the address of
+  the one string — `b = a` then `b << " C"` is seen through `a`, exactly as in Ruby, while
+  `+` and `dup` answer new strings. The interpolation form is the one that needs no
+  estimate: `vsnprintf` says how long a rendering is before writing it, where an
+  interpolation assigned to a fixed-capacity local (M2.5) has to bound every part while
+  compiling. The runtime owns the representation — the generated code reads no field of a
+  string. No new pass.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -55,7 +68,10 @@ returns that object. Only `dup` duplicates one. Storage belongs to the binding t
 creation expression was assigned to: a local holds the instance on the stack, an instance
 variable holds it inside the owning struct, and every other binding of that type is a
 pointer to it. The array and the arena reached that rule first, one milestone at a time;
-it holds for every object, peripherals included.
+it holds for every object, peripherals included. The variable-length string is the one
+whose storage no binding owns — the region owns it, handle and bytes both, which is what
+lets a method create one and hand it back — and the rule that every binding names the same
+string is unchanged by that.
 
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
@@ -119,6 +135,15 @@ exceptions enabled the same pair is 12884 B and 90604 B, and the further 50 KB i
 guard — a scope holding an object with a destructor gives its function a cleanup landing
 pad, which references `__gxx_personality_v0` and drags in the same C++ ABI a `raise`
 does. Releasing the region when an exception leaves the block is what that buys.
+
+A variable-length string adds almost nothing to what the region already costs: six
+statements that create one, append to it twice and print it come to 37244 B of text under
+`--no-exceptions`, against the 37036 B the arena array's six cost above. The allocator and
+its panic path are what both are paying for. The interpolation form is the part worth
+counting — `a.string("readings: #{count}")` makes `vsnprintf` reachable and takes the same
+program to 43908 B, where that interpolation assigned to a fixed-capacity local costs
+17784 B and no region at all. `samples/string.rb`, which uses every form, is 44572 B of
+text and 3336 B of `bss`, 1792 of which is the three regions it declares.
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —

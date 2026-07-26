@@ -30,6 +30,8 @@ module BareRubyProt
 
     def create_arena_array_type(element) = { kind: :arena_array, element: }
 
+    def create_arena_string_type = { kind: :arena_string }
+
     def create_identity(owner, name, parameter_types, return_type)
       { owner:, name:, parameter_types:, return_type: }
     end
@@ -274,6 +276,7 @@ module BareRubyProt
       return type.to_s unless type.is_a?(Hash)
       return "array(#{inspect_type(type[:element])}, #{type[:capacity]})" if type[:kind] == :array
       return "arena_array(#{inspect_type(type[:element])})" if type[:kind] == :arena_array
+      return "arena_string" if type[:kind] == :arena_string
 
       "instance(#{type[:class_name]})"
     end
