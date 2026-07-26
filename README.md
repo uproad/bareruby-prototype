@@ -42,9 +42,11 @@ Covered so far:
   panics rather than growing, and each region is a static buffer belonging to the site
   that declared it: asking for 1024 bytes more moves `bss` by exactly 1024. Release is
   that pointer going back, done by a guard whose destructor runs on the way out of the
-  scope, so an exception leaving the block releases the region as well. An allocation
-  may not be stored in an instance variable or in a local the block did not introduce.
-  No new pass.
+  scope, so an exception leaving the block releases the region as well. An arena is
+  handed to the code doing the work, as the design writes it, and travels by reference:
+  what it hands out is recorded in the arena, so a copy would let two callers hand out
+  the same room. An allocation may not be stored in an instance variable or in a local
+  the block did not introduce. No new pass.
 
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
@@ -100,9 +102,9 @@ of text. That is why the throw lives in its own translation unit and is linked o
 programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
 
 An arena is the other thing here that is worth what it costs rather than free. The same
-eight-line program written twice — once with `Array.new(3, 0)`, once with `a.array(3)`
-inside an arena — comes to 8364 B of text with the fixed-capacity array and 37036 B with
-the arena, both under `--no-exceptions`. The 28 KB between them is the panic path:
+six statements written twice — once against `Array.new(3, 0)`, once against `a.array(3)`
+inside an arena block — come to 8364 B of text with the fixed-capacity array and 37036 B
+with the arena, both under `--no-exceptions`. The 28 KB between them is the panic path:
 exhaustion calls `bareruby_panic`, and `fprintf` plus `exit` bring stdio with them. With
 exceptions enabled the same pair is 12884 B and 90604 B, and the further 50 KB is the
 guard — a scope holding an object with a destructor gives its function a cleanup landing
