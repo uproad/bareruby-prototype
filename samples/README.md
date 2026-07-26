@@ -23,6 +23,7 @@ it is given no argument.
 | `m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
 | `adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
+| `arena.rb` | Arena blocks, nested and long-lived, allocating arrays whose length is a run-time value, and one arena left by an exception |
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
