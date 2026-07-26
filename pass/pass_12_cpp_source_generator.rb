@@ -21,6 +21,17 @@ module BareRubyProt
             int32_t used;
         } bareruby_arena_t;
 
+        /* A variable-length string: the bytes, how many of them are in use, how many the
+           block holds, and the region the next block will come from. The handle lives in
+           that region too, so a program never holds one of these by value — it holds the
+           address the region handed out, and the generated code reads no field of it. */
+        typedef struct {
+            bareruby_arena_t *arena;
+            char *bytes;
+            int32_t length;
+            int32_t capacity;
+        } bareruby_string_t;
+
         #ifdef __cplusplus
         extern "C" {
         #endif
@@ -28,6 +39,15 @@ module BareRubyProt
         void bareruby_arena_init(bareruby_arena_t *self, unsigned char *storage, int32_t capacity);
         void *bareruby_arena_alloc(bareruby_arena_t *self, int32_t bytes);
         void bareruby_arena_reset(bareruby_arena_t *self);
+        bareruby_string_t *bareruby_string_new(bareruby_arena_t *arena, const char *initial);
+        bareruby_string_t *bareruby_string_format(bareruby_arena_t *arena, const char *format, ...);
+        bareruby_string_t *bareruby_string_append(bareruby_string_t *self, const char *text);
+        bareruby_string_t *bareruby_string_append_format(bareruby_string_t *self, const char *format, ...);
+        bareruby_string_t *bareruby_string_concat(bareruby_string_t *self, const char *text);
+        bareruby_string_t *bareruby_string_dup(bareruby_string_t *self);
+        const char *bareruby_string_bytes(bareruby_string_t *self);
+        int32_t bareruby_string_length(bareruby_string_t *self);
+        bool bareruby_string_equal(bareruby_string_t *self, const char *text);
         void bareruby_puts_int32(int32_t value);
         void bareruby_puts_int64(int64_t value);
         void bareruby_puts_string(const char *value);
@@ -90,6 +110,126 @@ module BareRubyProt
 
         void bareruby_arena_reset(bareruby_arena_t *self) {
             self->used = 0;
+        }
+      CPP
+
+      # The string the first two layers of the memory model cannot hold: its length is a
+      # run-time value and it grows, so both its bytes and its handle come from a region.
+      # Growing is a bigger block and a copy into it, and the block it leaves behind stays
+      # until the region is released — an arena has no free.
+      RUNTIME_STRING_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        #include <stdarg.h>
+        #include <stdint.h>
+        #include <stdio.h>
+        #include <string.h>
+
+        /* Room to grow into, so a string appended to a few bytes at a time does not take a
+           fresh block every time. */
+        static const int32_t BARERUBY_STRING_MINIMUM_CAPACITY = 16;
+
+        static int32_t bareruby_string_capacity_for(int32_t length) {
+            int32_t capacity = BARERUBY_STRING_MINIMUM_CAPACITY;
+            while (capacity < length + 1) {
+                capacity *= 2;
+            }
+            return capacity;
+        }
+
+        /* The handle comes from the region as well as the bytes, so it outlives the scope
+           that created it and every binding is the address of the one string. */
+        static bareruby_string_t *bareruby_string_allocate(bareruby_arena_t *arena, int32_t length) {
+            bareruby_string_t *self =
+                (bareruby_string_t *)bareruby_arena_alloc(arena, (int32_t)sizeof(bareruby_string_t));
+            self->arena = arena;
+            self->capacity = bareruby_string_capacity_for(length);
+            self->bytes = (char *)bareruby_arena_alloc(arena, self->capacity);
+            self->bytes[0] = '\\0';
+            self->length = 0;
+            return self;
+        }
+
+        static void bareruby_string_reserve(bareruby_string_t *self, int32_t length) {
+            if (length + 1 <= self->capacity) {
+                return;
+            }
+            int32_t capacity = bareruby_string_capacity_for(length);
+            char *bytes = (char *)bareruby_arena_alloc(self->arena, capacity);
+            memcpy(bytes, self->bytes, (size_t)self->length + 1);
+            self->bytes = bytes;
+            self->capacity = capacity;
+        }
+
+        bareruby_string_t *bareruby_string_new(bareruby_arena_t *arena, const char *initial) {
+            int32_t length = (int32_t)strlen(initial);
+            bareruby_string_t *self = bareruby_string_allocate(arena, length);
+            memcpy(self->bytes, initial, (size_t)length + 1);
+            self->length = length;
+            return self;
+        }
+
+        bareruby_string_t *bareruby_string_append(bareruby_string_t *self, const char *text) {
+            int32_t length = (int32_t)strlen(text);
+            bareruby_string_reserve(self, self->length + length);
+            memcpy(self->bytes + self->length, text, (size_t)length + 1);
+            self->length += length;
+            return self;
+        }
+
+        /* vsnprintf answers how long a rendering is before writing it, so an interpolation
+           that lands in a string needs no compile-time estimate of its parts. */
+        bareruby_string_t *bareruby_string_format(bareruby_arena_t *arena, const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            int32_t length = (int32_t)vsnprintf(NULL, 0, format, arguments);
+            va_end(arguments);
+
+            bareruby_string_t *self = bareruby_string_allocate(arena, length);
+            va_start(arguments, format);
+            vsnprintf(self->bytes, (size_t)self->capacity, format, arguments);
+            va_end(arguments);
+            self->length = length;
+            return self;
+        }
+
+        bareruby_string_t *bareruby_string_append_format(bareruby_string_t *self, const char *format, ...) {
+            va_list arguments;
+            va_start(arguments, format);
+            int32_t length = (int32_t)vsnprintf(NULL, 0, format, arguments);
+            va_end(arguments);
+
+            bareruby_string_reserve(self, self->length + length);
+            va_start(arguments, format);
+            vsnprintf(self->bytes + self->length, (size_t)(self->capacity - self->length), format, arguments);
+            va_end(arguments);
+            self->length += length;
+            return self;
+        }
+
+        /* + answers a new string, as Ruby does, taken from the region the receiver's own
+           bytes came from. */
+        bareruby_string_t *bareruby_string_concat(bareruby_string_t *self, const char *text) {
+            bareruby_string_t *result =
+                bareruby_string_allocate(self->arena, self->length + (int32_t)strlen(text));
+            bareruby_string_append(result, self->bytes);
+            return bareruby_string_append(result, text);
+        }
+
+        bareruby_string_t *bareruby_string_dup(bareruby_string_t *self) {
+            return bareruby_string_new(self->arena, self->bytes);
+        }
+
+        const char *bareruby_string_bytes(bareruby_string_t *self) {
+            return self->bytes;
+        }
+
+        int32_t bareruby_string_length(bareruby_string_t *self) {
+            return self->length;
+        }
+
+        bool bareruby_string_equal(bareruby_string_t *self, const char *text) {
+            return strcmp(self->bytes, text) == 0;
         }
       CPP
 
@@ -685,6 +825,7 @@ module BareRubyProt
           "bareruby_runtime.h" => RUNTIME_HEADER,
           "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
           "bareruby_runtime_arena.cpp" => RUNTIME_ARENA_SOURCE,
+          "bareruby_runtime_string.cpp" => RUNTIME_STRING_SOURCE,
           "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
           "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
@@ -704,6 +845,7 @@ module BareRubyProt
         sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
         sources << "../bareruby_runtime_arena.cpp" if allocates?
+        sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
@@ -751,10 +893,25 @@ module BareRubyProt
         declares_arena?(value[:children])
       end
 
+      # A program that keeps to static and fixed-capacity strings never links the string
+      # runtime either, which costs stdio's vsnprintf on top of the region it allocates from.
+      def builds_strings?
+        @lir.functions.any? { |function| calls_string?(@lir.children_of(function)[3]) }
+      end
+
+      def calls_string?(value)
+        return value.any? { |element| calls_string?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :call && value[:children][0].to_s.start_with?("bareruby_string_")
+
+        calls_string?(value[:children])
+      end
+
       def rp2040_sources
         sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
         sources << "../bareruby_runtime_arena.cpp" if allocates?
+        sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end

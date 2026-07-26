@@ -449,7 +449,7 @@ module BareRubyProt
       # raise degrades to panic when the program has no begin at all, and throws
       # otherwise. Only the string form is accepted; the other forms are not settled.
       def infer_raise_call(arguments, env:, self_class:, span:)
-        argument_tirs = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        argument_tirs = arguments.map { |argument| string_value_of(infer_node(argument, env:, self_class:)) }
         function = @rescues_present ? :bareruby_throw : :bareruby_panic
         callee = @tir.create_callee(:builtin_function, nil, :raise, function, %i[String], :NoReturn)
         @tir.create_call(nil, callee, argument_tirs, nil, :NoReturn, span)
@@ -653,6 +653,8 @@ module BareRubyProt
             infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
           elsif arena_array_type?(receiver_type)
             infer_arena_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+          elsif arena_string_type?(receiver_type)
+            infer_arena_string_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
           elsif arena_type?(receiver_type)
             infer_arena_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
           elsif CONVERSIONS.key?(name)
@@ -700,7 +702,11 @@ module BareRubyProt
 
       def arena_array_type?(type) = type.is_a?(Hash) && type[:kind] == :arena_array
 
+      def arena_string_type?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
+
       def arena_type = @tir.create_instance_type(:Arena, :bareruby_arena_t)
+
+      def arena_string_type = @tir.create_arena_string_type
 
       # The region is created when the block is entered and released when it is left, so
       # its size is what the whole block may allocate and has to be settled while
@@ -740,10 +746,89 @@ module BareRubyProt
       # as Array.new(n) does.
       def infer_arena_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
         return infer_arena_reset_call(receiver_tir, span) if name == :reset
-        raise "an arena answers array and reset, not #{name}" unless name == :array
+        if name == :string
+          return infer_arena_string_call(receiver_tir, arguments.first, env:, self_class:, span:)
+        end
+        raise "an arena answers array, string and reset, not #{name}" unless name == :array
 
         length = infer_node(arguments[0], env:, self_class:)
         @tir.create_arena_alloc(receiver_tir, length, @tir.create_arena_array_type(nil), span)
+      end
+
+      # The string a program can grow. Its handle lives in the region along with its bytes,
+      # so every binding names the one string — appending through any of them is seen
+      # through all of them, which is what Ruby does — and a method can hand one back.
+      # The initial contents may be a static string, another variable-length string, or an
+      # interpolation, which is the one form whose length is measured while running rather
+      # than estimated while compiling.
+      def infer_arena_string_call(receiver_tir, source, env:, self_class:, span:)
+        if formatted?(source)
+          arguments = format_arguments(receiver_tir, source, env:, self_class:, span:)
+          return string_call(:string, :bareruby_string_format, arguments, arena_string_type, span)
+        end
+
+        initial = source ? text_of(source, env:, self_class:) : @tir.create_string("", :String, span)
+        string_call(:string, :bareruby_string_new, [receiver_tir, initial], arena_string_type, span)
+      end
+
+      # Growing, joining and comparing all reach the runtime, which owns the representation:
+      # nothing the backend emits knows what a string is made of.
+      def infer_arena_string_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
+        return receiver_tir if name == :to_s
+        return string_call(name, :bareruby_string_length, [receiver_tir], :Int32, span) if SIZE_NAMES.include?(name)
+        return string_call(name, :bareruby_string_dup, [receiver_tir], arena_string_type, span) if name == :dup
+
+        source = arguments.first
+        if name == :<< && formatted?(source)
+          appended = format_arguments(receiver_tir, source, env:, self_class:, span:)
+          return string_call(name, :bareruby_string_append_format, appended, arena_string_type, span)
+        end
+
+        infer_string_operator_call(name, receiver_tir, source, env:, self_class:, span:)
+      end
+
+      STRING_OPERATOR_FUNCTIONS = {
+        :<< => :bareruby_string_append,
+        :+ => :bareruby_string_concat,
+        :== => :bareruby_string_equal,
+        :!= => :bareruby_string_equal
+      }.freeze
+
+      def infer_string_operator_call(name, receiver_tir, source, env:, self_class:, span:)
+        function = STRING_OPERATOR_FUNCTIONS[name]
+        raise "a variable-length string answers <<, +, ==, size, dup and to_s, not #{name}" if function.nil?
+
+        comparison = COMPARISON_OPERATORS.include?(name)
+        arguments = [receiver_tir, text_of(source, env:, self_class:)]
+        call = string_call(name, function, arguments, comparison ? :Bool : arena_string_type, span)
+        name == :!= ? negate(call, span) : call
+      end
+
+      def format_arguments(receiver_tir, source, env:, self_class:, span:)
+        format, values = format_of(source, env:, self_class:)
+        [receiver_tir, @tir.create_string(format, :String, span)] + values
+      end
+
+      def negate(node, span)
+        callee = @tir.create_callee(:builtin_operator, nil, :!, nil, [], :Bool)
+        @tir.create_call(node, callee, [], nil, :Bool, span)
+      end
+
+      def string_call(name, function, arguments, return_type, span)
+        callee = @tir.create_callee(
+          :builtin_function, nil, name, function, argument_types(arguments), return_type
+        )
+        @tir.create_call(nil, callee, arguments, nil, return_type, span)
+      end
+
+      def text_of(node, env:, self_class:) = string_value_of(infer_node(node, env:, self_class:))
+
+      # A variable-length string reaches everything that takes a static string — puts, a
+      # UART, a format value, another string — through the bytes the region holds.
+      def string_value_of(node)
+        return node unless arena_string_type?(@tir.value_type(node))
+
+        string_call(:bytes, :bareruby_string_bytes, [node], :String, @tir.span_of(node))
       end
 
       def infer_arena_reset_call(receiver_tir, span)
@@ -772,7 +857,7 @@ module BareRubyProt
       # thing that is not an escape, because it is where that arena begins.
       def reject_arena_escape(kind, name, value_tir)
         type = @tir.value_type(value_tir)
-        return unless arena_array_type?(type) ||
+        return unless arena_array_type?(type) || arena_string_type?(type) ||
                       (arena_type?(type) && @tir.node_type(value_tir) != :arena_new)
         return unless kind == :instance || @arena_scopes.any? { |names| names.include?(name) }
 
@@ -903,7 +988,8 @@ module BareRubyProt
           :binding_method, class_name, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
         )
-        @tir.create_call(receiver_tir, callee, argument_tirs, nil, signature[:return_type], span)
+        arguments = argument_tirs.map { |argument| string_value_of(argument) }
+        @tir.create_call(receiver_tir, callee, arguments, nil, signature[:return_type], span)
       end
 
       def infer_module_function_call(module_name, name, arguments, env:, self_class:, span:)
@@ -1022,7 +1108,7 @@ module BareRubyProt
         argument = arguments.first
         return infer_printf_call(:bareruby_printf, nil, argument, env:, self_class:, span:) if formatted?(argument)
 
-        argument_tirs = arguments.map { |a| infer_node(a, env:, self_class:) }
+        argument_tirs = arguments.map { |a| text_of(a, env:, self_class:) }
         callee = @tir.create_callee(
           :builtin_puts, nil, :puts, puts_function(argument_tirs), argument_types(argument_tirs), :Nil
         )
@@ -1036,20 +1122,8 @@ module BareRubyProt
       end
 
       def infer_printf_call(function, receiver_tir, node, env:, self_class:, span:)
-        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
-        format = +""
-        values = []
-        parts.each do |part|
-          if @tir.node_type(part) == :string
-            format << escape_format(@tir.children_of(part)[0])
-          else
-            format << conversion_of(@tir.value_type(part))
-            values << to_s_of(part)
-          end
-        end
-        format << "\n"
-
-        arguments = [@tir.create_string(format, :String, span_of(node))] + values
+        format, values = format_of(node, env:, self_class:)
+        arguments = [@tir.create_string("#{format}\n", :String, span_of(node))] + values
         kind = receiver_tir ? :binding_printf : :builtin_printf
         callee = @tir.create_callee(kind, nil, :printf, function, argument_types(arguments), :Nil)
         @tir.create_call(receiver_tir, callee, arguments, nil, :Nil, span)
@@ -1062,33 +1136,47 @@ module BareRubyProt
       MAX_LENGTHS = { Int32: 11, Int64: 20, Bool: 5, Fixed: 12, String: 64 }.freeze
 
       # An interpolation outside a puts argument becomes a fixed-capacity buffer plus a
-      # compile-time bound on what can land in it.
+      # compile-time bound on what can land in it. An arena string is the way out of that
+      # estimate: a.string("...") measures the rendering while running instead.
       def infer_format(node, env:, self_class:)
-        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
-        format = +""
-        values = []
-        capacity = 1
-
-        parts.each do |part|
-          if @tir.node_type(part) == :string
-            text = @tir.children_of(part)[0]
-            format << escape_format(text)
-            capacity += text.bytesize
-          else
-            format << conversion_of(@tir.value_type(part))
-            capacity += MAX_LENGTHS.fetch(@tir.value_type(part), 32)
-            values << to_s_of(part)
-          end
-        end
+        format, values, parts = format_of(node, env:, self_class:)
+        capacity = parts.sum { |part| part_length(part) } + 1
 
         @tir.create_format(
           capacity, @tir.create_string(format, :String, span_of(node)), values, :String, span_of(node)
         )
       end
 
+      def part_length(part)
+        return @tir.children_of(part)[0].bytesize if @tir.node_type(part) == :string
+
+        MAX_LENGTHS.fetch(@tir.value_type(part), 32)
+      end
+
+      # One interpolation, read once: the static parts become the format and the rest
+      # become its values, whichever of the four forms is asking.
+      def format_of(node, env:, self_class:)
+        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
+        format = +""
+        values = []
+
+        parts.each do |part|
+          if @tir.node_type(part) == :string
+            format << escape_format(@tir.children_of(part)[0])
+          else
+            format << conversion_of(@tir.value_type(part))
+            values << to_s_of(part)
+          end
+        end
+
+        [format, values, parts]
+      end
+
       def escape_format(text) = text.gsub("%", "%%")
 
       def conversion_of(type)
+        return "%s" if arena_string_type?(type)
+
         case type
         when :Int64 then "%lld"
         when :String, :Bool, :Fixed then "%s"
@@ -1100,6 +1188,8 @@ module BareRubyProt
       TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s }.freeze
 
       def to_s_of(part)
+        return string_value_of(part) if arena_string_type?(@tir.value_type(part))
+
         function = TO_S_FUNCTIONS[@tir.value_type(part)]
         return part unless function
 

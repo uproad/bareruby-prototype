@@ -13,6 +13,7 @@ module BareRubyProt
       }.freeze
       ARENA_STRUCT = :bareruby_arena_t
       ARENA_SCOPE_STRUCT = :bareruby_arena_scope
+      STRING_STRUCT = :bareruby_string_t
 
       attr_reader :result
 
@@ -662,9 +663,17 @@ module BareRubyProt
         case type[:kind]
         when :array then array_struct_type(type)
         when :arena_array then arena_array_struct_type(type)
+        when :arena_string then arena_string_lir_type
         else @lir.struct_type(type[:struct] || type[:class_name])
         end
       end
+
+      # A variable-length string is always the pointer the region handed out, never a
+      # struct of its own: the handle lives in the region with the bytes, so a binding
+      # holds the address of the one string rather than a copy of a handle whose length
+      # the next append would leave behind. The runtime declares the struct, and nothing
+      # here reads a field of it.
+      def arena_string_lir_type = @lir.pointer_type(@lir.struct_type(STRING_STRUCT))
 
       # An array becomes a struct wrapping one C array so that dup is a plain assignment
       # and an owner can embed one inline. A raw C array would decay to a pointer.
