@@ -52,7 +52,7 @@ module BareRubyProt
         parameters.each do |parameter|
           binding, type = @tir.children_of(parameter)
           @declared << binding[:name]
-          @array_pointers << binding[:name] if array_type?(type)
+          @pointer_locals << binding[:name] if shared_type?(type)
           lir_parameters << { name: binding[:name], type: binding_type(binding, type) }
         end
 
@@ -74,7 +74,7 @@ module BareRubyProt
 
       def begin_function(self_class, return_type)
         @declared = []
-        @array_pointers = []
+        @pointer_locals = []
         @temp_index = 0
         @arena_index = 0
         @self_type = self_class && @lir.pointer_type(@lir.struct_type(self_class))
@@ -106,7 +106,7 @@ module BareRubyProt
         return lower_statement(value) if @tir.value_type(value) == :NoReturn
 
         statements, expression = lower_expression(value)
-        statements + [@lir.create_return(@void_return ? nil : array_rvalue(value, expression))]
+        statements + [@lir.create_return(@void_return ? nil : shared_rvalue(value, expression))]
       end
 
       def lower_for_range(node)
@@ -147,7 +147,7 @@ module BareRubyProt
         @declared << binding[:name]
         scope_struct = @lir.struct_type(ARENA_SCOPE_STRUCT)
 
-        opening = arena_setup(binding[:name], place, size, index) +
+        opening = [@lir.create_declare(binding[:name], struct, nil)] + arena_setup(place, size, index) +
                   [@lir.create_declare(
                     :"arena_scope_#{index}", scope_struct,
                     @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
@@ -162,21 +162,33 @@ module BareRubyProt
         struct = lir_type(type)
         name = next_temp
         place = @lir.create_local(name, struct)
-        [arena_setup(name, place, size, next_arena_index), place]
+        [[@lir.create_declare(name, struct, nil)] + arena_setup(place, size, next_arena_index), place]
       end
 
-      def arena_setup(name, place, size, index)
+      # A creation expression is where the region comes from, so the binding it is
+      # assigned to holds the arena itself rather than a pointer to one.
+      def lower_arena_assignment(binding, value, type)
+        struct = lir_type(type)
+        place = place_of(binding, struct)
+        statements = []
+        if binding[:kind] == :local && !@declared.include?(binding[:name])
+          @declared << binding[:name]
+          statements << @lir.create_declare(binding[:name], struct, nil)
+        end
+
+        [statements + arena_setup(place, @tir.children_of(value)[0], next_arena_index), place]
+      end
+
+      def arena_setup(place, size, index)
         storage = :"arena_storage_#{index}"
         initializer = @lir.create_call(
           :bareruby_arena_init,
-          [@lir.create_address_of(place),
+          [reference_to(place),
            @lir.create_local(storage, @lir.pointer_type(:uint8)),
            @lir.create_const_int(size, :int32)],
           :void
         )
-        [@lir.create_declare_arena_storage(storage, size),
-         @lir.create_declare(name, @lir.value_type(place), nil),
-         @lir.create_expression(initializer)]
+        [@lir.create_declare_arena_storage(storage, size), @lir.create_expression(initializer)]
       end
 
       # The length is bound to a local first, because the handle stores it as well as
@@ -202,7 +214,7 @@ module BareRubyProt
         bytes = @lir.create_binary("*", length_local, @lir.create_size_of(element, :int32), :int32)
         call = @lir.create_call(
           :bareruby_arena_alloc,
-          [@lir.create_address_of(arena_expression), bytes],
+          [reference_to(arena_expression), bytes],
           @lir.pointer_type(:void)
         )
         @lir.create_cast(call, @lir.pointer_type(element))
@@ -362,10 +374,11 @@ module BareRubyProt
         binding, value, type = @tir.children_of(node)
         return lower_format_assignment(binding, value) if @tir.node_type(value) == :format
         return lower_array_assignment(binding, value, type) if array_creation?(value)
+        return lower_arena_assignment(binding, value, type) if arena_creation?(value)
 
         statements, value_expression = lower_expression(value)
-        @array_pointers << binding[:name] if array_type?(type) && binding[:kind] == :local
-        value_expression = array_rvalue(value, value_expression)
+        @pointer_locals << binding[:name] if shared_type?(type) && binding[:kind] == :local
+        value_expression = shared_rvalue(value, value_expression)
         place = place_of(binding, binding_type(binding, type))
 
         if binding[:kind] == :local && !@declared.include?(binding[:name])
@@ -381,18 +394,27 @@ module BareRubyProt
       # pointer to somebody else's.
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
-      # An array in value position is always a reference: returning one by value would copy
-      # it, which only dup is allowed to do.
+      # An arena is shared for the same reason an array is, and for one more: what it
+      # hands out is recorded in the arena itself, so a method that allocated from a copy
+      # would leave the caller's arena believing the room is still free.
+      def arena_instance_type?(type) = type.is_a?(Hash) && type[:struct] == ARENA_STRUCT
+
+      def shared_type?(type) = array_type?(type) || arena_instance_type?(type)
+
+      # A shared value in value position is always a reference: returning one by value
+      # would copy it, which only dup is allowed to do.
       def value_lir_type(type)
-        array_type?(type) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
+        shared_type?(type) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
       end
 
       def array_creation?(node) = %i[array array_fill array_dup].include?(@tir.node_type(node))
 
+      def arena_creation?(node) = @tir.node_type(node) == :arena_new
+
       def owning_ivars(methods)
         names = []
         each_assignment(methods) do |binding, value|
-          names << binding[:name] if binding[:kind] == :instance && array_creation?(value)
+          names << binding[:name] if binding[:kind] == :instance && (array_creation?(value) || arena_creation?(value))
         end
         names
       end
@@ -406,11 +428,11 @@ module BareRubyProt
       end
 
       def ivar_type(ivar)
-        array_type?(ivar[:type]) ? binding_type({ kind: :instance, name: ivar[:name] }, ivar[:type]) : lir_type(ivar[:type])
+        binding_type({ kind: :instance, name: ivar[:name] }, ivar[:type])
       end
 
       def binding_type(binding, type)
-        return lir_type(type) unless array_type?(type)
+        return lir_type(type) unless shared_type?(type)
 
         pointer_binding?(binding) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
       end
@@ -418,16 +440,19 @@ module BareRubyProt
       def pointer_binding?(binding)
         return !@storage_ivars.include?(binding[:name]) if binding[:kind] == :instance
 
-        @array_pointers.include?(binding[:name])
+        @pointer_locals.include?(binding[:name])
       end
 
-      # An array in value position is its base address, so storage has to be taken the
+      # A shared value in value position is its address, so storage has to be taken the
       # address of and a pointer is already one.
-      def array_rvalue(node, expression)
-        return expression unless array_type?(@tir.value_type(node))
-        return expression if pointer_expression?(expression)
+      def shared_rvalue(node, expression)
+        return expression unless shared_type?(@tir.value_type(node))
 
-        @lir.create_address_of(expression)
+        reference_to(expression)
+      end
+
+      def reference_to(expression)
+        pointer_expression?(expression) ? expression : @lir.create_address_of(expression)
       end
 
       def pointer_expression?(expression)
@@ -556,7 +581,7 @@ module BareRubyProt
 
       def lower_method_call(receiver, callee, arguments)
         receiver_statements, receiver_expression = receiver ? lower_expression(receiver) : [[], nil]
-        self_argument = receiver_expression ? @lir.create_address_of(receiver_expression) : @lir.create_self_pointer(@self_type)
+        self_argument = receiver_expression ? reference_to(receiver_expression) : @lir.create_self_pointer(@self_type)
         argument_statements, argument_expressions = lower_arguments(arguments)
 
         [receiver_statements + argument_statements,
@@ -569,7 +594,7 @@ module BareRubyProt
         expressions = arguments.map do |argument|
           argument_statements, expression = lower_expression(argument)
           statements.concat(argument_statements)
-          array_rvalue(argument, expression)
+          shared_rvalue(argument, expression)
         end
         [statements, expressions]
       end

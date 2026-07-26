@@ -588,7 +588,7 @@ module BareRubyProt
           end
         value_type = @tir.value_type(value_tir)
         kind, name = @bareruby_ast.children_of(target)
-        reject_arena_escape(kind, name, value_type)
+        reject_arena_escape(kind, name, value_tir)
 
         binding = @tir.create_binding(kind, name)
         case kind
@@ -740,6 +740,7 @@ module BareRubyProt
       # as Array.new(n) does.
       def infer_arena_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
         return infer_arena_reset_call(receiver_tir, span) if name == :reset
+        raise "an arena answers array and reset, not #{name}" unless name == :array
 
         length = infer_node(arguments[0], env:, self_class:)
         @tir.create_arena_alloc(receiver_tir, length, @tir.create_arena_array_type(nil), span)
@@ -765,14 +766,17 @@ module BareRubyProt
       end
 
       # The simple check the design asks for while a full lifetime analysis is still out
-      # of scope: an allocation may not be stored where the release cannot reach it. An
-      # instance variable outlives every block, and so does a local the block did not
-      # introduce.
-      def reject_arena_escape(kind, name, type)
-        return unless arena_array_type?(type)
+      # of scope: neither an allocation nor the arena it came from may be stored where the
+      # release cannot reach it. An instance variable outlives every block, and so does a
+      # local the block did not introduce. Creating a long-lived arena there is the one
+      # thing that is not an escape, because it is where that arena begins.
+      def reject_arena_escape(kind, name, value_tir)
+        type = @tir.value_type(value_tir)
+        return unless arena_array_type?(type) ||
+                      (arena_type?(type) && @tir.node_type(value_tir) != :arena_new)
         return unless kind == :instance || @arena_scopes.any? { |names| names.include?(name) }
 
-        raise "an arena allocation cannot be stored in #{name}, which outlives the arena"
+        raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
       end
 
       def constant_receiver?(receiver)
