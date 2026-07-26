@@ -1,4 +1,4 @@
-require_relative "ref_require_helper"
+require_relative "require_helper"
 
 class Counter
   include Steppable

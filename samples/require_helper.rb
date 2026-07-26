@@ -1,4 +1,4 @@
-require_relative "ref_require_lib"
+require_relative "require_lib"
 
 module Steppable
   def step
