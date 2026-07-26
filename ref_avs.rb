@@ -49,7 +49,7 @@ class AudioVisualizer
     @full_swing = full_swing
   end
 
-  def brightness_for(span)
+  def brightness_percent(span)
     percent = span * 100 / @full_swing
     percent = 100 if percent > 100
     return percent
@@ -114,13 +114,13 @@ loop do
     taken = 0
 
     detector26.advance
-    led6.brightness = visualizer.brightness_for(detector26.span)
+    led6.brightness = visualizer.brightness_percent(detector26.span)
 
     detector27.advance
-    led7.brightness = visualizer.brightness_for(detector27.span)
+    led7.brightness = visualizer.brightness_percent(detector27.span)
 
     detector28.advance
-    led8.brightness = visualizer.brightness_for(detector28.span)
+    led8.brightness = visualizer.brightness_percent(detector28.span)
   end
 
   heartbeat.tick
