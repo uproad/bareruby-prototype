@@ -143,6 +143,7 @@ module BareRubyProt
         @modules = {}
         @class_bodies = {}
         @current_method = nil
+        @arena_scopes = []
       end
 
       def run
@@ -384,6 +385,8 @@ module BareRubyProt
             collect_return_types(then_body) + collect_return_types(else_body || [])
           when :while
             collect_return_types(@tir.children_of(statement)[1])
+          when :arena
+            collect_return_types(@tir.children_of(statement)[2])
           when :call
             block = @tir.children_of(statement)[3]
             block ? collect_return_types(@tir.children_of(block)[1]) : []
@@ -585,6 +588,7 @@ module BareRubyProt
           end
         value_type = @tir.value_type(value_tir)
         kind, name = @bareruby_ast.children_of(target)
+        reject_arena_escape(kind, name, value_tir)
 
         binding = @tir.create_binding(kind, name)
         case kind
@@ -618,6 +622,7 @@ module BareRubyProt
           when :puts then infer_puts_call(arguments, env:, self_class:, span:)
           when :loop then infer_loop_call(block, env:, self_class:, span:)
           when :raise then infer_raise_call(arguments, env:, self_class:, span:)
+          when :arena then infer_arena_call(arguments, block, env:, self_class:, span:)
           else
             if PERIPHERAL_FUNCTIONS.key?(name)
               infer_binding_function_call(name, arguments, env:, self_class:, span:)
@@ -633,6 +638,8 @@ module BareRubyProt
           class_name = @bareruby_ast.children_of(receiver)[1]
           if class_name == :Array
             infer_array_new_call(arguments, env:, self_class:, span:)
+          elsif class_name == :Arena
+            infer_arena_new_call(arguments, env:, self_class:, span:)
           elsif PERIPHERALS.key?(class_name)
             infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
           else
@@ -644,6 +651,10 @@ module BareRubyProt
 
           if array_type?(receiver_type)
             infer_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+          elsif arena_array_type?(receiver_type)
+            infer_arena_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+          elsif arena_type?(receiver_type)
+            infer_arena_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
           elsif CONVERSIONS.key?(name)
             infer_conversion_call(name, receiver_tir, receiver_type, span)
           elsif operator?(name)
@@ -683,6 +694,89 @@ module BareRubyProt
         value = infer_node(value_node, env:, self_class:)
         receiver_type[:element] ||= @tir.value_type(value)
         @tir.create_index_assign(receiver_tir, index, value, receiver_type[:element], span)
+      end
+
+      def arena_type?(type) = type.is_a?(Hash) && type[:class_name] == :Arena
+
+      def arena_array_type?(type) = type.is_a?(Hash) && type[:kind] == :arena_array
+
+      def arena_type = @tir.create_instance_type(:Arena, :bareruby_arena_t)
+
+      # The region is created when the block is entered and released when it is left, so
+      # its size is what the whole block may allocate and has to be settled while
+      # compiling: the storage is reserved statically, not taken from a heap.
+      def infer_arena_call(arguments, block, env:, self_class:, span:)
+        size = constant_capacity(keyword_value(arguments, :size), env:, self_class:)
+        raise "arena: the size must be known at compile time" if size.nil?
+
+        parameters, body = @bareruby_ast.children_of(block)
+        binding = @tir.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
+        block_env = env.merge(binding[:name] => [binding, arena_type])
+
+        @arena_scopes.push(env.keys)
+        typed_body = infer_body(body, env: block_env, self_class:)
+        @arena_scopes.pop
+
+        @tir.create_arena(binding, size, typed_body, span)
+      end
+
+      def infer_arena_new_call(arguments, env:, self_class:, span:)
+        size = constant_capacity(keyword_value(arguments, :size), env:, self_class:)
+        raise "Arena.new: the size must be known at compile time" if size.nil?
+
+        @tir.create_arena_new(size, arena_type, span)
+      end
+
+      def keyword_value(arguments, name)
+        argument = arguments.find do |candidate|
+          @bareruby_ast.node_type(candidate) == :keyword_argument &&
+            @bareruby_ast.children_of(candidate)[0] == name
+        end
+        argument && @bareruby_ast.children_of(argument)[1]
+      end
+
+      # The length is a run-time value: reserving room for it is the whole reason the
+      # arena exists. The element type is left open and the first assignment settles it,
+      # as Array.new(n) does.
+      def infer_arena_method_call(name, receiver_tir, arguments, env:, self_class:, span:)
+        return infer_arena_reset_call(receiver_tir, span) if name == :reset
+        raise "an arena answers array and reset, not #{name}" unless name == :array
+
+        length = infer_node(arguments[0], env:, self_class:)
+        @tir.create_arena_alloc(receiver_tir, length, @tir.create_arena_array_type(nil), span)
+      end
+
+      def infer_arena_reset_call(receiver_tir, span)
+        callee = @tir.create_callee(:binding_method, :Arena, :reset, :bareruby_arena_reset, [], :Nil)
+        @tir.create_call(receiver_tir, callee, [], nil, :Nil, span)
+      end
+
+      # size is a field rather than a folded constant, because an arena array is the one
+      # array whose length the compiler does not know.
+      def infer_arena_array_method_call(name, receiver_tir, receiver_type, arguments, env:, self_class:, span:)
+        return @tir.create_arena_length(receiver_tir, :Int32, span) if SIZE_NAMES.include?(name)
+
+        index = infer_node(arguments[0], env:, self_class:)
+        return infer_index_assign(receiver_tir, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
+
+        element_type = receiver_type[:element]
+        raise "the element type of this arena array is not known yet" if element_type.nil?
+
+        @tir.create_index(receiver_tir, index, element_type, span)
+      end
+
+      # The simple check the design asks for while a full lifetime analysis is still out
+      # of scope: neither an allocation nor the arena it came from may be stored where the
+      # release cannot reach it. An instance variable outlives every block, and so does a
+      # local the block did not introduce. Creating a long-lived arena there is the one
+      # thing that is not an escape, because it is where that arena begins.
+      def reject_arena_escape(kind, name, value_tir)
+        type = @tir.value_type(value_tir)
+        return unless arena_array_type?(type) ||
+                      (arena_type?(type) && @tir.node_type(value_tir) != :arena_new)
+        return unless kind == :instance || @arena_scopes.any? { |names| names.include?(name) }
+
+        raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
       end
 
       def constant_receiver?(receiver)

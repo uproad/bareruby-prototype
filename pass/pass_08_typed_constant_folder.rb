@@ -39,6 +39,9 @@ module BareRubyProt
         when :while_true then fold_while_true(node)
         when :for_range then fold_for_range(node)
         when :logical then fold_logical(node)
+        when :arena then fold_arena(node)
+        when :arena_alloc then fold_arena_alloc(node)
+        when :arena_length then fold_arena_length(node)
         when :array then fold_array(node)
         when :array_fill then fold_array_fill(node)
         when :array_dup then fold_array_dup(node)
@@ -46,6 +49,21 @@ module BareRubyProt
         when :index_assign then fold_index_assign(node)
         else node
         end
+      end
+
+      def fold_arena(node)
+        binding, size, body = @tir.children_of(node)
+        @tir.create_arena(binding, size, fold_body(body), span_of(node))
+      end
+
+      def fold_arena_alloc(node)
+        receiver, length, type = @tir.children_of(node)
+        @tir.create_arena_alloc(fold_node(receiver), fold_node(length), type, span_of(node))
+      end
+
+      def fold_arena_length(node)
+        receiver, type = @tir.children_of(node)
+        @tir.create_arena_length(fold_node(receiver), type, span_of(node))
       end
 
       def fold_array(node)

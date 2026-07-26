@@ -28,6 +28,8 @@ module BareRubyProt
 
     def create_array_type(element, capacity) = { kind: :array, element:, capacity: }
 
+    def create_arena_array_type(element) = { kind: :arena_array, element: }
+
     def create_identity(owner, name, parameter_types, return_type)
       { owner:, name:, parameter_types:, return_type: }
     end
@@ -61,6 +63,14 @@ module BareRubyProt
     def create_array_fill(value, type, span) = build(:array_fill, [value, type], span)
 
     def create_array_dup(receiver, type, span) = build(:array_dup, [receiver, type], span)
+
+    def create_arena(binding, size, body, span) = build(:arena, [binding, size, body], span)
+
+    def create_arena_new(size, type, span) = build(:arena_new, [size, type], span)
+
+    def create_arena_alloc(receiver, length, type, span) = build(:arena_alloc, [receiver, length, type], span)
+
+    def create_arena_length(receiver, type, span) = build(:arena_length, [receiver, type], span)
 
     def create_index(receiver, index, type, span) = build(:index, [receiver, index, type], span)
 
@@ -157,6 +167,10 @@ module BareRubyProt
       when :while_true
         [gutter(node) + "#{indent}while_true"] +
           node[:children][0].flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
+      when :arena
+        binding, size, body = node[:children]
+        [gutter(node) + "#{indent}arena(#{binding[:name]}, size: #{size})"] +
+          body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       when :if
         condition, then_body, else_body, type = node[:children]
         lines = [gutter(node) + "#{indent}if(#{inspect_inline(condition)}) -> #{inspect_type(type)}"]
@@ -221,6 +235,15 @@ module BareRubyProt
       when :array_dup
         receiver, type = node[:children]
         "array_dup(#{inspect_inline(receiver)}, #{inspect_type(type)})"
+      when :arena_new
+        size, type = node[:children]
+        "arena_new(size: #{size}, #{inspect_type(type)})"
+      when :arena_alloc
+        receiver, length, type = node[:children]
+        "arena_alloc(#{inspect_inline(receiver)}, #{inspect_inline(length)}, #{inspect_type(type)})"
+      when :arena_length
+        receiver, type = node[:children]
+        "arena_length(#{inspect_inline(receiver)}, #{inspect_type(type)})"
       when :index
         receiver, index, type = node[:children]
         "index(#{inspect_inline(receiver)}, #{inspect_inline(index)}, #{inspect_type(type)})"
@@ -250,6 +273,7 @@ module BareRubyProt
     def inspect_type(type)
       return type.to_s unless type.is_a?(Hash)
       return "array(#{inspect_type(type[:element])}, #{type[:capacity]})" if type[:kind] == :array
+      return "arena_array(#{inspect_type(type[:element])})" if type[:kind] == :arena_array
 
       "instance(#{type[:class_name]})"
     end
