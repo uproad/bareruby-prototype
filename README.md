@@ -108,7 +108,7 @@ a channel fed nothing at all holds 0. Dropping the first channel from 4000 count
 drops it to 7, and it climbs back to 73 over the following nine seconds as its swing
 decays two counts a frame towards the 410 floor. The floor is what bounds the gain: the
 lower it is set the further a channel can recover, and the more room noise above the gate
-is amplified with it. `text` is 15220 B, and the per-sample path inlines to a conversion
+is amplified with it. `text` is 15100 B, and the per-sample path inlines to a conversion
 plus seven instructions per channel, roughly a quarter of the 25 µs; every call between
 the four objects is inlined away and costs nothing.
 

@@ -135,15 +135,15 @@ loop do
     taken = 0
 
     detector26.advance
-    visualizer26.observe(detector26.span)
-    led6.brightness = visualizer26.brightness_percent
-
     detector27.advance
-    visualizer27.observe(detector27.span)
-    led7.brightness = visualizer27.brightness_percent
-
     detector28.advance
+
+    visualizer26.observe(detector26.span)
+    visualizer27.observe(detector27.span)
     visualizer28.observe(detector28.span)
+
+    led6.brightness = visualizer26.brightness_percent
+    led7.brightness = visualizer27.brightness_percent
     led8.brightness = visualizer28.brightness_percent
   end
 
