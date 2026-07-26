@@ -99,14 +99,19 @@ module BareRubyProt
         end
       end
 
+      # Every method body ends in a return, because pass 2 wraps the last statement in one to
+      # give Ruby its implicit return, so what is returned here is as often a statement as it
+      # is a value. When the method returns nothing it stays a statement: the call still has
+      # to be made and the loop still has to run, and neither leaves a value C++ could return.
       def lower_return(node)
         value = @tir.children_of(node)[0]
         return [@lir.create_return(nil)] if value.nil?
         # An implicit return wrapped around a construct that always leaves on its own.
         return lower_statement(value) if @tir.value_type(value) == :NoReturn
+        return lower_statement(value) + [@lir.create_return(nil)] if @void_return
 
         statements, expression = lower_expression(value)
-        statements + [@lir.create_return(@void_return ? nil : shared_rvalue(value, expression))]
+        statements + [@lir.create_return(shared_rvalue(value, expression))]
       end
 
       def lower_for_range(node)
