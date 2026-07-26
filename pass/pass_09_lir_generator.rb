@@ -182,13 +182,8 @@ module BareRubyProt
       def lower_arena_assignment(binding, value, type)
         struct = lir_type(type)
         place = place_of(binding, struct)
-        statements = []
-        if binding[:kind] == :local && !@declared.include?(binding[:name])
-          @declared << binding[:name]
-          statements << @lir.create_declare(binding[:name], struct, nil)
-        end
-
-        [statements + arena_setup(place, @tir.children_of(value)[0], next_arena_index), place]
+        [storage_declaration(binding, struct) +
+          arena_setup(place, @tir.children_of(value)[0], next_arena_index), place]
       end
 
       def arena_setup(place, size, index)
@@ -322,7 +317,7 @@ module BareRubyProt
       # An if used as a value becomes a declaration plus branches that assign into it.
       def lower_if_expression(node)
         condition, then_body, else_body, type = @tir.children_of(node)
-        result_type = lir_type(type)
+        result_type = value_lir_type(type)
         result_name = next_temp
         condition_statements, condition_expression = lower_condition(condition)
 
@@ -339,7 +334,8 @@ module BareRubyProt
         leading = statements[0...-1].flat_map { |statement| lower_statement(statement) }
         value_statements, value_expression = lower_expression(statements.last)
         leading + value_statements +
-          [@lir.create_assign(@lir.create_local(result_name, result_type), value_expression)]
+          [@lir.create_assign(@lir.create_local(result_name, result_type),
+                              shared_rvalue(statements.last, value_expression))]
       end
 
       # An interpolation assigned to a local becomes a buffer of the size pass 5 bounded
@@ -389,6 +385,7 @@ module BareRubyProt
         return lower_format_assignment(binding, value) if @tir.node_type(value) == :format
         return lower_array_assignment(binding, value, type) if array_creation?(value)
         return lower_arena_assignment(binding, value, type) if arena_creation?(value)
+        return lower_object_assignment(binding, value, type) if object_creation?(value)
 
         statements, value_expression = lower_expression(value)
         @pointer_locals << binding[:name] if shared_type?(type) && binding[:kind] == :local
@@ -403,20 +400,22 @@ module BareRubyProt
         end
       end
 
-      # Assignment shares the array rather than copying it, so only the binding a creation
-      # expression is assigned to owns storage. Every other binding of array type is a
-      # pointer to somebody else's.
+      # Every object is shared, which is what Ruby does. Assignment names the same object
+      # rather than copying it, so only the binding a creation expression is assigned to owns
+      # storage and every other binding of that type is a pointer to somebody else's. Passing
+      # an object to a method is that same assignment: a method that changes what it was
+      # handed changes the caller's object, where a copy would take every change with it when
+      # the call dropped it. An arena has a second reason — what it hands out is recorded in
+      # the arena itself, so a method that allocated from a copy would leave the caller's
+      # arena believing the room is still free.
+      def instance_type?(type) = type.is_a?(Hash) && type[:kind] == :instance
+
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
-      # An arena is shared for the same reason an array is, and for one more: what it
-      # hands out is recorded in the arena itself, so a method that allocated from a copy
-      # would leave the caller's arena believing the room is still free.
-      def arena_instance_type?(type) = type.is_a?(Hash) && type[:struct] == ARENA_STRUCT
-
-      def shared_type?(type) = array_type?(type) || arena_instance_type?(type)
+      def shared_type?(type) = instance_type?(type) || array_type?(type)
 
       # A shared value in value position is always a reference: returning one by value
-      # would copy it, which only dup is allowed to do.
+      # would copy it, and nothing but dup copies an object.
       def value_lir_type(type)
         shared_type?(type) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
       end
@@ -425,10 +424,16 @@ module BareRubyProt
 
       def arena_creation?(node) = @tir.node_type(node) == :arena_new
 
+      def object_creation?(node)
+        @tir.node_type(node) == :call && %i[new binding_new].include?(@tir.children_of(node)[1][:kind])
+      end
+
+      def creation?(node) = array_creation?(node) || arena_creation?(node) || object_creation?(node)
+
       def owning_ivars(methods)
         names = []
         each_assignment(methods) do |binding, value|
-          names << binding[:name] if binding[:kind] == :instance && (array_creation?(value) || arena_creation?(value))
+          names << binding[:name] if binding[:kind] == :instance && creation?(value)
         end
         names
       end
@@ -479,13 +484,26 @@ module BareRubyProt
       def lower_array_assignment(binding, value, type)
         struct = lir_type(type)
         place = place_of(binding, struct)
-        statements = []
-        if binding[:kind] == :local && !@declared.include?(binding[:name])
-          @declared << binding[:name]
-          statements << @lir.create_declare(binding[:name], struct, nil)
-        end
+        [storage_declaration(binding, struct) + fill_of(place, value, type), place]
+      end
 
-        [statements + fill_of(place, value, type), place]
+      # The same for an object: the binding a constructor is assigned to holds the instance,
+      # and the constructor writes straight into it rather than into a temporary that would
+      # then have to be copied there.
+      def lower_object_assignment(binding, value, type)
+        _receiver, callee, arguments, = @tir.children_of(value)
+        struct = lir_type(type)
+        place = place_of(binding, struct)
+        [storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
+      end
+
+      # A local that owns storage is declared here rather than initialised from somewhere
+      # else; an instance variable that owns storage is a field and is declared with the struct.
+      def storage_declaration(binding, struct)
+        return [] unless binding[:kind] == :local && !@declared.include?(binding[:name])
+
+        @declared << binding[:name]
+        [@lir.create_declare(binding[:name], struct, nil)]
       end
 
       # An array written anywhere other than the right of an assignment still needs
@@ -578,19 +596,21 @@ module BareRubyProt
         [statements, @lir.create_call(callee[:function], expressions, value_lir_type(callee[:return_type]))]
       end
 
+      # An object written anywhere other than the right of an assignment still needs storage
+      # to be constructed into, so it gets a temporary of its own.
       def lower_constructor(callee, arguments, type)
         struct = lir_type(type)
         instance_name = next_temp
-        argument_statements, argument_expressions = lower_arguments(arguments)
-        initializer = @lir.create_call(
-          callee[:function],
-          [@lir.create_address_of(@lir.create_local(instance_name, struct))] + argument_expressions,
-          :void
-        )
+        place = @lir.create_local(instance_name, struct)
 
-        statements = [@lir.create_declare(instance_name, struct, nil)] + argument_statements +
-                     [@lir.create_expression(initializer)]
-        [statements, @lir.create_local(instance_name, struct)]
+        [[@lir.create_declare(instance_name, struct, nil)] + construction_of(place, callee, arguments), place]
+      end
+
+      def construction_of(place, callee, arguments)
+        argument_statements, argument_expressions = lower_arguments(arguments)
+        initializer = @lir.create_call(callee[:function], [reference_to(place)] + argument_expressions, :void)
+
+        argument_statements + [@lir.create_expression(initializer)]
       end
 
       def lower_method_call(receiver, callee, arguments)
@@ -656,7 +676,11 @@ module BareRubyProt
 
       # An arena array is a pointer into the region plus the length that was asked for, so
       # assigning one shares the allocation the way assigning an array does, and the
-      # capacity the compiler cannot know is carried at run time.
+      # capacity the compiler cannot know is carried at run time. That is why the handle
+      # itself is not a shared type: both of its fields are settled when the allocation is
+      # made and nothing afterwards changes them, so a copy of the handle still names the
+      # same elements, and the method that allocated it can hand it back — where a pointer
+      # to it would outlive the local it pointed at.
       def arena_array_struct_type(type)
         raise "the element type of this arena array was never determined" if type[:element].nil?
 

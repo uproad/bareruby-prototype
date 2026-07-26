@@ -48,6 +48,15 @@ Covered so far:
   the same room. An allocation may not be stored in an instance variable or in a local
   the block did not introduce. No new pass.
 
+Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
+the object `a` names rather than a copy of it, a method is handed the caller's object and
+not a copy — so what it changes, the caller sees — and a method that returns an object
+returns that object. Only `dup` duplicates one. Storage belongs to the binding the
+creation expression was assigned to: a local holds the instance on the stack, an instance
+variable holds it inside the owning struct, and every other binding of that type is a
+pointer to it. The array and the arena reached that rule first, one milestone at a time;
+it holds for every object, peripherals included.
+
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
 mruby/c and pico-sdk both do underneath — so a loop's period is its body plus the wait,
