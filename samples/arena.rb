@@ -10,7 +10,7 @@ class Series
       values[i] = i * i
       i = i + 1
     end
-    return values
+    values
   end
 
   def largest(values)
@@ -20,12 +20,12 @@ class Series
       best = values[i] if values[i] > best
       i = i + 1
     end
-    return best
+    best
   end
 
   def kept(count)
     @pool.reset
-    return squares(@pool, count)
+    squares(@pool, count)
   end
 end
 

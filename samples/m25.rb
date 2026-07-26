@@ -1,10 +1,10 @@
 module Greetable
   def greet
-    return 1
+    1
   end
 
   def describe
-    return greet + 10
+    greet + 10
   end
 end
 
@@ -14,11 +14,11 @@ class Device
   end
 
   def id
-    return @id
+    @id
   end
 
   def label
-    return @id * 100
+    @id * 100
   end
 end
 
@@ -31,7 +31,7 @@ class Sensor < Device
   end
 
   def label
-    return super + @scale
+    super + @scale
   end
 end
 
@@ -49,7 +49,7 @@ class Guard
     if value < 0
       raise "negative value"
     end
-    return value * 2
+    value * 2
   end
 end
 

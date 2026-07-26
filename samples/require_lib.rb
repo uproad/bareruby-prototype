@@ -9,6 +9,6 @@ class Counter
 
   def bump
     @value = @value + step
-    return @value
+    @value
   end
 end

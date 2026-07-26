@@ -8,7 +8,6 @@ class Window
     @samples[@at] = value
     @at = @at + 1
     @at = 0 if @at >= @samples.size
-    return
   end
 
   def peak
@@ -18,7 +17,7 @@ class Window
       best = @samples[k] if @samples[k] > best
       k = k + 1
     end
-    return best
+    best
   end
 end
 

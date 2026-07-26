@@ -10,7 +10,6 @@ class Counter
 
   def bump
     @value = @value + 1
-    return
   end
 
   def value

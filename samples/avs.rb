@@ -13,7 +13,6 @@ class PeakToPeakDetector
     value = @adc.read_raw
     @low = value if value < @low
     @high = value if value > @high
-    return
   end
 
   def advance
@@ -23,13 +22,11 @@ class PeakToPeakDetector
     @at = 0 if @at >= @lows.size
     @filled = @filled + 1 if @filled < @lows.size
     start_frame
-    return
   end
 
   def start_frame
     @low = @full_scale
     @high = 0
-    return
   end
 
   def span
@@ -41,7 +38,7 @@ class PeakToPeakDetector
       high = @highs[k] if @highs[k] > high
       k = k + 1
     end
-    return high - low
+    high - low
   end
 end
 
@@ -58,12 +55,11 @@ class AudioVisualizer
     @swing = @swing - @swing_decay if @swing > @swing_floor
     @swing = span if span > @swing
     @span = span
-    return
   end
 
   def brightness_percent
     return 0 if @span < @gate
-    return @span * 100 / @swing
+    @span * 100 / @swing
   end
 end
 
@@ -74,7 +70,6 @@ class Led
 
   def brightness=(percent)
     @pwm.duty(percent)
-    return
   end
 end
 
@@ -93,7 +88,6 @@ class Heartbeat
     end
     @at = @at + 1
     @at = 0 if @at >= @ticks_per_beat
-    return
   end
 end
 

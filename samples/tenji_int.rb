@@ -8,7 +8,6 @@ class Window
     @samples[@at] = value
     @at = @at + 1
     @at = 0 if @at >= @samples.size
-    return
   end
 
   def span
@@ -20,7 +19,7 @@ class Window
       high = @samples[k] if @samples[k] > high
       k = k + 1
     end
-    return high - low
+    high - low
   end
 end
 

@@ -6,16 +6,16 @@ class Classifier
   def classify(value)
     @calls = @calls + 1
     if value < 0
-      return 0
+      0
     elsif value == 0
-      return 1
+      1
     else
-      return 2
+      2
     end
   end
 
   def calls
-    return @calls
+    @calls
   end
 end
 
@@ -58,12 +58,11 @@ class Reporter
 
   def bump(amount)
     @count = @count + amount
-    return @count
+    @count
   end
 
   def report
     puts "#{@label}: count=#{@count} (100% done)"
-    return
   end
 end
 
@@ -87,15 +86,14 @@ class Machine2
 
   def start
     @state = :running
-    return
   end
 
   def running?
-    return @state == :running
+    @state == :running
   end
 
   def state
-    return @state
+    @state
   end
 end
 
