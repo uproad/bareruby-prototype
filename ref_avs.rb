@@ -1,6 +1,7 @@
 class PeakToPeakDetector
-  def initialize(adc_pin)
+  def initialize(adc_pin, full_scale)
     @adc = ADC.new(adc_pin)
+    @full_scale = full_scale
     @lows = Array.new(6, 0)
     @highs = Array.new(6, 0)
     @at = 0
@@ -26,7 +27,7 @@ class PeakToPeakDetector
   end
 
   def start_frame
-    @low = 4095
+    @low = @full_scale
     @high = 0
     return
   end
@@ -45,14 +46,24 @@ class PeakToPeakDetector
 end
 
 class AudioVisualizer
-  def initialize(full_swing)
-    @full_swing = full_swing
+  def initialize(gate, swing_floor, swing_decay)
+    @gate = gate
+    @swing_floor = swing_floor
+    @swing_decay = swing_decay
+    @swing = gate
+    @span = 0
   end
 
-  def brightness_percent(span)
-    percent = span * 100 / @full_swing
-    percent = 100 if percent > 100
-    return percent
+  def observe(span)
+    @swing = @swing - @swing_decay if @swing > @swing_floor
+    @swing = span if span > @swing
+    @span = span
+    return
+  end
+
+  def brightness_percent
+    return 0 if @span < @gate
+    return @span * 100 / @swing
   end
 end
 
@@ -89,17 +100,27 @@ end
 sample_period_us = 25
 frame_samples = 200
 led_frequency = 5000
-full_swing = 4095
+full_scale = 4095
+gate = 40
+swing_floor = 410
+decay_seconds = 10
 
-detector26 = PeakToPeakDetector.new(26)
-detector27 = PeakToPeakDetector.new(27)
-detector28 = PeakToPeakDetector.new(28)
+frames_per_second = 1000000 / (sample_period_us * frame_samples)
+decay_frames = decay_seconds * frames_per_second
+swing_decay = (full_scale - swing_floor + decay_frames / 2) / decay_frames
+
+detector26 = PeakToPeakDetector.new(26, full_scale)
+detector27 = PeakToPeakDetector.new(27, full_scale)
+detector28 = PeakToPeakDetector.new(28, full_scale)
+
+visualizer26 = AudioVisualizer.new(gate, swing_floor, swing_decay)
+visualizer27 = AudioVisualizer.new(gate, swing_floor, swing_decay)
+visualizer28 = AudioVisualizer.new(gate, swing_floor, swing_decay)
 
 led6 = Led.new(6, led_frequency)
 led7 = Led.new(7, led_frequency)
 led8 = Led.new(8, led_frequency)
 
-visualizer = AudioVisualizer.new(full_swing)
 heartbeat = Heartbeat.new(25, 1000000 / sample_period_us)
 
 taken = 0
@@ -114,13 +135,16 @@ loop do
     taken = 0
 
     detector26.advance
-    led6.brightness = visualizer.brightness_percent(detector26.span)
+    visualizer26.observe(detector26.span)
+    led6.brightness = visualizer26.brightness_percent
 
     detector27.advance
-    led7.brightness = visualizer.brightness_percent(detector27.span)
+    visualizer27.observe(detector27.span)
+    led7.brightness = visualizer27.brightness_percent
 
     detector28.advance
-    led8.brightness = visualizer.brightness_percent(detector28.span)
+    visualizer28.observe(detector28.span)
+    led8.brightness = visualizer28.brightness_percent
   end
 
   heartbeat.tick
