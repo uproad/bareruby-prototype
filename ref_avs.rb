@@ -1,99 +1,56 @@
-class Extremes
-  def initialize
-    @empty = true
-    @low = 0
-    @high = 0
+class PeakMeter
+  def initialize(adc_pin, led_pin, led_frequency, full_swing)
+    @adc = ADC.new(adc_pin)
+    @led = PWM.new(led_pin, frequency: led_frequency, duty: 0)
+    @full_swing = full_swing
+    @lows = Array.new(6, 0)
+    @highs = Array.new(6, 0)
+    @at = 0
+    @filled = 0
+    start_frame
   end
 
-  def record(value)
-    start(value) if @empty
+  def measure
+    value = @adc.read_raw
     @low = value if value < @low
     @high = value if value > @high
     return
   end
 
-  def start(value)
-    @empty = false
-    @low = value
-    @high = value
+  def refresh
+    close_frame
+    percent = span * 100 / @full_swing
+    percent = 100 if percent > 100
+    @led.duty(percent)
     return
   end
 
-  def clear
-    @empty = true
-    @low = 0
+  def close_frame
+    @lows[@at] = @low
+    @highs[@at] = @high
+    @at = @at + 1
+    @at = 0 if @at >= @lows.size
+    @filled = @filled + 1 if @filled < @lows.size
+    start_frame
+    return
+  end
+
+  def start_frame
+    @low = 4095
     @high = 0
     return
   end
 
-  def low
-    return @low
-  end
-
-  def high
-    return @high
-  end
-
   def span
-    return @high - @low
-  end
-end
-
-class Window
-  def initialize
-    @lows = Array.new(6, 0)
-    @highs = Array.new(6, 0)
-    @frame = Extremes.new
-    @at = 0
-    @filled = 0
-  end
-
-  def observe(value)
-    @frame.record(value)
-    return
-  end
-
-  def advance
-    @lows[@at] = @frame.low
-    @highs[@at] = @frame.high
-    @at = @at + 1
-    @at = 0 if @at >= @lows.size
-    @filled = @filled + 1 if @filled < @lows.size
-    @frame.clear
-    return
-  end
-
-  def span
-    bounds = Extremes.new
-    k = 0
+    low = @lows[0]
+    high = @highs[0]
+    k = 1
     while k < @filled
-      bounds.record(@lows[k])
-      bounds.record(@highs[k])
+      low = @lows[k] if @lows[k] < low
+      high = @highs[k] if @highs[k] > high
       k = k + 1
     end
-    return bounds.span
-  end
-end
-
-class PeakMeter
-  def initialize(adc_pin, led_pin, led_frequency, full_swing)
-    @adc = ADC.new(adc_pin)
-    @led = PWM.new(led_pin, frequency: led_frequency, duty: 0)
-    @window = Window.new
-    @full_swing = full_swing
-  end
-
-  def measure
-    @window.observe(@adc.read_raw)
-    return
-  end
-
-  def refresh
-    @window.advance
-    percent = @window.span * 100 / @full_swing
-    percent = 100 if percent > 100
-    @led.duty(percent)
-    return
+    return high - low
   end
 end
 

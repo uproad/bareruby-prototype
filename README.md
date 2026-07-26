@@ -82,16 +82,17 @@ lowering it is the only sensitivity control there is.
 The PWM frequency drops from 100 kHz to 5 kHz for the same reason: `duty` is a percentage
 and the binding sets the wrap to `1000000 / frequency - 1`, so at 100 kHz the top is 9 and
 a percentage can only reach ten levels. At 5 kHz it is 199, which is every percent, and
-still far above flicker fusion. Four objects carry the program — `Extremes` records a
-series' lowest and highest, `Window` keeps the ring of frames, `PeakMeter` samples one
-channel and lights its LED, `Heartbeat` blinks GP25 — and `Extremes` appears twice, as the
-current frame and as the fold that reduces the ring to one span, which makes this the
-first program here to hold a class of its own inside another. Against synthetic input at
-40 kHz, a full-swing 1 kHz sine holds duty 99, a 100-count 8 kHz sine holds 4, and a
-500-count 50 Hz sine reads 12 for two frames and then 24 — 30 ms is one and a half periods
-of 50 Hz, and the first two frames hold part of one. `text` is 14964 B, and the per-sample
-path inlines to a conversion plus about a dozen instructions per channel, roughly a
-quarter of the 25 µs.
+still far above flicker fusion. Two objects carry the program: `PeakMeter`, which owns one
+channel's converter, ring of frames and LED, and `Heartbeat`, which blinks GP25. Detecting
+a peak to peak is one responsibility, so it is one class — splitting the frame's extremes
+and the ring back out of it yields classes too small to be read apart, and a min/max
+abstraction shared between the frame and the fold has to carry an emptiness flag and a
+branch per sample that only one of its two uses needs. Against synthetic input at 40 kHz,
+a full-swing 1 kHz sine holds duty 99, a 100-count 8 kHz sine holds 4, and a 500-count
+50 Hz sine reads 12 for two frames and then 24 — 30 ms is one and a half periods of 50 Hz,
+and the first two frames hold part of one. `text` is 15084 B, and the per-sample path
+inlines to a conversion plus seven instructions per channel, roughly a quarter of the
+25 µs.
 
 `asleep` is the one call here that neither PicoRuby nor the mruby/c Common I/O guideline
 defines. `sleep` and `sleep_ms` wait from the moment they are called — that is what
