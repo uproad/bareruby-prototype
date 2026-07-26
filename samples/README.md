@@ -29,6 +29,7 @@ it is given no argument.
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
 | `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel |
 | `require.rb` | require expansion, with `require_lib.rb` and `require_helper.rb` requiring each other |
+| `object.rb` | An object passed to a method, aliased, held by another object and handed back. Matches real Ruby |
 
 ## A product ported over
 
