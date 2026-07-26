@@ -11,6 +11,8 @@ module BareRubyProt
         :== => "==", :!= => "!=", :< => "<", :<= => "<=", :> => ">", :>= => ">=",
         :-@ => "-", :~ => "~", :! => "!"
       }.freeze
+      ARENA_STRUCT = :bareruby_arena_t
+      ARENA_SCOPE_STRUCT = :bareruby_arena_scope
 
       attr_reader :result
 
@@ -74,6 +76,7 @@ module BareRubyProt
         @declared = []
         @array_pointers = []
         @temp_index = 0
+        @arena_index = 0
         @self_type = self_class && @lir.pointer_type(@lir.struct_type(self_class))
         @void_return = lir_type(return_type) == :void
       end
@@ -83,6 +86,7 @@ module BareRubyProt
         when :return then lower_return(node)
         when :for_range then lower_for_range(node)
         when :while_true then lower_while_true(node)
+        when :arena then lower_arena(node)
         when :while then lower_while(node)
         when :if then lower_if_statement(node)
         when :begin
@@ -129,6 +133,87 @@ module BareRubyProt
       def lower_while_true(node)
         [@lir.create_while(@lir.create_const_bool(true), lower_body(@tir.children_of(node)[0]))]
       end
+
+      # The region is a static buffer belonging to this one site rather than a slice of a
+      # shared heap, which is what makes the RAM an arena costs visible in .bss and what
+      # makes release a bump pointer reset. The guard is what releases it: its destructor
+      # runs on the way out of the scope whether the block ends normally or an exception
+      # leaves it, which is the exception safety the design requires.
+      def lower_arena(node)
+        binding, size, body = @tir.children_of(node)
+        index = next_arena_index
+        struct = @lir.struct_type(ARENA_STRUCT)
+        place = @lir.create_local(binding[:name], struct)
+        @declared << binding[:name]
+        scope_struct = @lir.struct_type(ARENA_SCOPE_STRUCT)
+
+        opening = arena_setup(binding[:name], place, size, index) +
+                  [@lir.create_declare(
+                    :"arena_scope_#{index}", scope_struct,
+                    @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
+                  )]
+        [@lir.create_scope(opening + lower_body(body))]
+      end
+
+      # A long-lived arena outlives no scope, so it takes no guard: reset is the only
+      # thing that releases it.
+      def lower_arena_new(node)
+        size, type = @tir.children_of(node)
+        struct = lir_type(type)
+        name = next_temp
+        place = @lir.create_local(name, struct)
+        [arena_setup(name, place, size, next_arena_index), place]
+      end
+
+      def arena_setup(name, place, size, index)
+        storage = :"arena_storage_#{index}"
+        initializer = @lir.create_call(
+          :bareruby_arena_init,
+          [@lir.create_address_of(place),
+           @lir.create_local(storage, @lir.pointer_type(:uint8)),
+           @lir.create_const_int(size, :int32)],
+          :void
+        )
+        [@lir.create_declare_arena_storage(storage, size),
+         @lir.create_declare(name, @lir.value_type(place), nil),
+         @lir.create_expression(initializer)]
+      end
+
+      # The length is bound to a local first, because the handle stores it as well as
+      # allocating from it and the expression it came from may not be evaluated twice.
+      def lower_arena_alloc(node)
+        receiver, length, type = @tir.children_of(node)
+        struct = lir_type(type)
+        element = lir_type(type[:element])
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        length_statements, length_expression = lower_expression(length)
+        length_local = @lir.create_local(next_temp, :int32)
+        place = @lir.create_local(next_temp, struct)
+
+        statements = receiver_statements + length_statements +
+                     [@lir.create_declare(@lir.children_of(length_local)[0], :int32, length_expression),
+                      @lir.create_declare(@lir.children_of(place)[0], struct, nil),
+                      @lir.create_assign(items_of(place), allocation_of(receiver_expression, length_local, element)),
+                      @lir.create_assign(length_of(place), length_local)]
+        [statements, place]
+      end
+
+      def allocation_of(arena_expression, length_local, element)
+        bytes = @lir.create_binary("*", length_local, @lir.create_size_of(element, :int32), :int32)
+        call = @lir.create_call(
+          :bareruby_arena_alloc,
+          [@lir.create_address_of(arena_expression), bytes],
+          @lir.pointer_type(:void)
+        )
+        @lir.create_cast(call, @lir.pointer_type(element))
+      end
+
+      def lower_arena_length(node)
+        statements, expression = lower_expression(@tir.children_of(node)[0])
+        [statements, length_of(expression)]
+      end
+
+      def length_of(base) = @lir.create_field_access(base, :length, :int32)
 
       # Only Bool can be false, so a condition of any other
       # type is statically true and the test disappears.
@@ -185,6 +270,12 @@ module BareRubyProt
           lower_index_assign(node)
         when :array, :array_fill, :array_dup
           lower_array_temporary(node)
+        when :arena_new
+          lower_arena_new(node)
+        when :arena_alloc
+          lower_arena_alloc(node)
+        when :arena_length
+          lower_arena_length(node)
         when :call
           lower_call(node)
         when :logical
@@ -498,9 +589,16 @@ module BareRubyProt
         when :Bool then :bool
         when :Fixed then :fixed
         when :String then :string_ptr
-        when Hash
-          type[:kind] == :array ? array_struct_type(type) : @lir.struct_type(type[:struct] || type[:class_name])
+        when Hash then struct_lir_type(type)
         else :void
+        end
+      end
+
+      def struct_lir_type(type)
+        case type[:kind]
+        when :array then array_struct_type(type)
+        when :arena_array then arena_array_struct_type(type)
+        else @lir.struct_type(type[:struct] || type[:class_name])
         end
       end
 
@@ -517,6 +615,20 @@ module BareRubyProt
         @lir.struct_type(name)
       end
 
+      # An arena array is a pointer into the region plus the length that was asked for, so
+      # assigning one shares the allocation the way assigning an array does, and the
+      # capacity the compiler cannot know is carried at run time.
+      def arena_array_struct_type(type)
+        raise "the element type of this arena array was never determined" if type[:element].nil?
+
+        element = lir_type(type[:element])
+        name = :"bareruby_arena_array_#{element}_t"
+        @array_structs[name] ||= @lir.create_struct(
+          name, [@lir.create_field(:items, @lir.pointer_type(element)), @lir.create_field(:length, :int32)]
+        )
+        @lir.struct_type(name)
+      end
+
       def field_name(name) = name.to_s.delete_prefix("@").to_sym
 
       # Must agree with the name the type inferrer put in the callee.
@@ -527,6 +639,10 @@ module BareRubyProt
       def next_temp
         @temp_index += 1
         :"temporary_#{@temp_index}"
+      end
+
+      def next_arena_index
+        @arena_index += 1
       end
     end
   end

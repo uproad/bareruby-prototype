@@ -27,6 +27,9 @@ module BareRubyProt
         when :while then inline_while(node)
         when :begin then inline_begin(node)
         when :logical then inline_logical(node)
+        when :arena then inline_arena(node)
+        when :arena_alloc then inline_arena_alloc(node)
+        when :arena_length then inline_arena_length(node)
         when :array then inline_array(node)
         when :array_fill then inline_array_fill(node)
         when :array_dup then inline_array_dup(node)
@@ -34,6 +37,21 @@ module BareRubyProt
         when :index_assign then inline_index_assign(node)
         else node
         end
+      end
+
+      def inline_arena(node)
+        binding, size, body = @tir.children_of(node)
+        @tir.create_arena(binding, size, inline_body(body), span_of(node))
+      end
+
+      def inline_arena_alloc(node)
+        receiver, length, type = @tir.children_of(node)
+        @tir.create_arena_alloc(inline_node(receiver), inline_node(length), type, span_of(node))
+      end
+
+      def inline_arena_length(node)
+        receiver, type = @tir.children_of(node)
+        @tir.create_arena_length(inline_node(receiver), type, span_of(node))
       end
 
       def inline_array(node)

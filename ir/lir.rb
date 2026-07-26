@@ -40,6 +40,10 @@ module BareRubyProt
 
     def create_declare_buffer(name, capacity) = build(:declare_buffer, [name, capacity])
 
+    def create_declare_arena_storage(name, capacity) = build(:declare_arena_storage, [name, capacity])
+
+    def create_scope(body) = build(:scope, [body])
+
     def create_assign(place, value) = build(:assign, [place, value])
 
     def create_expression(value) = build(:expression, [value])
@@ -79,6 +83,12 @@ module BareRubyProt
     def create_unary(operator, operand, type) = build(:unary, [operator, operand, type])
 
     def create_call(name, arguments, type) = build(:call, [name, arguments, type])
+
+    def create_cast(value, type) = build(:cast, [value, type])
+
+    def create_size_of(target, type) = build(:size_of, [target, type])
+
+    def create_brace_init(values, type) = build(:brace_init, [values, type])
 
     def replace_module(structs, functions)
       @tree = build(:module, [structs, functions])
@@ -121,6 +131,12 @@ module BareRubyProt
       when :declare_buffer
         name, capacity = statement[:children]
         ["#{indent}declare_buffer #{name}[#{capacity}]"]
+      when :declare_arena_storage
+        name, capacity = statement[:children]
+        ["#{indent}declare_arena_storage #{name}[#{capacity}]"]
+      when :scope
+        ["#{indent}scope"] +
+          statement[:children][0].flat_map { |child| inspect_statement(child, "#{indent}    ") }
       when :assign
         place, value = statement[:children]
         ["#{indent}assign #{expression_text(place)} = #{expression_text(value)}"]
@@ -181,6 +197,14 @@ module BareRubyProt
       when :call
         name, arguments, = node[:children]
         "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+      when :cast
+        value, type = node[:children]
+        "(#{type_text(type)})#{expression_text(value)}"
+      when :size_of
+        "sizeof(#{type_text(node[:children][0])})"
+      when :brace_init
+        values, = node[:children]
+        "{ #{values.map { |value| expression_text(value) }.join(', ')} }"
       end
     end
 

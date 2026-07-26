@@ -15,10 +15,19 @@ module BareRubyProt
         #include <stdbool.h>
         #include <stdint.h>
 
+        typedef struct {
+            unsigned char *base;
+            int32_t capacity;
+            int32_t used;
+        } bareruby_arena_t;
+
         #ifdef __cplusplus
         extern "C" {
         #endif
 
+        void bareruby_arena_init(bareruby_arena_t *self, unsigned char *storage, int32_t capacity);
+        void *bareruby_arena_alloc(bareruby_arena_t *self, int32_t bytes);
+        void bareruby_arena_reset(bareruby_arena_t *self);
         void bareruby_puts_int32(int32_t value);
         void bareruby_puts_int64(int64_t value);
         void bareruby_puts_string(const char *value);
@@ -37,9 +46,51 @@ module BareRubyProt
 
         #ifdef __cplusplus
         }
+
+        /* What releases an arena block's region. The destructor runs on the way out of
+           the scope, so an exception leaving the block releases the region exactly as
+           falling off its end does. A long-lived arena takes no guard: nothing but reset
+           releases it. */
+        struct bareruby_arena_scope {
+            bareruby_arena_t *arena;
+            ~bareruby_arena_scope() { bareruby_arena_reset(arena); }
+        };
         #endif
 
         #endif
+      CPP
+
+      # A region allocator: allocation is a bump of one pointer, release is that pointer
+      # going back, and the storage each arena hands out belongs to the site that declared
+      # it. Running out is a panic rather than a growth, which is what keeps allocation
+      # O(1) and the RAM an arena costs known before the program runs.
+      RUNTIME_ARENA_SOURCE = <<~CPP
+        #include "bareruby_runtime.h"
+
+        #include <stdint.h>
+
+        /* Eight bytes covers every alignment the language has, Int64 and Fixed included,
+           so one rounding rule serves every allocation. */
+        static const int32_t BARERUBY_ARENA_ALIGNMENT = 8;
+
+        void bareruby_arena_init(bareruby_arena_t *self, unsigned char *storage, int32_t capacity) {
+            self->base = storage;
+            self->capacity = capacity;
+            self->used = 0;
+        }
+
+        void *bareruby_arena_alloc(bareruby_arena_t *self, int32_t bytes) {
+            int32_t start = (self->used + BARERUBY_ARENA_ALIGNMENT - 1) & ~(BARERUBY_ARENA_ALIGNMENT - 1);
+            if (bytes < 0 || start > self->capacity - bytes) {
+                bareruby_panic("arena is full");
+            }
+            self->used = start + bytes;
+            return self->base + start;
+        }
+
+        void bareruby_arena_reset(bareruby_arena_t *self) {
+            self->used = 0;
+        }
       CPP
 
       # Fixed arithmetic is pure and has no stdout to depend on, so it is linked into every
@@ -633,6 +684,7 @@ module BareRubyProt
         @result = {
           "bareruby_runtime.h" => RUNTIME_HEADER,
           "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
+          "bareruby_runtime_arena.cpp" => RUNTIME_ARENA_SOURCE,
           "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
           "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
           "bareruby_binding.h" => BINDING_HEADER,
@@ -651,6 +703,7 @@ module BareRubyProt
       def hosted_sources
         sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
@@ -684,9 +737,24 @@ module BareRubyProt
         calls_throw?(value[:children])
       end
 
+      # A program with no arena never links the allocator, so a program that keeps to the
+      # first two layers of the memory model pays nothing for the third.
+      def allocates?
+        @lir.functions.any? { |function| declares_arena?(@lir.children_of(function)[3]) }
+      end
+
+      def declares_arena?(value)
+        return value.any? { |element| declares_arena?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :declare_arena_storage
+
+        declares_arena?(value[:children])
+      end
+
       def rp2040_sources
         sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
@@ -815,6 +883,13 @@ module BareRubyProt
         when :declare_buffer
           name, capacity = @lir.children_of(statement)
           ["#{indent}char #{name}[#{capacity}];"]
+        when :declare_arena_storage
+          name, capacity = @lir.children_of(statement)
+          ["#{indent}static unsigned char #{name}[#{capacity}];"]
+        when :scope
+          ["#{indent}{"] +
+            @lir.children_of(statement)[0].flat_map { |child| statement_lines(child, "#{indent}    ") } +
+            ["#{indent}}"]
         when :expression
           expression_statement_lines(statement, indent)
         when :for
@@ -906,6 +981,14 @@ module BareRubyProt
         when :call
           name, arguments, = @lir.children_of(node)
           "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+        when :cast
+          value, type = @lir.children_of(node)
+          "(#{type_text(type)})#{expression_text(value)}"
+        when :size_of
+          "(int32_t)sizeof(#{type_text(@lir.children_of(node)[0])})"
+        when :brace_init
+          values, = @lir.children_of(node)
+          "{ #{values.map { |value| expression_text(value) }.join(', ')} }"
         end
       end
 
@@ -930,6 +1013,7 @@ module BareRubyProt
         case type
         when :int32 then "int32_t"
         when :int64 then "int64_t"
+        when :uint8 then "unsigned char"
         when :bool then "bool"
         when :fixed then "int32_t"
         when :string_ptr then "const char *"
