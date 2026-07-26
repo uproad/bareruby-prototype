@@ -152,13 +152,13 @@ module BareRubyProt
                     :"arena_scope_#{index}", scope_struct,
                     @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
                   )]
-        [@lir.create_scope(opening + block_local(body))]
+        [@lir.create_scope(opening + lower_block_body(body))]
       end
 
       # A local the block introduces does not exist after it, in Ruby or in the C++ scope
       # the block becomes, so what was declared inside is forgotten on the way out and the
       # next block is free to use the same names.
-      def block_local(body)
+      def lower_block_body(body)
         declared = @declared.dup
         pointers = @pointer_locals.dup
         statements = lower_body(body)
@@ -211,12 +211,14 @@ module BareRubyProt
         element = lir_type(type[:element])
         receiver_statements, receiver_expression = lower_expression(receiver)
         length_statements, length_expression = lower_expression(length)
-        length_local = @lir.create_local(next_temp, :int32)
-        place = @lir.create_local(next_temp, struct)
+        length_name = next_temp
+        name = next_temp
+        length_local = @lir.create_local(length_name, :int32)
+        place = @lir.create_local(name, struct)
 
         statements = receiver_statements + length_statements +
-                     [@lir.create_declare(@lir.children_of(length_local)[0], :int32, length_expression),
-                      @lir.create_declare(@lir.children_of(place)[0], struct, nil),
+                     [@lir.create_declare(length_name, :int32, length_expression),
+                      @lir.create_declare(name, struct, nil),
                       @lir.create_assign(items_of(place), allocation_of(receiver_expression, length_local, element)),
                       @lir.create_assign(length_of(place), length_local)]
         [statements, place]
