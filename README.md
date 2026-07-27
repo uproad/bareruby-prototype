@@ -70,6 +70,18 @@ Covered so far:
   program calls `read` or `gets`. The empty-buffer `nil` path waits for M3's nilable type;
   this prototype implements only the successful receive the feasibility question needs.
   No new pass.
+- **M3 — I2C** (`samples/i2c.rb`): `I2C.new(id, frequency:)`, `write(address,
+  *outputs)` and `read(address, length, *outputs)`. Integer, fixed-array, static-string and
+  variable-length-string outputs are flattened in order into one temporary byte string,
+  so one Ruby call remains one bus transaction. As with UART receive, pass 5 supplies the
+  innermost active arena without adding a Ruby argument: it owns both that temporary and
+  the variable-length string `read` returns. A read with outputs writes them without a
+  stop, then starts the read with a repeated start. The hosted bus takes read bytes from
+  stdin; the rp2040 binding uses pico-sdk, with I2C0 on GP4/GP5 and I2C1 on GP6/GP7. C++
+  string literals now encode arbitrary bytes rather than requiring valid UTF-8. NAK and
+  timeout handling stay outside the successful path this prototype implements. The
+  target-specific sources are linked only when an I2C operation reaches the program. No
+  new pass.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -159,6 +171,10 @@ text and 3336 B of `bss`, 1792 of which is the three regions it declares.
 `--no-exceptions`; its region accounts for 256 B of the latter. The receive path therefore
 fits beside the arena and string runtime without introducing another large dependency.
 
+`samples/i2c.rb` is 38508 B of text and 1800 B of `bss` under `--no-exceptions`, and its
+`.uf2` is 77312 B. That includes mixed-output flattening, a write, and a register-select
+write followed by a repeated-start read.
+
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
 the board **stays enumerated as a USB device while the program runs**, which is what
@@ -202,6 +218,12 @@ For `samples/uart_receive.rb`, stdin is the hosted UART wire:
 
 ```sh
 printf 'ABCDhello UART\n' | ./bareruby_program
+```
+
+For `samples/i2c.rb`, stdin supplies the bytes returned by the hosted read:
+
+```sh
+printf 'OK' | ./bareruby_program
 ```
 
 `samples/blink.rb` loops forever by design; use `timeout 1 ./bareruby_program` to look at
