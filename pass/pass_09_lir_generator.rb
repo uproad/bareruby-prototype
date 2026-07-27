@@ -17,8 +17,8 @@ module BareRubyProt
 
       attr_reader :result
 
-      def initialize(typed_ir)
-        @tir = typed_ir
+      def initialize(typed_ast)
+        @tast = typed_ast
         @lir = LIR.new
       end
 
@@ -27,10 +27,10 @@ module BareRubyProt
         functions = []
         @array_structs = {}
 
-        @tir.program_body.each do |statement|
+        @tast.program_body.each do |statement|
           next unless class_definition?(statement)
 
-          name, ivars, methods = @tir.children_of(statement)
+          name, ivars, methods = @tast.children_of(statement)
           @storage_ivars = owning_ivars(methods)
           fields = ivars.map { |ivar| @lir.create_field(field_name(ivar[:name]), ivar_type(ivar)) }
           structs << @lir.create_struct(name, fields)
@@ -43,15 +43,15 @@ module BareRubyProt
         self
       end
 
-      def class_definition?(node) = @tir.node_type(node) == :class_definition
+      def class_definition?(node) = @tast.node_type(node) == :class_definition
 
       def lower_method(node)
-        identity, parameters, body = @tir.children_of(node)
+        identity, parameters, body = @tast.children_of(node)
         begin_function(identity[:owner], identity[:return_type])
 
         lir_parameters = [{ name: :self, type: @self_type }]
         parameters.each do |parameter|
-          binding, type = @tir.children_of(parameter)
+          binding, type = @tast.children_of(parameter)
           @declared << binding[:name]
           @pointer_locals << binding[:name] if shared_type?(type)
           lir_parameters << { name: binding[:name], type: binding_type(binding, type) }
@@ -68,7 +68,7 @@ module BareRubyProt
 
       def lower_main
         begin_function(nil, :Nil)
-        statements = @tir.program_body.reject { |node| class_definition?(node) }
+        statements = @tast.program_body.reject { |node| class_definition?(node) }
                          .flat_map { |node| lower_statement(node) }
         @lir.create_function(:bareruby_main, [], :void, statements)
       end
@@ -83,7 +83,7 @@ module BareRubyProt
       end
 
       def lower_statement(node)
-        case @tir.node_type(node)
+        case @tast.node_type(node)
         when :return then lower_return(node)
         when :for_range then lower_for_range(node)
         when :while_true then lower_while_true(node)
@@ -91,7 +91,7 @@ module BareRubyProt
         when :while then lower_while(node)
         when :if then lower_if_statement(node)
         when :begin
-          body, rescue_body = @tir.children_of(node)
+          body, rescue_body = @tast.children_of(node)
           [@lir.create_try(lower_body(body), lower_body(rescue_body))]
         when :iteration_control then lower_iteration_control(node)
         else
@@ -105,10 +105,10 @@ module BareRubyProt
       # is a value. When the method returns nothing it stays a statement: the call still has
       # to be made and the loop still has to run, and neither leaves a value C++ could return.
       def lower_return(node)
-        value = @tir.children_of(node)[0]
+        value = @tast.children_of(node)[0]
         return [@lir.create_return(nil)] if value.nil?
         # An implicit return wrapped around a construct that always leaves on its own.
-        return lower_statement(value) if @tir.value_type(value) == :NoReturn
+        return lower_statement(value) if @tast.value_type(value) == :NoReturn
         return lower_statement(value) + [@lir.create_return(nil)] if @void_return
 
         statements, expression = lower_expression(value)
@@ -116,7 +116,7 @@ module BareRubyProt
       end
 
       def lower_for_range(node)
-        binding, type, start_value, limit_value, inclusive, body = @tir.children_of(node)
+        binding, type, start_value, limit_value, inclusive, body = @tast.children_of(node)
         element_type = lir_type(type)
         start_statements, start_expression = lower_expression(start_value)
         limit_statements, limit_expression = lower_expression(limit_value)
@@ -137,7 +137,7 @@ module BareRubyProt
       end
 
       def lower_while_true(node)
-        [@lir.create_while(@lir.create_const_bool(true), lower_body(@tir.children_of(node)[0]))]
+        [@lir.create_while(@lir.create_const_bool(true), lower_body(@tast.children_of(node)[0]))]
       end
 
       # The region is a static buffer belonging to this one site rather than a slice of a
@@ -146,7 +146,7 @@ module BareRubyProt
       # runs on the way out of the scope whether the block ends normally or an exception
       # leaves it, which is the exception safety the design requires.
       def lower_arena(node)
-        binding, size, body = @tir.children_of(node)
+        binding, size, body = @tast.children_of(node)
         index = next_arena_index
         struct = @lir.struct_type(ARENA_STRUCT)
         place = @lir.create_local(binding[:name], struct)
@@ -176,7 +176,7 @@ module BareRubyProt
       # A long-lived arena outlives no scope, so it takes no guard: reset is the only
       # thing that releases it.
       def lower_arena_new(node)
-        size, type = @tir.children_of(node)
+        size, type = @tast.children_of(node)
         struct = lir_type(type)
         name = next_temp
         place = @lir.create_local(name, struct)
@@ -189,7 +189,7 @@ module BareRubyProt
         struct = lir_type(type)
         place = place_of(binding, struct)
         [storage_declaration(binding, struct) +
-          arena_setup(place, @tir.children_of(value)[0], next_arena_index), place]
+          arena_setup(place, @tast.children_of(value)[0], next_arena_index), place]
       end
 
       def arena_setup(place, size, index)
@@ -207,7 +207,7 @@ module BareRubyProt
       # The length is bound to a local first, because the handle stores it as well as
       # allocating from it and the expression it came from may not be evaluated twice.
       def lower_arena_alloc(node)
-        receiver, length, type = @tir.children_of(node)
+        receiver, length, type = @tast.children_of(node)
         struct = lir_type(type)
         element = lir_type(type[:element])
         receiver_statements, receiver_expression = lower_expression(receiver)
@@ -236,7 +236,7 @@ module BareRubyProt
       end
 
       def lower_arena_length(node)
-        statements, expression = lower_expression(@tir.children_of(node)[0])
+        statements, expression = lower_expression(@tast.children_of(node)[0])
         [statements, length_of(expression)]
       end
 
@@ -246,13 +246,13 @@ module BareRubyProt
       # type is statically true and the test disappears.
       def lower_condition(node)
         statements, expression = lower_expression(node)
-        @tir.value_type(node) == :Bool ? [statements, expression] : [statements, @lir.create_const_bool(true)]
+        @tast.value_type(node) == :Bool ? [statements, expression] : [statements, @lir.create_const_bool(true)]
       end
 
       # C re-evaluates a while condition every iteration, so a condition that needs
       # statements of its own becomes an explicit test-and-break at the top of the body.
       def lower_while(node)
-        condition, body = @tir.children_of(node)
+        condition, body = @tast.children_of(node)
         condition_statements, condition_expression = lower_condition(condition)
         return [@lir.create_while(condition_expression, lower_body(body))] if condition_statements.empty?
 
@@ -263,31 +263,31 @@ module BareRubyProt
       end
 
       def lower_if_statement(node)
-        condition, then_body, else_body, = @tir.children_of(node)
+        condition, then_body, else_body, = @tast.children_of(node)
         condition_statements, condition_expression = lower_condition(condition)
         condition_statements +
           [@lir.create_if(condition_expression, lower_body(then_body), else_body && lower_body(else_body))]
       end
 
       def lower_iteration_control(node)
-        [@tir.children_of(node)[0] == :break ? @lir.create_break : @lir.create_next]
+        [@tast.children_of(node)[0] == :break ? @lir.create_break : @lir.create_next]
       end
 
       def lower_body(statements) = statements.flat_map { |statement| lower_statement(statement) }
 
       def lower_expression(node)
-        case @tir.node_type(node)
+        case @tast.node_type(node)
         when :integer
-          value, type = @tir.children_of(node)
+          value, type = @tast.children_of(node)
           [[], @lir.create_const_int(value, lir_type(type))]
         when :reference
-          binding, type = @tir.children_of(node)
+          binding, type = @tast.children_of(node)
           [[], place_of(binding, binding_type(binding, type))]
         when :boolean
-          value, = @tir.children_of(node)
+          value, = @tast.children_of(node)
           [[], @lir.create_const_bool(value)]
         when :string
-          value, = @tir.children_of(node)
+          value, = @tast.children_of(node)
           [[], @lir.create_const_string(value)]
         when :assignment
           lower_assignment(node)
@@ -313,7 +313,7 @@ module BareRubyProt
       end
 
       def lower_logical(node)
-        operator, left, right, type = @tir.children_of(node)
+        operator, left, right, type = @tast.children_of(node)
         left_statements, left_expression = lower_expression(left)
         right_statements, right_expression = lower_expression(right)
         [left_statements + right_statements,
@@ -322,7 +322,7 @@ module BareRubyProt
 
       # An if used as a value becomes a declaration plus branches that assign into it.
       def lower_if_expression(node)
-        condition, then_body, else_body, type = @tir.children_of(node)
+        condition, then_body, else_body, type = @tast.children_of(node)
         result_type = value_lir_type(type)
         result_name = next_temp
         condition_statements, condition_expression = lower_condition(condition)
@@ -348,7 +348,7 @@ module BareRubyProt
       # plus one formatting call into it. The local is the buffer, so every later
       # reference to it already reads as a const char *.
       def lower_format_assignment(binding, value)
-        capacity, format, values, = @tir.children_of(value)
+        capacity, format, values, = @tast.children_of(value)
         statements, format_expression = lower_expression(format)
         argument_statements, argument_expressions = lower_arguments(values)
         place = @lir.create_local(binding[:name], :string_ptr)
@@ -368,7 +368,7 @@ module BareRubyProt
       # Indexing is pointer arithmetic and carries no range test, so the index lowers to
       # whatever expression it is.
       def lower_index(node)
-        receiver, index, type = @tir.children_of(node)
+        receiver, index, type = @tast.children_of(node)
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
         [receiver_statements + index_statements,
@@ -376,7 +376,7 @@ module BareRubyProt
       end
 
       def lower_index_assign(node)
-        receiver, index, value, type = @tir.children_of(node)
+        receiver, index, value, type = @tast.children_of(node)
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
         value_statements, value_expression = lower_expression(value)
@@ -387,8 +387,8 @@ module BareRubyProt
       end
 
       def lower_assignment(node)
-        binding, value, type = @tir.children_of(node)
-        return lower_format_assignment(binding, value) if @tir.node_type(value) == :format
+        binding, value, type = @tast.children_of(node)
+        return lower_format_assignment(binding, value) if @tast.node_type(value) == :format
         return lower_array_assignment(binding, value, type) if array_creation?(value)
         return lower_arena_assignment(binding, value, type) if arena_creation?(value)
         return lower_object_assignment(binding, value, type) if object_creation?(value)
@@ -426,12 +426,12 @@ module BareRubyProt
         shared_type?(type) ? @lir.pointer_type(lir_type(type)) : lir_type(type)
       end
 
-      def array_creation?(node) = %i[array array_fill array_dup].include?(@tir.node_type(node))
+      def array_creation?(node) = %i[array array_fill array_dup].include?(@tast.node_type(node))
 
-      def arena_creation?(node) = @tir.node_type(node) == :arena_new
+      def arena_creation?(node) = @tast.node_type(node) == :arena_new
 
       def object_creation?(node)
-        @tir.node_type(node) == :call && %i[new binding_new].include?(@tir.children_of(node)[1][:kind])
+        @tast.node_type(node) == :call && %i[new binding_new].include?(@tast.children_of(node)[1][:kind])
       end
 
       def creation?(node) = array_creation?(node) || arena_creation?(node) || object_creation?(node)
@@ -471,7 +471,7 @@ module BareRubyProt
       # A shared value in value position is its address, so storage has to be taken the
       # address of and a pointer is already one.
       def shared_rvalue(node, expression)
-        return expression unless shared_type?(@tir.value_type(node))
+        return expression unless shared_type?(@tast.value_type(node))
 
         reference_to(expression)
       end
@@ -497,7 +497,7 @@ module BareRubyProt
       # and the constructor writes straight into it rather than into a temporary that would
       # then have to be copied there.
       def lower_object_assignment(binding, value, type)
-        _receiver, callee, arguments, = @tir.children_of(value)
+        _receiver, callee, arguments, = @tast.children_of(value)
         struct = lir_type(type)
         place = place_of(binding, struct)
         [storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
@@ -515,14 +515,14 @@ module BareRubyProt
       # An array written anywhere other than the right of an assignment still needs
       # storage to fill, so it gets a temporary of its own.
       def lower_array_temporary(node)
-        type = @tir.value_type(node)
+        type = @tast.value_type(node)
         struct = lir_type(type)
         place = @lir.create_local(next_temp, struct)
         [[@lir.create_declare(@lir.children_of(place)[0], struct, nil)] + fill_of(place, node, type), place]
       end
 
       def fill_of(place, value, type)
-        case @tir.node_type(value)
+        case @tast.node_type(value)
         when :array then fill_from_elements(place, value)
         when :array_dup then fill_from_copy(place, value)
         else fill_from_value(place, value, type)
@@ -533,7 +533,7 @@ module BareRubyProt
       # assignment, dereferencing the source when it is a pointer to somebody else's
       # storage.
       def fill_from_copy(place, value)
-        receiver, type = @tir.children_of(value)
+        receiver, type = @tast.children_of(value)
         struct = lir_type(type)
         statements, expression = lower_expression(receiver)
         source = pointer_expression?(expression) ? @lir.create_unary("*", expression, struct) : expression
@@ -541,7 +541,7 @@ module BareRubyProt
       end
 
       def fill_from_elements(place, value)
-        elements, = @tir.children_of(value)
+        elements, = @tast.children_of(value)
         elements.each_with_index.flat_map do |element, position|
           element_statements, element_expression = lower_expression(element)
           slot = @lir.create_index(
@@ -555,7 +555,7 @@ module BareRubyProt
       # the loop rather than re-evaluated per element. Array.new(n) has no initial value at
       # all and leaves the storage untouched.
       def fill_from_value(place, value, type)
-        fill_value, = @tir.children_of(value)
+        fill_value, = @tast.children_of(value)
         return [] if fill_value.nil?
 
         element_type = lir_type(type[:element])
@@ -577,7 +577,7 @@ module BareRubyProt
       end
 
       def lower_call(node)
-        receiver, callee, arguments, _block, type = @tir.children_of(node)
+        receiver, callee, arguments, _block, type = @tast.children_of(node)
         case callee[:kind]
         when :builtin_operator then lower_operator(receiver, callee, arguments, type)
         when :builtin_puts, :builtin_printf, :builtin_function, :binding_function

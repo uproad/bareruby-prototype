@@ -14,18 +14,18 @@ module BareRubyProt
 
       attr_reader :result
 
-      def initialize(typed_ir)
-        @tir = typed_ir
+      def initialize(typed_ast)
+        @tast = typed_ast
       end
 
       def run
-        @result = @tir.replace_program(@tir.program_body.map { |statement| fold_node(statement) })
+        @result = @tast.replace_program(@tast.program_body.map { |statement| fold_node(statement) })
 
         self
       end
 
       def fold_node(node)
-        case @tir.node_type(node)
+        case @tast.node_type(node)
         when :class_definition then fold_class_definition(node)
         when :method_definition then fold_method_definition(node)
         when :assignment then fold_assignment(node)
@@ -34,8 +34,8 @@ module BareRubyProt
         when :if then fold_if(node)
         when :while then fold_while(node)
         when :begin
-          body, rescue_body = @tir.children_of(node)
-          @tir.create_begin(fold_body(body), fold_body(rescue_body), span_of(node))
+          body, rescue_body = @tast.children_of(node)
+          @tast.create_begin(fold_body(body), fold_body(rescue_body), span_of(node))
         when :while_true then fold_while_true(node)
         when :for_range then fold_for_range(node)
         when :logical then fold_logical(node)
@@ -52,106 +52,106 @@ module BareRubyProt
       end
 
       def fold_arena(node)
-        binding, size, body = @tir.children_of(node)
-        @tir.create_arena(binding, size, fold_body(body), span_of(node))
+        binding, size, body = @tast.children_of(node)
+        @tast.create_arena(binding, size, fold_body(body), span_of(node))
       end
 
       def fold_arena_alloc(node)
-        receiver, length, type = @tir.children_of(node)
-        @tir.create_arena_alloc(fold_node(receiver), fold_node(length), type, span_of(node))
+        receiver, length, type = @tast.children_of(node)
+        @tast.create_arena_alloc(fold_node(receiver), fold_node(length), type, span_of(node))
       end
 
       def fold_arena_length(node)
-        receiver, type = @tir.children_of(node)
-        @tir.create_arena_length(fold_node(receiver), type, span_of(node))
+        receiver, type = @tast.children_of(node)
+        @tast.create_arena_length(fold_node(receiver), type, span_of(node))
       end
 
       def fold_array(node)
-        elements, type = @tir.children_of(node)
-        @tir.create_array(elements.map { |element| fold_node(element) }, type, span_of(node))
+        elements, type = @tast.children_of(node)
+        @tast.create_array(elements.map { |element| fold_node(element) }, type, span_of(node))
       end
 
       def fold_array_fill(node)
-        value, type = @tir.children_of(node)
-        @tir.create_array_fill(value && fold_node(value), type, span_of(node))
+        value, type = @tast.children_of(node)
+        @tast.create_array_fill(value && fold_node(value), type, span_of(node))
       end
 
       def fold_array_dup(node)
-        receiver, type = @tir.children_of(node)
-        @tir.create_array_dup(fold_node(receiver), type, span_of(node))
+        receiver, type = @tast.children_of(node)
+        @tast.create_array_dup(fold_node(receiver), type, span_of(node))
       end
 
       def fold_index(node)
-        receiver, index, type = @tir.children_of(node)
-        @tir.create_index(fold_node(receiver), fold_node(index), type, span_of(node))
+        receiver, index, type = @tast.children_of(node)
+        @tast.create_index(fold_node(receiver), fold_node(index), type, span_of(node))
       end
 
       def fold_index_assign(node)
-        receiver, index, value, type = @tir.children_of(node)
-        @tir.create_index_assign(
+        receiver, index, value, type = @tast.children_of(node)
+        @tast.create_index_assign(
           fold_node(receiver), fold_node(index), fold_node(value), type, span_of(node)
         )
       end
 
       def fold_class_definition(node)
-        name, ivars, methods = @tir.children_of(node)
-        @tir.create_class_definition(name, ivars, methods.map { |method| fold_node(method) }, span_of(node))
+        name, ivars, methods = @tast.children_of(node)
+        @tast.create_class_definition(name, ivars, methods.map { |method| fold_node(method) }, span_of(node))
       end
 
       def fold_method_definition(node)
-        identity, parameters, body = @tir.children_of(node)
-        @tir.create_method_definition(identity, parameters, fold_body(body), span_of(node))
+        identity, parameters, body = @tast.children_of(node)
+        @tast.create_method_definition(identity, parameters, fold_body(body), span_of(node))
       end
 
       def fold_assignment(node)
-        binding, value, type = @tir.children_of(node)
-        @tir.create_assignment(binding, fold_node(value), type, span_of(node))
+        binding, value, type = @tast.children_of(node)
+        @tast.create_assignment(binding, fold_node(value), type, span_of(node))
       end
 
       def fold_return(node)
-        value, type = @tir.children_of(node)
-        @tir.create_return(value && fold_node(value), type, span_of(node))
+        value, type = @tast.children_of(node)
+        @tast.create_return(value && fold_node(value), type, span_of(node))
       end
 
       def fold_if(node)
-        condition, then_body, else_body, type = @tir.children_of(node)
-        @tir.create_if(
+        condition, then_body, else_body, type = @tast.children_of(node)
+        @tast.create_if(
           fold_node(condition), fold_body(then_body), else_body && fold_body(else_body), type, span_of(node)
         )
       end
 
       def fold_while(node)
-        condition, body = @tir.children_of(node)
-        @tir.create_while(fold_node(condition), fold_body(body), span_of(node))
+        condition, body = @tast.children_of(node)
+        @tast.create_while(fold_node(condition), fold_body(body), span_of(node))
       end
 
       def fold_while_true(node)
-        @tir.create_while_true(fold_body(@tir.children_of(node)[0]), span_of(node))
+        @tast.create_while_true(fold_body(@tast.children_of(node)[0]), span_of(node))
       end
 
       def fold_for_range(node)
-        binding, type, start_value, limit_value, inclusive, body = @tir.children_of(node)
-        @tir.create_for_range(
+        binding, type, start_value, limit_value, inclusive, body = @tast.children_of(node)
+        @tast.create_for_range(
           binding, type, fold_node(start_value), fold_node(limit_value), inclusive, fold_body(body), span_of(node)
         )
       end
 
       def fold_logical(node)
-        operator, left, right, type = @tir.children_of(node)
-        @tir.create_logical(operator, fold_node(left), fold_node(right), type, span_of(node))
+        operator, left, right, type = @tast.children_of(node)
+        @tast.create_logical(operator, fold_node(left), fold_node(right), type, span_of(node))
       end
 
       def fold_call(node)
-        receiver, callee, arguments, block, type = @tir.children_of(node)
+        receiver, callee, arguments, block, type = @tast.children_of(node)
         folded_receiver = receiver && fold_node(receiver)
         folded_arguments = arguments.map { |argument| fold_node(argument) }
 
         if callee[:kind] == :builtin_operator
           value = evaluate(callee[:name], folded_receiver, folded_arguments, type)
-          return @tir.create_integer(value, type, span_of(node)) unless value.nil?
+          return @tast.create_integer(value, type, span_of(node)) unless value.nil?
         end
 
-        @tir.create_call(folded_receiver, callee, folded_arguments, block, type, span_of(node))
+        @tast.create_call(folded_receiver, callee, folded_arguments, block, type, span_of(node))
       end
 
       def fold_body(statements) = statements.map { |statement| fold_node(statement) }
@@ -193,13 +193,13 @@ module BareRubyProt
         end
       end
 
-      def integer?(node) = node && @tir.node_type(node) == :integer
+      def integer?(node) = node && @tast.node_type(node) == :integer
 
-      def value_of(node) = @tir.children_of(node)[0]
+      def value_of(node) = @tast.children_of(node)[0]
 
       def storage_of(type) = type == :Int64 ? :int64 : (type == :Int32 ? :int32 : nil)
 
-      def span_of(node) = @tir.span_of(node)
+      def span_of(node) = @tast.span_of(node)
     end
   end
 end

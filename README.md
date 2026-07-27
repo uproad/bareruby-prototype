@@ -16,7 +16,7 @@ made in their own terms, so this repository reads on its own.
 
 Covered so far:
 
-- **M0** — Prism → BRAST → TIR → LIR → C++ for the representative program the design
+- **M0** — Prism → BRAST → TAST → LIR → C++ for the representative program the design
   documents use (`ref.rb`), compiled with the host `g++` and executed.
 - **M1** — the same eight passes produce an rp2040 firmware image for the blink
   program (`samples/blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a

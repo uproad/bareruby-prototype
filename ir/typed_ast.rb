@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  class TIR
-    SCHEMA = "TIR"
+  class TypedAST
+    SCHEMA = "TAST"
 
     def self.restore(payload)
-      tir = allocate
-      tir.install(payload)
-      tir
+      tast = allocate
+      tast.install(payload)
+      tast
     end
 
     def initialize
