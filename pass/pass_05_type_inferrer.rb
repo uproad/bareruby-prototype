@@ -102,6 +102,19 @@ module BareRubyProt
               function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
             }
           }
+        },
+        I2C: {
+          struct: :bareruby_i2c_t,
+          constants: {},
+          constructor: {
+            function: :bareruby_i2c_init,
+            parameter_types: %i[Int32],
+            keywords: { frequency: 100_000 }
+          },
+          methods: {
+            write: { function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32 },
+            read: { function: :bareruby_i2c_read, parameter_types: [], return_type: :arena_string }
+          }
         }
       }.freeze
 
@@ -889,6 +902,9 @@ module BareRubyProt
               receiver_tast, name, arguments, env:, self_class:, span:
             )
           end
+          if class_name == :I2C && %i[read write].include?(name)
+            return infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
+          end
 
           signature = PERIPHERALS.fetch(class_name)[:methods].fetch(name)
           printf_function = PRINTF_BINDINGS[signature[:function]]
@@ -917,14 +933,32 @@ module BareRubyProt
       # shape while the generated binding receives somewhere to put the bytes.
       def infer_uart_receive_call(receiver_tast, name, arguments, env:, self_class:, span:)
         signature = PERIPHERALS.fetch(:UART)[:methods].fetch(name)
-        scope = @arena_scopes.last
-        arena = @tast.create_reference(scope[:binding], arena_type, span)
+        arena = current_arena(span)
         argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, env:, self_class:) }
         callee = @tast.create_callee(
           :binding_method, :UART, name, signature[:function],
           argument_types(argument_tasts), arena_string_type
         )
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, arena_string_type, span)
+      end
+
+      # I2C uses the current region both for a read result and for the temporary byte
+      # sequence that makes heterogeneous write arguments one bus transaction.
+      def infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
+        signature = PERIPHERALS.fetch(:I2C)[:methods].fetch(name)
+        argument_tasts = [current_arena(span)] +
+                         arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        return_type = name == :read ? arena_string_type : :Int32
+        callee = @tast.create_callee(
+          :binding_i2c, :I2C, name, signature[:function],
+          argument_types(argument_tasts), return_type
+        )
+        @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
+      end
+
+      def current_arena(span)
+        scope = @arena_scopes.last
+        @tast.create_reference(scope[:binding], arena_type, span)
       end
 
       def infer_new_call(class_name, arguments, env:, self_class:, span:)

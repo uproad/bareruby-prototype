@@ -584,6 +584,7 @@ module BareRubyProt
           lower_function_call(callee, arguments)
         when :new, :binding_new then lower_constructor(callee, arguments, type)
         when :user_method, :binding_method, :binding_printf then lower_method_call(receiver, callee, arguments)
+        when :binding_i2c then lower_i2c_call(receiver, callee, arguments)
         end
       end
 
@@ -627,6 +628,114 @@ module BareRubyProt
         [receiver_statements + argument_statements,
          @lir.create_call(callee[:function], [self_argument] + argument_expressions,
                           value_lir_type(callee[:return_type]))]
+      end
+
+      # I2C's heterogeneous outputs become one arena string first, so the binding sees
+      # one byte pointer and one length and can keep the whole write in one transaction.
+      def lower_i2c_call(receiver, callee, arguments)
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        arena, address, *rest = arguments
+        arena_statements, arena_expression = lower_expression(arena)
+        address_statements, address_expression = lower_expression(address)
+
+        if callee[:name] == :read
+          length, *outputs = rest
+          length_statements, length_expression = lower_expression(length)
+        else
+          outputs = rest
+          length_statements = []
+        end
+
+        output_statements, output_bytes, output_length =
+          lower_i2c_outputs(arena_expression, outputs)
+        binding_arguments = [reference_to(receiver_expression)]
+        if callee[:name] == :read
+          binding_arguments += [
+            reference_to(arena_expression), address_expression, length_expression,
+            output_bytes, output_length
+          ]
+        else
+          binding_arguments += [address_expression, output_bytes, output_length]
+        end
+
+        statements = receiver_statements + arena_statements + address_statements +
+                     length_statements + output_statements
+        [statements, @lir.create_call(
+          callee[:function], binding_arguments, value_lir_type(callee[:return_type])
+        )]
+      end
+
+      def lower_i2c_outputs(arena_expression, outputs)
+        return [[], @lir.create_const_string(""), @lir.create_const_int(0, :int32)] if outputs.empty?
+
+        name = next_temp
+        buffer = @lir.create_local(name, arena_string_lir_type)
+        create = @lir.create_call(
+          :bareruby_string_new,
+          [reference_to(arena_expression), @lir.create_const_string("")],
+          arena_string_lir_type
+        )
+        statements = [@lir.create_declare(name, arena_string_lir_type, create)]
+        outputs.each { |output| statements.concat(lower_i2c_output(buffer, output)) }
+
+        bytes = @lir.create_call(:bareruby_string_bytes, [buffer], :string_ptr)
+        length = @lir.create_call(:bareruby_string_length, [buffer], :int32)
+        [statements, bytes, length]
+      end
+
+      def lower_i2c_output(buffer, output)
+        type = @tast.value_type(output)
+        statements, expression = lower_expression(output)
+
+        if type.is_a?(Symbol) && type.to_s.start_with?("Int")
+          append = @lir.create_call(:bareruby_string_append_byte, [buffer, expression], arena_string_lir_type)
+          return statements + [@lir.create_expression(append)]
+        end
+
+        if type == :String
+          function = :bareruby_string_append
+          arguments = [buffer, expression]
+          if @tast.node_type(output) == :string
+            function = :bareruby_string_append_bytes
+            arguments << @lir.create_const_int(@tast.children_of(output)[0].bytesize, :int32)
+          end
+          append = @lir.create_call(function, arguments, arena_string_lir_type)
+          return statements + [@lir.create_expression(append)]
+        end
+
+        if type.is_a?(Hash) && type[:kind] == :arena_string
+          bytes = @lir.create_call(:bareruby_string_bytes, [expression], :string_ptr)
+          length = @lir.create_call(:bareruby_string_length, [expression], :int32)
+          append = @lir.create_call(
+            :bareruby_string_append_bytes, [buffer, bytes, length], arena_string_lir_type
+          )
+          return statements + [@lir.create_expression(append)]
+        end
+
+        lower_i2c_array_output(buffer, type, statements, expression)
+      end
+
+      def lower_i2c_array_output(buffer, type, statements, expression)
+        counter = next_temp
+        local = @lir.create_local(counter, :int32)
+        limit = if type[:kind] == :array
+                  @lir.create_const_int(type[:capacity], :int32)
+                else
+                  length_of(expression)
+                end
+        element = @lir.create_index(items_of(expression), local, lir_type(type[:element]))
+        append = @lir.create_call(
+          :bareruby_string_append_byte, [buffer, element], arena_string_lir_type
+        )
+        loop = @lir.create_for(
+          @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
+          @lir.create_binary("<", local, limit, :bool),
+          @lir.create_assign(
+            local, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32)
+          ),
+          [@lir.create_expression(append)]
+        )
+        statements + [loop]
       end
 
       def lower_arguments(arguments)
