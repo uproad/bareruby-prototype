@@ -5,8 +5,8 @@ module BareRubyProt
     class SymbolToIdConverter
       attr_reader :result
 
-      def initialize(typed_ir)
-        @tir = typed_ir
+      def initialize(typed_ast)
+        @tast = typed_ast
         @identifiers = {}
       end
 
@@ -14,7 +14,7 @@ module BareRubyProt
       # representation behind. Ids follow first appearance in
       # the traversal, which is fixed for a given input.
       def run
-        @result = @tir.replace_program(@tir.program_body.map { |statement| convert(statement) })
+        @result = @tast.replace_program(@tast.program_body.map { |statement| convert(statement) })
 
         self
       end
@@ -34,15 +34,15 @@ module BareRubyProt
       end
 
       def convert_node(node)
-        return convert_symbol(node) if @tir.node_type(node) == :symbol
+        return convert_symbol(node) if @tast.node_type(node) == :symbol
 
         { type: node[:type], children: convert(node[:children]), span: node[:span] }
       end
 
       def convert_symbol(node)
-        name = @tir.children_of(node)[0]
+        name = @tast.children_of(node)[0]
         @identifiers[name] = @identifiers.size unless @identifiers.key?(name)
-        @tir.create_integer(@identifiers.fetch(name), :Int32, @tir.span_of(node))
+        @tast.create_integer(@identifiers.fetch(name), :Int32, @tast.span_of(node))
       end
     end
   end

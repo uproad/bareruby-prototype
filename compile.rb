@@ -4,7 +4,7 @@
 require "fileutils"
 
 require_relative "ir/bareruby_ast"
-require_relative "ir/tir"
+require_relative "ir/typed_ast"
 require_relative "ir/lir"
 require_relative "pass/pass_01_bareruby_ast_generator"
 require_relative "pass/pass_02_desugarer"
@@ -27,7 +27,7 @@ module BareRubyProt
                     "Enable a stdout channel to observe it."
     SCHEMAS = {
       BareRubyAST::SCHEMA => BareRubyAST,
-      TIR::SCHEMA => TIR,
+      TypedAST::SCHEMA => TypedAST,
       LIR::SCHEMA => LIR
     }.freeze
 
@@ -56,16 +56,16 @@ module BareRubyProt
       reject_begin_without_exceptions(result)
 
       result = pass_05(result)
-      result = boundary("05_typed_ir", result)
+      result = boundary("05_typed_ast", result)
 
       result = pass_06(result)
-      result = boundary("06_typed_ir", result)
+      result = boundary("06_typed_ast", result)
 
       result = pass_07(result)
-      result = boundary("07_typed_ir", result)
+      result = boundary("07_typed_ast", result)
 
       result = pass_08(result)
-      result = boundary("08_typed_ir", result)
+      result = boundary("08_typed_ast", result)
 
       result = pass_09(result)
       result = boundary("09_low_ir", result)
@@ -95,13 +95,13 @@ module BareRubyProt
 
     def pass_05(bareruby_ast) = Pass::TypeInferrer.new(bareruby_ast).run.result
 
-    def pass_06(typed_ir) = Pass::BlockInliner.new(typed_ir).run.result
+    def pass_06(typed_ast) = Pass::BlockInliner.new(typed_ast).run.result
 
-    def pass_07(typed_ir) = Pass::SymbolToIdConverter.new(typed_ir).run.result
+    def pass_07(typed_ast) = Pass::SymbolToIdConverter.new(typed_ast).run.result
 
-    def pass_08(typed_ir) = Pass::TypedConstantFolder.new(typed_ir).run.result
+    def pass_08(typed_ast) = Pass::TypedConstantFolder.new(typed_ast).run.result
 
-    def pass_09(typed_ir) = Pass::LirGenerator.new(typed_ir).run.result
+    def pass_09(typed_ast) = Pass::LirGenerator.new(typed_ast).run.result
 
     def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug, exceptions: @exceptions).run
 
