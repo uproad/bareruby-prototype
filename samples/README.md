@@ -18,6 +18,7 @@ it is given no argument.
 | `blink.rb` | Demo 1 — GPIO |
 | `servo.rb` | Demo 2 — PWM with keyword arguments, a peripheral held in an ivar |
 | `logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
+| `uart_receive.rb` | UART `read` and `gets` returning variable-length strings from the current arena |
 | `features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
 | `fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 | `m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |

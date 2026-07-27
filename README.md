@@ -60,6 +60,16 @@ Covered so far:
   interpolation assigned to a fixed-capacity local (M2.5) has to bound every part while
   compiling. The runtime owns the representation — the generated code reads no field of a
   string. No new pass.
+- **M3 — UART receive** (`samples/uart_receive.rb`): `uart.read(n)` takes exactly the
+  requested bytes on the successful path and `uart.gets` takes a line including its
+  newline, both as variable-length strings. The Ruby calls keep their standard shape;
+  when they appear inside an `arena` block, pass 5 threads that innermost region into the
+  binding as the place the result belongs. The hosted UART receives its byte stream on
+  stdin, and the rp2040 binding reads from the selected hardware UART with pico-sdk. The
+  target-specific receive code is a separate translation unit and is linked only when a
+  program calls `read` or `gets`. The empty-buffer `nil` path waits for M3's nilable type;
+  this prototype implements only the successful receive the feasibility question needs.
+  No new pass.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -145,6 +155,10 @@ program to 43908 B, where that interpolation assigned to a fixed-capacity local 
 17784 B and no region at all. `samples/string.rb`, which uses every form, is 44572 B of
 text and 3336 B of `bss`, 1792 of which is the three regions it declares.
 
+`samples/uart_receive.rb` is 37916 B of text and 1804 B of `bss` under
+`--no-exceptions`; its region accounts for 256 B of the latter. The receive path therefore
+fits beside the arena and string runtime without introducing another large dependency.
+
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
 the board **stays enumerated as a USB device while the program runs**, which is what
@@ -183,6 +197,12 @@ g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
 
 The runtime is split across translation units by what each part costs to link, so the
 source list varies with the program. Take it from `manifest.txt` rather than from here.
+
+For `samples/uart_receive.rb`, stdin is the hosted UART wire:
+
+```sh
+printf 'ABCDhello UART\n' | ./bareruby_program
+```
 
 `samples/blink.rb` loops forever by design; use `timeout 1 ./bareruby_program` to look at
 the head of the trace.
