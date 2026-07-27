@@ -86,6 +86,8 @@ module BareRubyProt
           methods: {
             write: { function: :bareruby_uart_write, parameter_types: %i[String], return_type: :Int32 },
             puts: { function: :bareruby_uart_puts, parameter_types: %i[String], return_type: :Nil },
+            read: { function: :bareruby_uart_read, parameter_types: %i[Int32], return_type: :arena_string },
+            gets: { function: :bareruby_uart_gets, parameter_types: [], return_type: :arena_string },
             bytes_available: {
               function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
             },
@@ -719,7 +721,7 @@ module BareRubyProt
         binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
         block_env = env.merge(binding[:name] => [binding, arena_type])
 
-        @arena_scopes.push(env.keys)
+        @arena_scopes.push(names: env.keys, binding:)
         typed_body = infer_body(body, env: block_env, self_class:)
         @arena_scopes.pop
 
@@ -859,7 +861,7 @@ module BareRubyProt
         type = @tast.value_type(value_tast)
         return unless arena_array_type?(type) || arena_string_type?(type) ||
                       (arena_type?(type) && @tast.node_type(value_tast) != :arena_new)
-        return unless kind == :instance || @arena_scopes.any? { |names| names.include?(name) }
+        return unless kind == :instance || @arena_scopes.any? { |scope| scope[:names].include?(name) }
 
         raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
       end
@@ -882,6 +884,12 @@ module BareRubyProt
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
         class_name = receiver_type[:class_name]
         if PERIPHERALS.key?(class_name)
+          if class_name == :UART && %i[read gets].include?(name)
+            return infer_uart_receive_call(
+              receiver_tast, name, arguments, env:, self_class:, span:
+            )
+          end
+
           signature = PERIPHERALS.fetch(class_name)[:methods].fetch(name)
           printf_function = PRINTF_BINDINGS[signature[:function]]
           if printf_function && formatted?(arguments.first)
@@ -902,6 +910,21 @@ module BareRubyProt
           resolved.parameter_types, resolved.return_type
         )
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, resolved.return_type, span)
+      end
+
+      # A received string belongs to the innermost active region. The region is an
+      # implementation argument only: the Ruby call keeps the standard UART read/gets
+      # shape while the generated binding receives somewhere to put the bytes.
+      def infer_uart_receive_call(receiver_tast, name, arguments, env:, self_class:, span:)
+        signature = PERIPHERALS.fetch(:UART)[:methods].fetch(name)
+        scope = @arena_scopes.last
+        arena = @tast.create_reference(scope[:binding], arena_type, span)
+        argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        callee = @tast.create_callee(
+          :binding_method, :UART, name, signature[:function],
+          argument_types(argument_tasts), arena_string_type
+        )
+        @tast.create_call(receiver_tast, callee, argument_tasts, nil, arena_string_type, span)
       end
 
       def infer_new_call(class_name, arguments, env:, self_class:, span:)

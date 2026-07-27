@@ -42,6 +42,7 @@ module BareRubyProt
         bareruby_string_t *bareruby_string_new(bareruby_arena_t *arena, const char *initial);
         bareruby_string_t *bareruby_string_format(bareruby_arena_t *arena, const char *format, ...);
         bareruby_string_t *bareruby_string_append(bareruby_string_t *self, const char *text);
+        bareruby_string_t *bareruby_string_append_byte(bareruby_string_t *self, int32_t byte);
         bareruby_string_t *bareruby_string_append_format(bareruby_string_t *self, const char *format, ...);
         bareruby_string_t *bareruby_string_concat(bareruby_string_t *self, const char *text);
         bareruby_string_t *bareruby_string_dup(bareruby_string_t *self);
@@ -174,6 +175,14 @@ module BareRubyProt
             bareruby_string_reserve(self, self->length + length);
             memcpy(self->bytes + self->length, text, (size_t)length + 1);
             self->length += length;
+            return self;
+        }
+
+        bareruby_string_t *bareruby_string_append_byte(bareruby_string_t *self, int32_t byte) {
+            bareruby_string_reserve(self, self->length + 1);
+            self->bytes[self->length] = (char)byte;
+            self->length += 1;
+            self->bytes[self->length] = '\\0';
             return self;
         }
 
@@ -382,6 +391,7 @@ module BareRubyProt
 
         #include <stdbool.h>
         #include <stdint.h>
+        #include "bareruby_runtime.h"
 
         #ifdef __cplusplus
         extern "C" {
@@ -427,6 +437,9 @@ module BareRubyProt
         int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
         void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
         void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
+        bareruby_string_t *bareruby_uart_read(
+            bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length);
+        bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena);
         int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
         bool bareruby_uart_can_read_line(bareruby_uart_t *self);
         void bareruby_uart_flush(bareruby_uart_t *self);
@@ -609,6 +622,54 @@ module BareRubyProt
 
         void bareruby_asleep_us(int32_t microseconds) {
             fprintf(stderr, "asleep_us(microseconds=%d)\\n", (int)microseconds);
+        }
+      CPP
+
+      # stdin is the hosted UART wire. A pipe supplies the byte sequence for one run,
+      # while the result still follows the peripheral trace on stderr.
+      BINDING_UART_RECEIVE_HOST_SOURCE = <<~CPP
+        #include "bareruby_binding.h"
+
+        #include <stdio.h>
+
+        static void bareruby_uart_trace_received(bareruby_string_t *value) {
+            const char *bytes = bareruby_string_bytes(value);
+            int32_t length = bareruby_string_length(value);
+            fputc('"', stderr);
+            for (int32_t index = 0; index < length; ++index) {
+                unsigned char byte = (unsigned char)bytes[index];
+                if (byte == '\\n') {
+                    fputs("\\\\n", stderr);
+                } else if (byte < 32 || byte > 126) {
+                    fprintf(stderr, "\\\\x%02x", (unsigned int)byte);
+                } else {
+                    fputc((int)byte, stderr);
+                }
+            }
+            fputs("\\"\\n", stderr);
+        }
+
+        bareruby_string_t *bareruby_uart_read(
+            bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length) {
+            bareruby_string_t *result = bareruby_string_new(arena, "");
+            for (int32_t index = 0; index < length; ++index) {
+                bareruby_string_append_byte(result, fgetc(stdin));
+            }
+            fprintf(stderr, "uart_read(id=%d, length=%d) -> ", (int)self->id, (int)length);
+            bareruby_uart_trace_received(result);
+            return result;
+        }
+
+        bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena) {
+            bareruby_string_t *result = bareruby_string_new(arena, "");
+            int byte;
+            do {
+                byte = fgetc(stdin);
+                bareruby_string_append_byte(result, byte);
+            } while (byte != '\\n');
+            fprintf(stderr, "uart_gets(id=%d) -> ", (int)self->id);
+            bareruby_uart_trace_received(result);
+            return result;
         }
       CPP
 
@@ -810,6 +871,35 @@ module BareRubyProt
         }
       CPP
 
+      BINDING_UART_RECEIVE_RP2040_SOURCE = <<~CPP
+        #include "bareruby_binding.h"
+
+        #include "hardware/uart.h"
+
+        static uart_inst_t *bareruby_uart_receive_port(const bareruby_uart_t *self) {
+            return (self->id == 0) ? uart0 : uart1;
+        }
+
+        bareruby_string_t *bareruby_uart_read(
+            bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length) {
+            bareruby_string_t *result = bareruby_string_new(arena, "");
+            for (int32_t index = 0; index < length; ++index) {
+                bareruby_string_append_byte(result, uart_getc(bareruby_uart_receive_port(self)));
+            }
+            return result;
+        }
+
+        bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena) {
+            bareruby_string_t *result = bareruby_string_new(arena, "");
+            int byte;
+            do {
+                byte = uart_getc(bareruby_uart_receive_port(self));
+                bareruby_string_append_byte(result, byte);
+            } while (byte != '\\n');
+            return result;
+        }
+      CPP
+
       attr_reader :result, :stdout_notice
 
       def initialize(low_ir, debug:, exceptions: true)
@@ -831,6 +921,8 @@ module BareRubyProt
           "bareruby_binding.h" => BINDING_HEADER,
           "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
           "bareruby_binding_rp2040.cpp" => BINDING_RP2040_SOURCE,
+          "bareruby_binding_uart_receive_host.cpp" => BINDING_UART_RECEIVE_HOST_SOURCE,
+          "bareruby_binding_uart_receive_rp2040.cpp" => BINDING_UART_RECEIVE_RP2040_SOURCE,
           "hosted/main.cpp" => program_source(:hosted),
           "hosted/manifest.txt" => hosted_manifest,
           "rp2040/main.cpp" => rp2040_program,
@@ -844,6 +936,7 @@ module BareRubyProt
       def hosted_sources
         sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_binding_uart_receive_host.cpp" if receives_uart?
         sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
@@ -902,14 +995,32 @@ module BareRubyProt
       def calls_string?(value)
         return value.any? { |element| calls_string?(element) } if value.is_a?(Array)
         return false unless value.is_a?(Hash)
-        return true if value[:type] == :call && value[:children][0].to_s.start_with?("bareruby_string_")
+        if value[:type] == :call
+          function = value[:children][0]
+          return true if function.to_s.start_with?("bareruby_string_") ||
+                         %i[bareruby_uart_read bareruby_uart_gets].include?(function)
+        end
 
         calls_string?(value[:children])
+      end
+
+      def receives_uart?
+        @lir.functions.any? { |function| calls_uart_receive?(@lir.children_of(function)[3]) }
+      end
+
+      def calls_uart_receive?(value)
+        return value.any? { |element| calls_uart_receive?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :call &&
+                       %i[bareruby_uart_read bareruby_uart_gets].include?(value[:children][0])
+
+        calls_uart_receive?(value[:children])
       end
 
       def rp2040_sources
         sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
+        sources << "../bareruby_binding_uart_receive_rp2040.cpp" if receives_uart?
         sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
