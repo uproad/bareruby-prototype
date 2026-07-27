@@ -33,6 +33,8 @@ module BareRubyProt
           @result.replace_program(read_statements(node.statements), span_of(node))
         when Prism::IntegerNode
           @result.create_integer(node.value, span_of(node))
+        when Prism::NilNode
+          @result.create_nil(span_of(node))
         when Prism::LocalVariableReadNode
           @result.create_reference(:local, node.name, span_of(node))
         when Prism::InstanceVariableReadNode
@@ -124,13 +126,15 @@ module BareRubyProt
         when Prism::ForwardingSuperNode
           @result.create_super([], span_of(node))
         when Prism::CallNode
-          @result.create_call(
-            read_optional_node(node.receiver),
+          receiver = read_optional_node(node.receiver)
+          call = @result.create_call(
+            receiver,
             node.name,
             read_arguments(node.arguments),
             read_optional_node(node.block),
             span_of(node)
           )
+          node.call_operator == "&." ? @result.create_logical(:and, receiver, call, span_of(node)) : call
         when Prism::BlockNode
           @result.create_block(
             read_block_parameters(node.parameters),

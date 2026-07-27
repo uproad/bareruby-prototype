@@ -26,6 +26,7 @@ module BareRubyProt
         structs = []
         functions = []
         @array_structs = {}
+        @nilable_structs = {}
 
         @tast.program_body.each do |statement|
           next unless class_definition?(statement)
@@ -38,7 +39,7 @@ module BareRubyProt
         end
 
         functions << lower_main
-        @result = @lir.replace_module(@array_structs.values + structs, functions)
+        @result = @lir.replace_module(@array_structs.values + structs + @nilable_structs.values, functions)
 
         self
       end
@@ -57,7 +58,7 @@ module BareRubyProt
           lir_parameters << { name: binding[:name], type: binding_type(binding, type) }
         end
 
-        statements = body.flat_map { |statement| lower_statement(statement) }
+        statements = predeclare_nilable_locals(body) + body.flat_map { |statement| lower_statement(statement) }
         @lir.create_function(
           function_name(identity[:owner], identity[:name]),
           lir_parameters,
@@ -68,8 +69,8 @@ module BareRubyProt
 
       def lower_main
         begin_function(nil, :Nil)
-        statements = @tast.program_body.reject { |node| class_definition?(node) }
-                         .flat_map { |node| lower_statement(node) }
+        body = @tast.program_body.reject { |node| class_definition?(node) }
+        statements = predeclare_nilable_locals(body) + body.flat_map { |node| lower_statement(node) }
         @lir.create_function(:bareruby_main, [], :void, statements)
       end
 
@@ -79,7 +80,35 @@ module BareRubyProt
         @temp_index = 0
         @arena_index = 0
         @self_type = self_class && @lir.pointer_type(@lir.struct_type(self_class))
+        @return_type = return_type
         @void_return = lir_type(return_type) == :void
+      end
+
+      # A local first assigned on only one control-flow path exists as T? outside it.
+      # Its tagged storage therefore has to live before the branch, initially in the Nil
+      # state, instead of being declared inside the arm where the first assignment occurs.
+      def predeclare_nilable_locals(body)
+        bindings = {}
+        collect_nilable_bindings(body, bindings)
+        bindings.values.filter_map do |binding|
+          next if @declared.include?(binding[:name])
+
+          @declared << binding[:name]
+          type = binding[:type]
+          @lir.create_declare(binding[:name], lir_type(type), nilable_absent(type))
+        end
+      end
+
+      def collect_nilable_bindings(value, bindings)
+        return value.each { |element| collect_nilable_bindings(element, bindings) } if value.is_a?(Array)
+        return unless value.is_a?(Hash) && value.key?(:children)
+        return if @tast.node_type(value) == :arena
+
+        if @tast.node_type(value) == :assignment
+          binding = @tast.children_of(value)[0]
+          bindings[binding[:name]] = binding if binding[:kind] == :local && nilable_type?(binding[:type])
+        end
+        collect_nilable_bindings(value[:children], bindings)
       end
 
       def lower_statement(node)
@@ -112,7 +141,7 @@ module BareRubyProt
         return lower_statement(value) + [@lir.create_return(nil)] if @void_return
 
         statements, expression = lower_expression(value)
-        statements + [@lir.create_return(shared_rvalue(value, expression))]
+        statements + [@lir.create_return(coerce_value(value, expression, @return_type))]
       end
 
       def lower_for_range(node)
@@ -167,7 +196,7 @@ module BareRubyProt
       def lower_block_body(body)
         declared = @declared.dup
         pointers = @pointer_locals.dup
-        statements = lower_body(body)
+        statements = predeclare_nilable_locals(body) + lower_body(body)
         @declared = declared
         @pointer_locals = pointers
         statements
@@ -246,7 +275,12 @@ module BareRubyProt
       # type is statically true and the test disappears.
       def lower_condition(node)
         statements, expression = lower_expression(node)
-        @tast.value_type(node) == :Bool ? [statements, expression] : [statements, @lir.create_const_bool(true)]
+        type = @tast.value_type(node)
+        return [statements, expression] if type == :Bool
+        return [statements, @lir.create_const_bool(false)] if type == :Nil
+        return [statements, nilable_truth(expression, type)] if nilable_type?(type)
+
+        [statements, @lir.create_const_bool(true)]
       end
 
       # C re-evaluates a while condition every iteration, so a condition that needs
@@ -280,9 +314,10 @@ module BareRubyProt
         when :integer
           value, type = @tast.children_of(node)
           [[], @lir.create_const_int(value, lir_type(type))]
+        when :nil
+          [[], nil]
         when :reference
-          binding, type = @tast.children_of(node)
-          [[], place_of(binding, binding_type(binding, type))]
+          lower_reference(node)
         when :boolean
           value, = @tast.children_of(node)
           [[], @lir.create_const_bool(value)]
@@ -314,10 +349,38 @@ module BareRubyProt
 
       def lower_logical(node)
         operator, left, right, type = @tast.children_of(node)
+        return lower_expression(right) if operator == :or && @tast.value_type(left) == :Nil
+        return lower_nilable_logical(operator, left, right, type) if nilable_type?(@tast.value_type(left))
+
         left_statements, left_expression = lower_expression(left)
         right_statements, right_expression = lower_expression(right)
         [left_statements + right_statements,
          @lir.create_binary(operator == :and ? "&&" : "||", left_expression, right_expression, lir_type(type))]
+      end
+
+      def lower_nilable_logical(operator, left, right, type)
+        left_statements, left_expression = lower_expression(left)
+        left_type = @tast.value_type(left)
+        left_name = next_temp
+        left_local_type = value_lir_type(left_type)
+        left_local = @lir.create_local(left_name, left_local_type)
+        result_name = next_temp
+        result_type = value_lir_type(type)
+        result = @lir.create_local(result_name, result_type)
+        statements = left_statements + [
+          @lir.create_declare(left_name, left_local_type, left_expression),
+          @lir.create_declare(result_name, result_type, nil)
+        ]
+
+        if operator == :or
+          present = @lir.create_assign(result, nilable_value(left_local, left_type))
+          absent = lower_expression_into(right, result, type)
+        else
+          present = lower_expression_into(right, result, type)
+          absent = [@lir.create_assign(result, nilable_absent(type))]
+        end
+        statements << @lir.create_if(nilable_truth(left_local, left_type), [present].flatten, absent)
+        [statements, result]
       end
 
       # An if used as a value becomes a declaration plus branches that assign into it.
@@ -330,18 +393,27 @@ module BareRubyProt
         statements = condition_statements + [@lir.create_declare(result_name, result_type, nil)]
         statements << @lir.create_if(
           condition_expression,
-          lower_body_into(then_body, result_name, result_type),
-          else_body && lower_body_into(else_body, result_name, result_type)
+          lower_body_into(then_body, result_name, type),
+          else_body ? lower_body_into(else_body, result_name, type) :
+            [@lir.create_assign(@lir.create_local(result_name, result_type), nilable_absent(type))]
         )
         [statements, @lir.create_local(result_name, result_type)]
       end
 
-      def lower_body_into(statements, result_name, result_type)
+      def lower_body_into(statements, result_name, type)
+        result_type = value_lir_type(type)
+        return [@lir.create_assign(@lir.create_local(result_name, result_type), nilable_absent(type))] if statements.empty?
+
         leading = statements[0...-1].flat_map { |statement| lower_statement(statement) }
         value_statements, value_expression = lower_expression(statements.last)
         leading + value_statements +
           [@lir.create_assign(@lir.create_local(result_name, result_type),
-                              shared_rvalue(statements.last, value_expression))]
+                              coerce_value(statements.last, value_expression, type))]
+      end
+
+      def lower_expression_into(node, place, type)
+        statements, expression = lower_expression(node)
+        statements + [@lir.create_assign(place, coerce_value(node, expression, type))]
       end
 
       # An interpolation assigned to a local becomes a buffer of the size pass 5 bounded
@@ -395,15 +467,44 @@ module BareRubyProt
 
         statements, value_expression = lower_expression(value)
         @pointer_locals << binding[:name] if shared_type?(type) && binding[:kind] == :local
-        value_expression = shared_rvalue(value, value_expression)
-        place = place_of(binding, binding_type(binding, type))
+        storage_type = nilable_type?(binding[:type]) ? binding[:type] : type
+        value_expression = coerce_value(value, value_expression, storage_type)
+        place = place_of(binding, binding_type(binding, storage_type))
 
         if binding[:kind] == :local && !@declared.include?(binding[:name])
           @declared << binding[:name]
-          [statements + [@lir.create_declare(binding[:name], binding_type(binding, type), value_expression)], place]
+          written = statements + [
+            @lir.create_declare(binding[:name], binding_type(binding, storage_type), value_expression)
+          ]
         else
-          [statements + [@lir.create_assign(place, value_expression)], place]
+          written = statements + [@lir.create_assign(place, value_expression)]
         end
+        [written, read_nilable_place(place, storage_type, type)]
+      end
+
+      def lower_reference(node)
+        binding, type = @tast.children_of(node)
+        storage_type = nilable_type?(binding[:type]) ? binding[:type] : type
+        place = place_of(binding, binding_type(binding, storage_type))
+        [[], read_nilable_place(place, storage_type, type)]
+      end
+
+      def read_nilable_place(place, storage_type, flow_type)
+        return place unless nilable_type?(storage_type) && !nilable_type?(flow_type)
+
+        nilable_value(place, storage_type)
+      end
+
+      def coerce_value(node, expression, target_type)
+        source_type = @tast.value_type(node)
+        return nilable_absent(target_type) if nilable_type?(target_type) && source_type == :Nil
+        if nilable_type?(target_type) && !nilable_type?(source_type)
+          return @lir.create_brace_init(
+            [@lir.create_const_bool(true), shared_rvalue(node, expression)], lir_type(target_type)
+          )
+        end
+
+        shared_rvalue(node, expression)
       end
 
       # Every object is shared, which is what Ruby does. Assignment names the same object
@@ -419,6 +520,8 @@ module BareRubyProt
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
 
       def shared_type?(type) = instance_type?(type) || array_type?(type)
+
+      def nilable_type?(type) = type.is_a?(Hash) && type[:kind] == :nilable
 
       # A shared value in value position is always a reference: returning one by value
       # would copy it, and nothing but dup copies an object.
@@ -580,12 +683,18 @@ module BareRubyProt
         receiver, callee, arguments, _block, type = @tast.children_of(node)
         case callee[:kind]
         when :builtin_operator then lower_operator(receiver, callee, arguments, type)
+        when :builtin_nil_p then lower_nil_predicate(receiver)
         when :builtin_puts, :builtin_printf, :builtin_function, :binding_function
           lower_function_call(callee, arguments)
         when :new, :binding_new then lower_constructor(callee, arguments, type)
         when :user_method, :binding_method, :binding_printf then lower_method_call(receiver, callee, arguments)
         when :binding_i2c then lower_i2c_call(receiver, callee, arguments)
         end
+      end
+
+      def lower_nil_predicate(receiver)
+        statements, expression = lower_expression(receiver)
+        [statements, @lir.create_unary("!", nilable_tag(expression), :bool)]
       end
 
       def lower_operator(receiver, callee, arguments, type)
@@ -773,8 +882,57 @@ module BareRubyProt
         when :array then array_struct_type(type)
         when :arena_array then arena_array_struct_type(type)
         when :arena_string then arena_string_lir_type
+        when :nilable then nilable_struct_type(type)
         else @lir.struct_type(type[:struct] || type[:class_name])
         end
+      end
+
+      # T? is deliberately uniform: one explicit tag followed by the ordinary value
+      # representation. No pointer niche or target-specific sentinel is involved.
+      def nilable_struct_type(type)
+        inner = type[:inner]
+        name = :"bareruby_nilable_#{nilable_type_name(inner)}_t"
+        @nilable_structs[name] ||= @lir.create_struct(
+          name,
+          [@lir.create_field(:tag, :bool), @lir.create_field(:value, value_lir_type(inner))]
+        )
+        @lir.struct_type(name)
+      end
+
+      def nilable_type_name(type)
+        return type.to_s.downcase if type.is_a?(Symbol)
+        return "arena_string" if type[:kind] == :arena_string
+        return "array_#{type[:capacity]}" if type[:kind] == :array
+        return type[:class_name].to_s.downcase if type[:kind] == :instance
+
+        type[:kind].to_s
+      end
+
+      def nilable_absent(type)
+        inner = type[:inner]
+        @lir.create_brace_init(
+          [@lir.create_const_bool(false), zero_value(value_lir_type(inner))], lir_type(type)
+        )
+      end
+
+      def zero_value(type)
+        return @lir.create_const_bool(false) if type == :bool
+        return @lir.create_brace_init([], type) if type.is_a?(Hash) && type[:kind] != :pointer
+
+        @lir.create_const_int(0, type == :int64 ? :int64 : :int32)
+      end
+
+      def nilable_tag(expression) = @lir.create_field_access(expression, :tag, :bool)
+
+      def nilable_truth(expression, type)
+        tag = nilable_tag(expression)
+        return tag unless type[:inner] == :Bool
+
+        @lir.create_binary("&&", tag, nilable_value(expression, type), :bool)
+      end
+
+      def nilable_value(expression, type)
+        @lir.create_field_access(expression, :value, value_lir_type(type[:inner]))
       end
 
       # A variable-length string is always the pointer the region handed out, never a
