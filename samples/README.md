@@ -20,6 +20,7 @@ it is given no argument.
 | `logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
 | `uart_receive.rb` | UART `read` and `gets` returning variable-length strings from the current arena |
 | `i2c.rb` | I2C mixed-output write and repeated-start read returning a variable-length string |
+| `nilable.rb` | `nil`, inferred `T?`, tagged values, `nil?`, local `&.`, `if`/`while` narrowing, `||`, missing `else`, and assignment on one path |
 | `features.rb` | Control flow, strings, symbols. Output matches real Ruby exactly |
 | `fixed.rb` | `Fixed` arithmetic. Q16.16, so it deliberately differs from Ruby's Float |
 | `m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |

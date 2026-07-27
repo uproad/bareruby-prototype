@@ -82,6 +82,17 @@ Covered so far:
   timeout handling stay outside the successful path this prototype implements. The
   target-specific sources are linked only when an I2C operation reaches the program. No
   new pass.
+- **M3 — nilable values** (`samples/nilable.rb`): `nil` joins with `T` as inferred `T?`
+  and lowers uniformly to a struct containing an explicit presence tag and the ordinary
+  value representation. A local tested by `if` or assigned in a `while` condition is
+  narrowed to `T` in its true path, `nil?` reads absence, local safe navigation produces
+  another nilable value, and `maybe || default` unwraps or substitutes without exposing
+  the tag to Ruby. A missing `else` contributes `Nil`, and a local assigned on only one
+  path is declared before the branch in the Nil state. The sample exercises both
+  `Int32?` and a variable-length
+  string pointer in the same representation scheme. This feasibility slice follows the
+  local-only withdrawal line: instance-variable narrowing and invalidation are not
+  implemented. No new pass.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -174,6 +185,11 @@ fits beside the arena and string runtime without introducing another large depen
 `samples/i2c.rb` is 38508 B of text and 1800 B of `bss` under `--no-exceptions`, and its
 `.uf2` is 77312 B. That includes mixed-output flattening, a write, and a register-select
 write followed by a repeated-start read.
+
+`samples/nilable.rb` is 37116 B of text and 1672 B of `bss` under `--no-exceptions`;
+its `.uf2` is 74240 B. The sample includes the arena and variable-length string runtime,
+so the tagged representation and its control flow fit within the cost already established
+for those M3 facilities.
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
