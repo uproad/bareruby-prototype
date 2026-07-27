@@ -167,6 +167,7 @@ module BareRubyProt
         register_builtin_classes
         register_classes(@bareruby_ast.program_body)
 
+        @local_bindings = {}
         env = {}
         typed = @bareruby_ast.program_body.map do |statement|
           definition?(statement) ? statement : infer_node(statement, env:, self_class: nil)
@@ -359,9 +360,12 @@ module BareRubyProt
       end
 
       def infer_method!(method_info, argument_types)
-        bindings = method_info.parameters.map do |parameter|
-          @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
+        enclosing_bindings = @local_bindings
+        @local_bindings = {}
+        bindings = method_info.parameters.each_with_index.map do |parameter, index|
+          @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0], argument_types[index])
         end
+        bindings.each { |binding| @local_bindings[binding[:name]] = binding }
         env = bindings.each_with_index.to_h { |binding, index| [binding[:name], [binding, argument_types[index]]] }
         # Recorded before the body is inferred, because a bare super inside it forwards
         # these very parameters.
@@ -372,6 +376,7 @@ module BareRubyProt
         @current_method = method_info
         typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
         @current_method = enclosing
+        @local_bindings = enclosing_bindings
 
         method_info.typed_body = typed_body
         method_info.return_type =
@@ -417,6 +422,7 @@ module BareRubyProt
       def infer_node(node, env:, self_class:)
         case @bareruby_ast.node_type(node)
         when :integer then infer_integer(node)
+        when :nil then @tast.create_nil(span_of(node))
         when :float then infer_float(node)
         when :boolean then infer_boolean(node)
         when :string then infer_string(node)
@@ -540,15 +546,22 @@ module BareRubyProt
         @tast.create_string(@bareruby_ast.children_of(node)[0], :String, span_of(node))
       end
 
-      # An if in value position takes the type both branches agree on; as a statement it
-      # is Nil. A missing else keeps it a statement. A branch that always leaves
-      # contributes NoReturn, which the other branch absorbs.
+      # A missing else is the Nil branch. Branch-local environments preserve the
+      # truthiness fact while each arm is inferred, then merge back into a T? where one
+      # path has Nil or never assigned a new local.
       def infer_if(node, env:, self_class:)
         condition, then_body, else_body = @bareruby_ast.children_of(node)
         condition_tast = infer_node(condition, env:, self_class:)
-        then_tast = infer_body(then_body, env:, self_class:)
-        else_tast = else_body && infer_body(else_body, env:, self_class:)
-        type = else_tast ? unify(branch_type(then_tast), branch_type(else_tast)) : :Nil
+        base_env = env.dup
+        then_env = base_env.dup
+        else_env = base_env.dup
+        narrow_condition!(condition_tast, then_env, truthy: true)
+        narrow_condition!(condition_tast, else_env, truthy: false)
+
+        then_tast = infer_body(then_body, env: then_env, self_class:)
+        else_tast = else_body && infer_body(else_body, env: else_env, self_class:)
+        merge_branch_env!(env, then_env, else_env)
+        type = unify(branch_type(then_tast), else_tast ? branch_type(else_tast) : :Nil)
         @tast.create_if(condition_tast, then_tast, else_tast, type, span_of(node))
       end
 
@@ -564,15 +577,57 @@ module BareRubyProt
       def infer_while(node, env:, self_class:)
         condition, body = @bareruby_ast.children_of(node)
         condition_tast = infer_node(condition, env:, self_class:)
-        @tast.create_while(condition_tast, infer_body(body, env:, self_class:), span_of(node))
+        body_env = env.dup
+        narrow_condition!(condition_tast, body_env, truthy: true)
+        typed_body = infer_body(body, env: body_env, self_class:)
+        narrow_condition!(condition_tast, env, truthy: false)
+        @tast.create_while(condition_tast, typed_body, span_of(node))
       end
 
       def infer_logical(node, env:, self_class:)
         operator, left, right = @bareruby_ast.children_of(node)
         left_tast = infer_node(left, env:, self_class:)
-        right_tast = infer_node(right, env:, self_class:)
-        type = unify(@tast.value_type(left_tast), @tast.value_type(right_tast))
+        right_env = env.dup
+        narrow_condition!(left_tast, right_env, truthy: operator == :and)
+        right_tast = infer_node(right, env: right_env, self_class:)
+        left_type = @tast.value_type(left_tast)
+        right_type = @tast.value_type(right_tast)
+        type =
+          if operator == :or && nilable_type?(left_type)
+            unify(left_type[:inner], right_type)
+          elsif operator == :or && left_type == :Nil
+            right_type
+          elsif operator == :and && nilable_type?(left_type)
+            unify(:Nil, right_type)
+          else
+            unify(left_type, right_type)
+          end
         @tast.create_logical(operator, left_tast, right_tast, type, span_of(node))
+      end
+
+      def narrow_condition!(condition, env, truthy:)
+        binding, type =
+          case @tast.node_type(condition)
+          when :reference
+            @tast.children_of(condition)
+          when :assignment
+            assignment_binding, _value, assignment_type = @tast.children_of(condition)
+            [assignment_binding, assignment_type]
+          end
+        return unless binding && binding[:kind] == :local && nilable_type?(type)
+
+        env[binding[:name]] = [binding, truthy ? type[:inner] : :Nil]
+      end
+
+      def merge_branch_env!(env, left, right)
+        (left.keys | right.keys).each do |name|
+          left_entry = left[name]
+          right_entry = right[name]
+          binding = (left_entry || right_entry)[0]
+          type = unify(left_entry ? left_entry[1] : :Nil, right_entry ? right_entry[1] : :Nil)
+          binding[:type] = binding[:type] ? unify(binding[:type], type) : type
+          env[name] = [binding, type]
+        end
       end
 
       def infer_constant_path(node)
@@ -608,7 +663,8 @@ module BareRubyProt
         binding = @tast.create_binding(kind, name)
         case kind
         when :local
-          binding = env.key?(name) ? env.fetch(name)[0] : binding
+          binding = @local_bindings[name] ||= binding
+          binding[:type] = binding[:type] ? unify(binding[:type], value_type) : value_type
           env[name] = [binding, value_type]
         when :instance
           ivars = @classes.fetch(self_class).ivars
@@ -664,7 +720,9 @@ module BareRubyProt
           receiver_tast = infer_node(receiver, env:, self_class:)
           receiver_type = @tast.value_type(receiver_tast)
 
-          if array_type?(receiver_type)
+          if name == :nil?
+            infer_nil_predicate(receiver_tast, receiver_type, span)
+          elsif array_type?(receiver_type)
             infer_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
           elsif arena_array_type?(receiver_type)
             infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
@@ -682,6 +740,14 @@ module BareRubyProt
             infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
           end
         end
+      end
+
+      def infer_nil_predicate(receiver_tast, receiver_type, span)
+        return @tast.create_boolean(true, :Bool, span) if receiver_type == :Nil
+        return @tast.create_boolean(false, :Bool, span) unless nilable_type?(receiver_type)
+
+        callee = @tast.create_callee(:builtin_nil_p, nil, :nil?, nil, [], :Bool)
+        @tast.create_call(receiver_tast, callee, [], nil, :Bool, span)
       end
 
       def array_type?(type) = type.is_a?(Hash) && type[:kind] == :array
@@ -1294,9 +1360,21 @@ module BareRubyProt
       def unify(left, right)
         return right if left == :NoReturn
         return left if right == :NoReturn
+        return left if left == right
+        return right if left == :Nil && nilable_type?(right)
+        return left if right == :Nil && nilable_type?(left)
+        return @tast.create_nilable_type(right) if left == :Nil
+        return @tast.create_nilable_type(left) if right == :Nil
+        if nilable_type?(left) || nilable_type?(right)
+          left_inner = nilable_type?(left) ? left[:inner] : left
+          right_inner = nilable_type?(right) ? right[:inner] : right
+          return @tast.create_nilable_type(unify(left_inner, right_inner))
+        end
 
-        left == right ? left : widen(left, right)
+        widen(left, right)
       end
+
+      def nilable_type?(type) = type.is_a?(Hash) && type[:kind] == :nilable
 
       def span_of(node) = @bareruby_ast.span_of(node)
     end

@@ -18,7 +18,8 @@ module BareRubyProt
 
       def desugar_node(node)
         case @bareruby_ast.node_type(node)
-        when :integer, :float, :boolean, :string, :symbol, :reference, :constant_path, :parameter, :iteration_control
+        when :integer, :nil, :float, :boolean, :string, :symbol, :reference, :constant_path, :parameter,
+             :iteration_control
           node
         when :if
           desugar_if(node)

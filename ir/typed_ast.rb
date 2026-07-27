@@ -22,7 +22,9 @@ module BareRubyProt
       { tree: @tree }
     end
 
-    def create_binding(kind, name) = { kind:, name: }
+    def create_binding(kind, name, type = nil)
+      type ? { kind:, name:, type: } : { kind:, name: }
+    end
 
     def create_instance_type(class_name, struct = nil) = { kind: :instance, class_name:, struct: }
 
@@ -31,6 +33,8 @@ module BareRubyProt
     def create_arena_array_type(element) = { kind: :arena_array, element: }
 
     def create_arena_string_type = { kind: :arena_string }
+
+    def create_nilable_type(inner) = { kind: :nilable, inner: }
 
     def create_identity(owner, name, parameter_types, return_type)
       { owner:, name:, parameter_types:, return_type: }
@@ -41,6 +45,8 @@ module BareRubyProt
     end
 
     def create_integer(value, type, span) = build(:integer, [value, type], span)
+
+    def create_nil(span) = build(:nil, [:Nil], span)
 
     def create_reference(binding, type, span) = build(:reference, [binding, type], span)
 
@@ -201,6 +207,8 @@ module BareRubyProt
       when :integer
         value, type = node[:children]
         "integer(#{value.inspect}, #{inspect_type(type)})"
+      when :nil
+        "nil(Nil)"
       when :reference
         binding, type = node[:children]
         "reference(#{binding[:kind]} #{binding[:name]}, #{inspect_type(type)})"
@@ -277,6 +285,7 @@ module BareRubyProt
       return "array(#{inspect_type(type[:element])}, #{type[:capacity]})" if type[:kind] == :array
       return "arena_array(#{inspect_type(type[:element])})" if type[:kind] == :arena_array
       return "arena_string" if type[:kind] == :arena_string
+      return "#{inspect_type(type[:inner])}?" if type[:kind] == :nilable
 
       "instance(#{type[:class_name]})"
     end

@@ -34,6 +34,8 @@ module BareRubyProt
 
     def create_integer(value, span) = build(:integer, [value], span)
 
+    def create_nil(span) = build(:nil, [], span)
+
     def create_reference(kind, name, span) = build(:reference, [kind, name], span)
 
     def create_constant_path(owner, name, span) = build(:constant_path, [owner, name], span)
