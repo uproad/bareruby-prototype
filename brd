@@ -6,13 +6,17 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 usage() {
     cat >&2 <<'USAGE'
-Usage: brd SOURCE.rb [-d|--debug]
+Usage: brd SOURCE.rb [-d|--debug] [--target=NAME]...
 
-Compiles one BareRuby program, builds the rp2040 firmware and flashes it.
+Compiles one BareRuby program, builds the board firmware and flashes it.
 
-  -d, --debug   Build the debug firmware. The board keeps its USB interface up
-                while the program runs, so it can be reflashed without holding
-                BOOTSEL. Costs about 27 KB of flash.
+  -d, --debug     Build the debug firmware. The board keeps its USB interface up
+                  while the program runs, so it can be reflashed without holding
+                  BOOTSEL. Costs about 27 KB of flash.
+  --target=NAME   Build for NAME: host, raspberry-pi-pico or raspberry-pi-pico2.
+                  Repeatable. Without it the targets come from target.yml. Only
+                  board targets have firmware to build, and the flash step runs
+                  only when exactly one of them was selected.
 
 Environment:
   PICO_SDK_PATH         defaults to ~/pico/pico-sdk
@@ -22,10 +26,12 @@ USAGE
 }
 
 DEBUG=()
+TARGETS=()
 SOURCE=""
 for argument in "$@"; do
     case "$argument" in
         -d|--debug) DEBUG=(-d) ;;
+        --target=*) TARGETS+=("$argument") ;;
         -*)
             echo "brd: unknown option: $argument" >&2
             usage
@@ -49,7 +55,13 @@ for path in "$PICO_SDK_PATH" "$PICO_TOOLCHAIN_PATH"; do
 done
 
 echo "brd: first stage"
-ruby "$HERE/compile.rb" "${DEBUG[@]}" "$SOURCE"
+ruby "$HERE/compile.rb" "${DEBUG[@]}" "${TARGETS[@]}" "$SOURCE"
+
+# A directory with a CMakeLists.txt is a board target: the hosted one is built by
+# hand from its manifest and has nothing here to drive.
+mapfile -t FIRMWARE_DIRECTORIES < <(
+    find "$HERE/build" -mindepth 2 -maxdepth 2 -name CMakeLists.txt -printf '%h\n' | sort
+)
 
 # cmake and pico-sdk are chatty even when everything is fine. Keep the output for
 # the failure case and say nothing otherwise.
@@ -61,10 +73,27 @@ run_quietly() {
     fi
 }
 
-echo "brd: second stage"
-cd "$HERE/build/rp2040"
-run_quietly cmake -B build -S .
-run_quietly cmake --build build
+for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
+    echo "brd: second stage ($(basename "$directory"))"
+    cd "$directory"
+    run_quietly cmake -B build -S .
+    run_quietly cmake --build build
+done
 
-echo "brd: flash"
-"$HERE/flash.sh"
+# Flashing addresses one attached board, so it only makes sense when the run
+# produced one image. Several images are left for flash.sh to be pointed at.
+case "${#FIRMWARE_DIRECTORIES[@]}" in
+    0)
+        echo "brd: no board target was selected, so there is no firmware to flash."
+        ;;
+    1)
+        echo "brd: flash"
+        "$HERE/flash.sh" "${FIRMWARE_DIRECTORIES[0]}/build/bareruby_program.uf2"
+        ;;
+    *)
+        echo "brd: several firmware images were built, so none was flashed:"
+        for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
+            echo "brd:   $directory/build/bareruby_program.uf2"
+        done
+        ;;
+esac

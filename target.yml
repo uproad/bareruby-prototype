@@ -1,0 +1,5 @@
+bareruby:
+  compile:
+    target:
+      - host
+      - raspberry-pi-pico

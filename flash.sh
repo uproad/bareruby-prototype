@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Flash a .uf2 onto a Raspberry Pi Pico that is in BOOTSEL mode and attached to
-# this WSL instance with usbipd. Defaults to the prototype's rp2040 artifact.
+# this WSL instance with usbipd. Defaults to the raspberry-pi-pico artifact.
 #
 #     ./flash.sh [path/to/firmware.uf2]
 #
@@ -9,10 +9,13 @@
 #
 #     /dev/disk/by-label/RPI-RP2 /mnt/pico vfat noauto,user,umask=000 0 0
 #
+# A Pico 2 labels its bootloader volume RP2350 instead, so a board of that kind
+# needs a second line with that label.
+#
 # Without it the script re-executes itself under sudo.
 set -euo pipefail
 
-UF2="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build/rp2040/build/bareruby_program.uf2}"
+UF2="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build/raspberry-pi-pico/build/bareruby_program.uf2}"
 MOUNT_POINT=/mnt/pico
 
 # The system mount is setuid root and honours the fstab "user" option. A mount from
@@ -32,7 +35,8 @@ find_bootsel_partition() {
         # The device can vanish mid-scan once the board resets, so read defensively.
         vendor=$(cat "$device/device/vendor" 2>/dev/null | tr -d ' ')
         model=$(cat "$device/device/model" 2>/dev/null | tr -d ' ')
-        if [ "$vendor" = "RPI" ] && [ "$model" = "RP2" ]; then
+        # An RP2040 bootloader reports RP2, an RP2350 one RP2350.
+        if [ "$vendor" = "RPI" ] && { [ "$model" = "RP2" ] || [ "$model" = "RP2350" ]; }; then
             echo "/dev/${name}1"
             return 0
         fi

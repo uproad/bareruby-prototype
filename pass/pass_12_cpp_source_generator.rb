@@ -777,7 +777,7 @@ module BareRubyProt
         }
       CPP
 
-      BINDING_RP2040_SOURCE = <<~CPP
+      BINDING_PICO_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
         #include <stdarg.h>
@@ -990,7 +990,7 @@ module BareRubyProt
         }
       CPP
 
-      BINDING_UART_RECEIVE_RP2040_SOURCE = <<~CPP
+      BINDING_UART_RECEIVE_PICO_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
         #include "hardware/uart.h"
@@ -1019,7 +1019,7 @@ module BareRubyProt
         }
       CPP
 
-      BINDING_I2C_RP2040_SOURCE = <<~CPP
+      BINDING_I2C_PICO_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
         #include "hardware/gpio.h"
@@ -1049,7 +1049,7 @@ module BareRubyProt
         }
       CPP
 
-      BINDING_I2C_READ_RP2040_SOURCE = <<~CPP
+      BINDING_I2C_READ_PICO_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
         #include "hardware/i2c.h"
@@ -1079,42 +1079,64 @@ module BareRubyProt
         }
       CPP
 
+      RUNTIME_SOURCES = {
+        "bareruby_runtime.h" => RUNTIME_HEADER,
+        "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
+        "bareruby_runtime_arena.cpp" => RUNTIME_ARENA_SOURCE,
+        "bareruby_runtime_string.cpp" => RUNTIME_STRING_SOURCE,
+        "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
+        "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
+        "bareruby_binding.h" => BINDING_HEADER
+      }.freeze
+
+      HOST_BINDING_SOURCES = {
+        "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
+        "bareruby_binding_uart_receive_host.cpp" => BINDING_UART_RECEIVE_HOST_SOURCE,
+        "bareruby_binding_i2c_host.cpp" => BINDING_I2C_HOST_SOURCE,
+        "bareruby_binding_i2c_read_host.cpp" => BINDING_I2C_READ_HOST_SOURCE
+      }.freeze
+
+      # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
+      # through pico-sdk, which spells them the same way whichever chip is underneath.
+      # Only the board name handed to the SDK tells the two apart.
+      PICO_BINDING_SOURCES = {
+        "bareruby_binding_pico.cpp" => BINDING_PICO_SOURCE,
+        "bareruby_binding_uart_receive_pico.cpp" => BINDING_UART_RECEIVE_PICO_SOURCE,
+        "bareruby_binding_i2c_pico.cpp" => BINDING_I2C_PICO_SOURCE,
+        "bareruby_binding_i2c_read_pico.cpp" => BINDING_I2C_READ_PICO_SOURCE
+      }.freeze
+
       attr_reader :result, :stdout_notice
 
-      def initialize(low_ir, debug:, exceptions: true)
+      def initialize(low_ir, targets:, debug:, exceptions: true)
         @lir = low_ir
+        @targets = targets
         @debug = debug
         @exceptions = exceptions
         @stdout_notice = false
       end
 
       def run
-        rp2040_program = program_source(:rp2040)
-        @result = {
-          "bareruby_runtime.h" => RUNTIME_HEADER,
-          "bareruby_runtime_fixed.cpp" => RUNTIME_FIXED_SOURCE,
-          "bareruby_runtime_arena.cpp" => RUNTIME_ARENA_SOURCE,
-          "bareruby_runtime_string.cpp" => RUNTIME_STRING_SOURCE,
-          "bareruby_runtime_throw.cpp" => RUNTIME_THROW_SOURCE,
-          "bareruby_runtime_stdio.cpp" => RUNTIME_STDIO_SOURCE,
-          "bareruby_binding.h" => BINDING_HEADER,
-          "bareruby_binding_host.cpp" => BINDING_HOST_SOURCE,
-          "bareruby_binding_rp2040.cpp" => BINDING_RP2040_SOURCE,
-          "bareruby_binding_uart_receive_host.cpp" => BINDING_UART_RECEIVE_HOST_SOURCE,
-          "bareruby_binding_uart_receive_rp2040.cpp" => BINDING_UART_RECEIVE_RP2040_SOURCE,
-          "bareruby_binding_i2c_host.cpp" => BINDING_I2C_HOST_SOURCE,
-          "bareruby_binding_i2c_read_host.cpp" => BINDING_I2C_READ_HOST_SOURCE,
-          "bareruby_binding_i2c_rp2040.cpp" => BINDING_I2C_RP2040_SOURCE,
-          "bareruby_binding_i2c_read_rp2040.cpp" => BINDING_I2C_READ_RP2040_SOURCE,
-          "hosted/main.cpp" => program_source(:hosted),
-          "hosted/manifest.txt" => hosted_manifest,
-          "rp2040/main.cpp" => rp2040_program,
-          "rp2040/manifest.txt" => rp2040_manifest,
-          "rp2040/CMakeLists.txt" => cmake_lists
-        }
+        @result = RUNTIME_SOURCES.dup
+        @result.merge!(HOST_BINDING_SOURCES) if @targets.any?(&:hosted?)
+        @result.merge!(PICO_BINDING_SOURCES) unless @targets.all?(&:hosted?)
+        @targets.each { |target| @result.merge!(target_sources(target)) }
 
         self
       end
+
+      # Each target owns a directory named after itself, holding the entry point, the
+      # record of how it is built, and — for a board — the build system that does it.
+      def target_sources(target)
+        sources = {
+          "#{target.name}/main.cpp" => program_source(target),
+          "#{target.name}/manifest.txt" => manifest(target)
+        }
+        sources["#{target.name}/CMakeLists.txt"] = cmake_lists(target) unless target.hosted?
+        sources
+      end
+
+      def manifest(target) = target.hosted? ? hosted_manifest : pico_manifest(target)
 
       def hosted_sources
         sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
@@ -1130,7 +1152,7 @@ module BareRubyProt
 
       def hosted_manifest
         <<~MANIFEST
-          target = hosted
+          target = host
           toolchain = g++
           language_standard = gnu++20
           compile_options = -std=gnu++20 -fno-rtti
@@ -1227,26 +1249,28 @@ module BareRubyProt
         calls_i2c_read?(value[:children])
       end
 
-      def rp2040_sources
-        sources = ["main.cpp", "../bareruby_binding_rp2040.cpp", "../bareruby_runtime_fixed.cpp",
+      def pico_sources
+        sources = ["main.cpp", "../bareruby_binding_pico.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
-        sources << "../bareruby_binding_uart_receive_rp2040.cpp" if receives_uart?
-        sources << "../bareruby_binding_i2c_rp2040.cpp" if uses_i2c?
-        sources << "../bareruby_binding_i2c_read_rp2040.cpp" if reads_i2c?
+        sources << "../bareruby_binding_uart_receive_pico.cpp" if receives_uart?
+        sources << "../bareruby_binding_i2c_pico.cpp" if uses_i2c?
+        sources << "../bareruby_binding_i2c_read_pico.cpp" if reads_i2c?
         sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
       end
 
-      def rp2040_manifest
+      def pico_manifest(target)
         <<~MANIFEST
-          target = freestanding-rp2040
+          target = #{target.name}
+          board = #{target.board}
+          platform = #{target.platform}
           toolchain = arm-none-eabi-g++
           language_standard = gnu++20
           compile_options = -std=gnu++20 -fno-rtti
           include_directories = ..
-          sources = #{rp2040_sources.join(' ')}
+          sources = #{pico_sources.join(' ')}
           link_libraries = pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_i2c hardware_clocks
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
@@ -1256,9 +1280,14 @@ module BareRubyProt
         MANIFEST
       end
 
-      def cmake_lists
+      def cmake_lists(target)
         <<~CMAKE
           cmake_minimum_required(VERSION 3.13)
+
+          # The board picks the chip, the linker script and the register headers, so it has
+          # to be set before the SDK is imported rather than passed to the build later.
+          set(PICO_BOARD #{target.board})
+          set(PICO_PLATFORM #{target.platform})
 
           include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -1273,7 +1302,7 @@ module BareRubyProt
           pico_sdk_init()
 
           add_executable(bareruby_program
-          #{rp2040_sources.map { |source| "    #{source}" }.join("\n")}
+          #{pico_sources.map { |source| "    #{source}" }.join("\n")}
           )
 
           target_include_directories(bareruby_program PRIVATE ..)
@@ -1321,10 +1350,10 @@ module BareRubyProt
         "#{lines.join("\n")}\n"
       end
 
-      def stdout_enabled?(target) = target == :hosted || @debug
+      def stdout_enabled?(target) = target.hosted? || @debug
 
       def entry_text(target)
-        return "int main(void) {\n    bareruby_main();\n    return 0;\n}\n" if target == :hosted
+        return "int main(void) {\n    bareruby_main();\n    return 0;\n}\n" if target.hosted?
 
         "int main(void) {\n    bareruby_startup();\n    bareruby_main();\n    for (;;) {\n" \
           "        bareruby_sleep_ms(1000);\n    }\n}\n"
