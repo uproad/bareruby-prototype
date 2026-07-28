@@ -47,6 +47,25 @@ module BareRubyProt
       # finer than the 12-bit converter's least significant bit.
       ADC_CHANNEL_PINS = (26..29).freeze
 
+      # The on-board LED is its own class rather than a GPIO with a known pin, because on
+      # a board that has one it is frequently not a GPIO at all — a Pico W drives its LED
+      # through the wireless chip, and GP25, where the plain Pico's LED sits, is that
+      # chip's select line instead. Sharing GPIO's interface would only hide that. Which
+      # board the program is being built for decides how the binding reaches it, so a
+      # program that blinks says nothing about the board it will run on.
+      PERIPHERAL_CLASSES_ONBOARD = {
+        OnboardLED: {
+          struct: :bareruby_onboard_led_t,
+          constants: {},
+          constructor: { function: :bareruby_onboard_led_init, parameter_types: [] },
+          methods: {
+            write: { function: :bareruby_onboard_led_write, parameter_types: %i[Int32], return_type: :Nil },
+            on: { function: :bareruby_onboard_led_on, parameter_types: [], return_type: :Nil },
+            off: { function: :bareruby_onboard_led_off, parameter_types: [], return_type: :Nil }
+          }
+        }
+      }.freeze
+
       PERIPHERAL_CLASSES_EXTRA = {
         ADC: {
           struct: :bareruby_adc_t,
@@ -141,7 +160,8 @@ module BareRubyProt
         bareruby_uart_write: :bareruby_uart_printf
       }.freeze
 
-      PERIPHERALS = PERIPHERAL_CLASSES.merge(PERIPHERAL_CLASSES_EXTRA).freeze
+      PERIPHERALS =
+        PERIPHERAL_CLASSES.merge(PERIPHERAL_CLASSES_EXTRA, PERIPHERAL_CLASSES_ONBOARD).freeze
 
       ClassInfo = Struct.new(:sources, :methods, :ivars, :initialized_ivars)
       MethodInfo = Struct.new(
