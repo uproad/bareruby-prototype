@@ -95,6 +95,18 @@ Covered so far:
   string pointer in the same representation scheme. This feasibility slice follows the
   local-only withdrawal line: instance-variable narrowing and invalidation are not
   implemented. No new pass.
+- **M4 — experimental GPIO interrupts** (`samples/interrupt.rb`):
+  `button.on_interrupt(edge: GPIO::EDGE_FALL) { ... }` lowers its non-capturing,
+  zero-argument block to a realtime handler and registers it with the GPIO receiver.
+  The hosted binding records registration and calls the handler synchronously once, so
+  the sample demonstrates GP15 falling-edge input driving a GP25 LED write without
+  hardware. The rp2040 binding keeps one zero-argument handler pointer and invokes it
+  from pico-sdk's GPIO callback bridge. Pass 11 rejects arena storage or allocation in a
+  realtime handler and in user methods reachable from it. This is deliberately
+  provisional: it supports one handler, `EDGE_FALL` only, no captures, no unregister,
+  no generalized interrupt API, and no production diagnostics. Built with pico-sdk
+  1.5.1, the sample produced a 29,184 B UF2 with 14,588 B of ELF text and 1,496 B of bss;
+  it was built but not hardware-flashed.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
