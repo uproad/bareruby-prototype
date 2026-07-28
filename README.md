@@ -106,7 +106,7 @@ Covered so far:
   realtime handler and in user methods reachable from it. This is deliberately
   provisional: it supports one handler, `EDGE_FALL` only, no captures, no unregister,
   no generalized interrupt API, and no production diagnostics. Built with pico-sdk
-  1.5.1, the sample produced a 29,184 B UF2 with 14,588 B of ELF text and 1,496 B of bss;
+  2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
 
 - **Targets** — one run compiles for as many machines as it is asked to. `host`,
@@ -159,11 +159,11 @@ cd bareruby-prototype
 ./brd                                        # prints usage
 ```
 
-It defaults `PICO_SDK_PATH`, `PICO_SDK_2_PATH` and `PICO_TOOLCHAIN_PATH` to the locations
-used below and takes them from the environment when they are already set. cmake output is
-shown only when a step fails. It builds every board target the run selected — handing
-each the SDK its platform needs — and flashes when there is exactly one, since flashing
-addresses one attached board.
+It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
+takes them from the environment when they are already set. cmake output is shown only
+when a step fails. It builds every board target the run selected — one SDK serves both
+boards — and flashes when there is exactly one, since flashing addresses one attached
+board.
 
 The rest of this file is what `brd` does, step by step, and how to install what it
 needs.
@@ -215,12 +215,14 @@ reached through the SDK, which spells them the same way whichever chip is undern
 and differ only in the board name their `CMakeLists.txt` hands to it.
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
-the unwinder and its tables are left out. On an rp2040 build of `samples/blink.rb` that is
-13220 B of text against 8668 B, so the mechanism costs about 4.5 KB of flash and 316 B
-of RAM even in a program that never raises.
+the unwinder and its tables are left out. On a `raspberry-pi-pico` build of
+`samples/blink.rb` that is 15536 B of text against 10984 B, so the mechanism costs
+4552 B of flash and 316 B of RAM even in a program that never raises. Those two figures
+are exactly what the same pair cost under pico-sdk 1.5.1 (13236 B against 8684 B): the
+mechanism's price is the compiler's, not the SDK's.
 
 A program that actually raises pays far more. `bareruby_throw` pulls in the C++ ABI, and
-with it the terminate handler's name demangler and malloc: `samples/m25.rb` comes to 73848 B
+with it the terminate handler's name demangler and malloc: `samples/m25.rb` comes to 76068 B
 of text. That is why the throw lives in its own translation unit and is linked only into
 programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
 
@@ -240,19 +242,22 @@ statements that create one, append to it twice and print it come to 37244 B of t
 its panic path are what both are paying for. The interpolation form is the part worth
 counting — `a.string("readings: #{count}")` makes `vsnprintf` reachable and takes the same
 program to 43908 B, where that interpolation assigned to a fixed-capacity local costs
-17784 B and no region at all. `samples/string.rb`, which uses every form, is 44572 B of
-text and 3336 B of `bss`, 1792 of which is the three regions it declares.
+17784 B and no region at all. (Those six figures come from throwaway programs that were
+never committed, and are the one set here still carrying its pico-sdk 1.5.1 measurement —
+what they compare is two ways of writing the same thing, which the SDK move shifts
+equally.) `samples/string.rb`, which uses every form, is 46780 B of text and 3344 B of
+`bss`, 1792 of which is the three regions it declares.
 
-`samples/uart_receive.rb` is 37916 B of text and 1804 B of `bss` under
+`samples/uart_receive.rb` is 40004 B of text and 1812 B of `bss` under
 `--no-exceptions`; its region accounts for 256 B of the latter. The receive path therefore
 fits beside the arena and string runtime without introducing another large dependency.
 
-`samples/i2c.rb` is 38508 B of text and 1800 B of `bss` under `--no-exceptions`, and its
-`.uf2` is 77312 B. That includes mixed-output flattening, a write, and a register-select
+`samples/i2c.rb` is 40756 B of text and 1808 B of `bss` under `--no-exceptions`, and its
+`.uf2` is 73728 B. That includes mixed-output flattening, a write, and a register-select
 write followed by a repeated-start read.
 
-`samples/nilable.rb` is 37116 B of text and 1672 B of `bss` under `--no-exceptions`;
-its `.uf2` is 74240 B. The sample includes the arena and variable-length string runtime,
+`samples/nilable.rb` is 39308 B of text and 1680 B of `bss` under `--no-exceptions`;
+its `.uf2` is 70656 B. The sample includes the arena and variable-length string runtime,
 so the tagged representation and its control flow fit within the cost already established
 for those M3 facilities.
 
@@ -263,9 +268,13 @@ lets `flash.sh` reflash it without the BOOTSEL button. It costs code size:
 
 | | default | `--debug` |
 | --- | --- | --- |
-| `.uf2` | 17408 B | 45056 B |
-| `text` (flash) | 8604 B | 22460 B |
-| `bss` (RAM) | 1160 B | 3652 B |
+| `.uf2` | 23040 B | 53248 B |
+| `text` (flash) | 15536 B | 30596 B |
+| `bss` (RAM) | 1484 B | 3604 B |
+
+It needs the SDK's TinyUSB submodule. Without it the SDK builds a firmware identical to
+the default one and says so only in a warning, so `--debug` looks like it worked and the
+board never enumerates.
 
 Only Ruby is needed for this (Prism ships with Ruby 4.0). Every run rewrites two
 directories, neither of which is tracked in git — they are outputs, and they changed on
@@ -317,23 +326,22 @@ Three tools are required. None of them need `sudo`.
 
 ### 1. pico-sdk
 
-The two boards take two SDKs, and both checkouts live side by side.
-
-`raspberry-pi-pico` uses **1.5.1**, which generates the `.uf2` with the `elf2uf2` bundled
-in the SDK. SDK 2.x moved `.uf2` generation out to `picotool`, so staying on 1.5.1 keeps
-that dependency out of the RP2040 build.
+Use **2.3.0** for both boards. RP2350 support arrived in SDK 2.0.0 — 1.5.1 stops at
+`rp2350.cmake does not exist` — and RP2040 is still supported there, so one checkout
+serves both.
 
 ```sh
 mkdir -p ~/pico
-git clone -b 1.5.1 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk
-```
-
-`raspberry-pi-pico2` cannot: RP2350 support arrived in **SDK 2.0.0**, and 1.5.1 stops at
-`rp2350.cmake does not exist`. It gets its own checkout, 33 MB without submodules:
-
-```sh
 git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk-2
+git -C ~/pico/pico-sdk-2 submodule update --init --depth 1 lib/tinyusb
 ```
+
+That is 33 MB for the SDK and 25 MB for TinyUSB. **TinyUSB is what `--debug` needs**: it
+turns on USB stdio, and without the submodule the SDK prints "TinyUSB submodule has not
+been initialized; USB support will be unavailable" and builds a firmware byte-identical
+to the non-debug one. Default builds disable both stdio channels and do not need it, so
+the warning is harmless there — but a `--debug` build that silently is not one is worse
+than a missing dependency, hence initializing it up front.
 
 `picotool` needs no separate install: SDK 2.x downloads and builds it on demand. Left
 alone it lands inside the target's build tree, which the next first-stage run deletes, so
@@ -341,9 +349,10 @@ alone it lands inside the target's build tree, which the next first-stage run de
 `~/pico/picotool` (17 MB, built once). Its libusb-dependent parts are skipped when the
 headers are absent, which costs nothing here: only `.uf2` generation is wanted.
 
-The TinyUSB submodule is not needed by either: both stdio channels are disabled in the
-generated `CMakeLists.txt`, so the "TinyUSB submodule has not been initialized" warning
-during configuration is expected and harmless.
+Earlier work in this repository used **1.5.1**, which generates the `.uf2` with the
+`elf2uf2` bundled in the SDK and so needs no picotool. That was the only reason to stay
+on it, and it stopped being a reason once picotool was installed for the Pico 2. What
+moving cost is recorded below.
 
 ### 2. ARM GNU toolchain
 
@@ -382,7 +391,7 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 
 ```sh
 cd build/raspberry-pi-pico
-export PICO_SDK_PATH=$HOME/pico/pico-sdk
+export PICO_SDK_PATH=$HOME/pico/pico-sdk-2
 export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
 cmake --build build
@@ -390,23 +399,46 @@ cmake --build build
 
 The result is `build/bareruby_program.uf2`. The `build/raspberry-pi-pico/build/` tree is
 gitignored; `compile.rb` deletes it on the next run along with the rest of `build/`.
-`build/raspberry-pi-pico2` is built by exactly the same two cmake commands, with
-`PICO_SDK_PATH` pointing at the SDK 2.x checkout instead. `brd` does that selection
-itself, from the `platform` line in each target's manifest.
+`build/raspberry-pi-pico2` is built by exactly the same commands with the same SDK — the
+board's `CMakeLists.txt` carries the whole of the difference.
 
 Output for `samples/blink.rb`, measured on both boards from the same first stage:
 
 | Property | `raspberry-pi-pico` | `raspberry-pi-pico2` |
 | --- | --- | --- |
-| `.uf2` size | 26624 B | 22016 B |
+| `.uf2` size | 23040 B | 22016 B |
 | UF2 family id | `0xE48BFF56` (RP2040) | `0xE48BFF57` (RP2350 Arm-S) |
 | UF2 target address | `0x10000000` (XIP flash base) | `0x10000000` (XIP flash base) |
-| `text` / `data` / `bss` | 13236 B / 0 B / 1476 B | 14768 B / 0 B / 1100 B |
+| `text` / `data` / `bss` | 15536 B / 0 B / 1484 B | 14768 B / 0 B / 1100 B |
 
 `arm-none-eabi-objdump -d bareruby_program.elf` shows the blink loop as Cortex-M0+
 instructions on the Pico and Cortex-M33 on the Pico 2 — the latter reaches for `strd`,
 which the M0+ does not have — with `bareruby_main` inlined into `main` on both by the
 release build.
+
+### What moving from pico-sdk 1.5.1 cost
+
+Everything above is measured under 2.3.0. The 1.5.1 figures are kept here because they
+are what M0 through M4 were recorded against, and because the difference is worth
+knowing: both sets below are the same commit, the same compiler and the same programs,
+built for `raspberry-pi-pico` with only `PICO_SDK_PATH` changed.
+
+| Program | 1.5.1 `text` / `bss` / `.uf2` | 2.3.0 `text` / `bss` / `.uf2` |
+| --- | --- | --- |
+| `blink.rb` | 13236 / 1476 / 26624 | 15536 / 1484 / 23040 |
+| `blink.rb --debug` | 27052 / 3968 / 54272 | 30596 / 3604 / 53248 |
+| `blink.rb --no-exceptions` | 8684 / 1160 / 17408 | 10984 / 1168 / 13824 |
+| `interrupt.rb` | 14588 / 1496 / 29184 | 17672 / 1508 / 27648 |
+| `nilable.rb --no-exceptions` | 37116 / 1672 / 74240 | 39308 / 1680 / 70656 |
+| `m25.rb` | 73848 / 1604 / 147968 | 76068 / 1616 / 144384 |
+| `i2c.rb` | 92140 / 1836 / 184320 | 94412 / 1848 / 180736 |
+
+2.3.0 costs 2.2 to 3.1 KB more flash across the board and leaves RAM essentially where it
+was. The `.uf2` files are nonetheless smaller, which is not a contradiction: `picotool`
+packs the image into fewer 512-byte UF2 blocks than the `elf2uf2` in 1.5.1 did — 45 blocks
+against 52 for the default blink — so the file shrinks while the program in it grows.
+
+1.5.1 cannot build `raspberry-pi-pico2` at all, so there is no column for it there.
 
 ## Flashing a Pico from WSL
 
@@ -488,8 +520,10 @@ period to 100 ms and then 800 ms and watching the LED follow.
 | --- | --- |
 | Ruby | 4.0.3 |
 | GNU g++ (hosted) | 13.3.0 |
-| pico-sdk | 1.5.1 (RP2040), 2.3.0 (RP2350) |
+| pico-sdk | 2.3.0 (both boards) |
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
 
-The Pico 2 firmware was built but not hardware-flashed: no RP2350 board was attached.
+The end-to-end hardware run above was done under pico-sdk 1.5.1, which is what the
+repository used at the time. The Pico 2 firmware was built but not hardware-flashed: no
+RP2350 board was attached.
