@@ -19,7 +19,8 @@ Compiles one BareRuby program, builds the board firmware and flashes it.
                   only when exactly one of them was selected.
 
 Environment:
-  PICO_SDK_PATH         defaults to ~/pico/pico-sdk
+  PICO_SDK_PATH         RP2040 SDK, defaults to ~/pico/pico-sdk
+  PICO_SDK_2_PATH       RP2350 SDK, defaults to ~/pico/pico-sdk-2
   PICO_TOOLCHAIN_PATH   defaults to ~/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 USAGE
     exit 2
@@ -42,17 +43,33 @@ done
 
 [ -n "$SOURCE" ] || usage
 
+# RP2350 arrived in pico-sdk 2.0.0, and 1.5.1 is kept for RP2040 because it still
+# makes the .uf2 without picotool. Which one a target gets follows from its platform.
 : "${PICO_SDK_PATH:=$HOME/pico/pico-sdk}"
+: "${PICO_SDK_2_PATH:=$HOME/pico/pico-sdk-2}"
 : "${PICO_TOOLCHAIN_PATH:=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}"
-export PICO_SDK_PATH PICO_TOOLCHAIN_PATH
 
-for path in "$PICO_SDK_PATH" "$PICO_TOOLCHAIN_PATH"; do
-    if [ ! -d "$path" ]; then
-        echo "brd: no such directory: $path" >&2
+# SDK 2.x builds picotool on demand. Left alone it lands inside the target's build
+# tree, which the next first-stage run deletes, so it is kept outside of it instead.
+: "${PICOTOOL_FETCH_FROM_GIT_PATH:=$HOME/pico/picotool}"
+export PICO_TOOLCHAIN_PATH PICOTOOL_FETCH_FROM_GIT_PATH
+
+require_directory() {
+    if [ ! -d "$1" ]; then
+        echo "brd: no such directory: $1" >&2
         echo "     See README.md for how to install the toolchain." >&2
         exit 1
     fi
-done
+}
+
+require_directory "$PICO_TOOLCHAIN_PATH"
+
+sdk_for_platform() {
+    case "$1" in
+        rp2350) echo "$PICO_SDK_2_PATH" ;;
+        *) echo "$PICO_SDK_PATH" ;;
+    esac
+}
 
 echo "brd: first stage"
 ruby "$HERE/compile.rb" "${DEBUG[@]}" "${TARGETS[@]}" "$SOURCE"
@@ -75,9 +92,11 @@ run_quietly() {
 
 for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
     echo "brd: second stage ($(basename "$directory"))"
+    SDK=$(sdk_for_platform "$(sed -n 's/^platform = //p' "$directory/manifest.txt")")
+    require_directory "$SDK"
     cd "$directory"
-    run_quietly cmake -B build -S .
-    run_quietly cmake --build build
+    run_quietly env PICO_SDK_PATH="$SDK" cmake -B build -S .
+    run_quietly env PICO_SDK_PATH="$SDK" cmake --build build
 done
 
 # Flashing addresses one attached board, so it only makes sense when the run
