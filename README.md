@@ -115,8 +115,13 @@ Covered so far:
   one pico-sdk binding and differ only in the board handed to the SDK, which is what
   makes a second chip a table entry rather than a second back end: one first stage over
   `samples/blink.rb` produced both an RP2040 and an RP2350 `.uf2`, Cortex-M0+ and
-  Cortex-M33, from the same generated `main.cpp`. Built but not hardware-flashed on the
-  Pico 2.
+  Cortex-M33, from the same generated `main.cpp`. Both were flashed onto real boards and
+  run. The Pico 2 board is a **Pico 2 W**, and it is where the naming rule stopped being
+  an argument and became an observation: `samples/blink.rb` writes GP25, the build and
+  the flash both succeed without a single warning, the program runs — and the LED stays
+  dark, because on that board the LED is on the wireless chip and not on GP25. The same
+  program on the Pico blinks. One chip, two boards, two outcomes, and nothing before the
+  hardware could tell them apart.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -455,16 +460,48 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
+./flash.sh --list                # what is attached, and the fstab line for each
 ./flash.sh                       # defaults to the raspberry-pi-pico artifact
 ./flash.sh path/to/other.uf2
+./flash.sh --board SERIAL path/to/other.uf2
 ```
 
-The script locates the device by SCSI vendor `RPI` and model `RP2` (an RP2040
-bootloader) or `RP2350` rather than by a fixed path, refuses to write unless the mounted
-volume carries the bootloader's
-`INFO_UF2.TXT`, and treats the device disappearing as the success signal — the RP2040
+The script locates boards by SCSI vendor `RPI` and by USB vendor `2e8a` rather than by a
+fixed path, refuses to write unless the mounted volume carries the bootloader's
+`INFO_UF2.TXT`, and treats the device disappearing as the success signal — the board
 resets the moment the last block lands, so the copy, the sync and the unmount are all
 expected to fail at the end.
+
+### Several boards at once
+
+Boards can stay attached together, which is what makes a Pico and a Pico 2 usable as one
+test bench. **Which board a firmware goes to follows from the firmware**: bytes 28..31 of
+a `.uf2` are the family id of the chip it was built for (`0xE48BFF56` for RP2040,
+`0xE48BFF57` for RP2350), and only boards carrying that chip are considered. `brd` uses
+that to flash every board a run selected, one after another:
+
+```sh
+./brd --target=raspberry-pi-pico --target=raspberry-pi-pico2 -d samples/blink.rb
+```
+
+Two boards of the *same* chip — a Pico and a Pico W, a Pico 2 and a Pico 2 W — cannot be
+told apart that way. That is not an oversight in the script; it is the same fact this
+repository names its targets after boards for. `flash.sh` refuses to guess and prints the
+candidates:
+
+```
+flash: 2 boards carry rp2040, so the image does not say which one to use.
+         --board E6625888179C592E   (running, /dev/ttyACM1)
+         --board E0C9125B0D9B       (bootsel, /dev/sdf1)
+```
+
+`--list` shows the serials. One caveat found the hard way: **an RP2040 reports a
+different serial in BOOTSEL than while running** — the bootrom's id (12 hex digits)
+against the flash id pico-sdk reads (16 hex digits). They are both stable per board, but
+they are different numbers, so a board cannot be followed across a reset by its serial.
+An RP2350 happens to report the same number in both modes; do not rely on that. What
+`flash.sh` follows across the reset instead is arrival: the board that is in BOOTSEL and
+was not a moment earlier is the one it just reset.
 
 ### Reflashing without the BOOTSEL button
 
@@ -474,9 +511,8 @@ if no bootloader volume is present it looks for a `/dev/ttyACM*`, resets it, wai
 the board to come back as mass storage, and flashes. Edit, rebuild, rerun `flash.sh` —
 no button, no replugging.
 
-usbipd sees BOOTSEL (`2e8a:0003`) and the running program (`2e8a:000a`) as two
-different devices, so **bind both of them once**, and keep an auto-attach running so
-the flip between them is picked up:
+usbipd sees BOOTSEL and the running program as two different devices, so **bind both of
+them once**, and keep an auto-attach running so the flip between them is picked up:
 
 ```powershell
 usbipd bind   --busid <BUSID>               # once while in BOOTSEL
@@ -484,19 +520,35 @@ usbipd bind   --busid <BUSID>               # once more while the program runs
 usbipd attach --busid <BUSID> --wsl --auto-attach
 ```
 
+The ids differ per chip: an RP2040 is `2e8a:0003` in BOOTSEL and `2e8a:000a` running, an
+RP2350 `2e8a:000f` and `2e8a:0009`. **The auto-attach is not optional for a bench that
+stays plugged in.** Without it every reset drops the board out of WSL and the next flash
+stops at "no board came back in BOOTSEL mode" — which is a WSL plumbing failure, not a
+board failure. One auto-attach per board.
+
 ### Mounting without sudo
 
-Only the mount needs privileges. One line in `/etc/fstab` removes even that:
+Only the mount needs privileges. One line in `/etc/fstab` per board removes even that:
 
 ```
-/dev/disk/by-label/RPI-RP2 /mnt/pico vfat noauto,user,umask=000 0 0
+/dev/disk/by-id/usb-RPI_RP2_E0C9125B0D9B-0:0-part1    /mnt/pico  vfat noauto,user,umask=000 0 0
+/dev/disk/by-id/usb-RPI_RP2350_34319CF054AB3BD6-0:0-part1 /mnt/pico2 vfat noauto,user,umask=000 0 0
 ```
 
-A Pico 2 labels its bootloader volume `RP2350` instead of `RPI-RP2`, so a board of that
-kind needs a second line with that label. The `user` option lets any user mount that one
-entry, and nothing else — much narrower than a `NOPASSWD` sudoers rule. `/dev/ttyACM*` is already reachable through the
-`dialout` group, so with this entry `flash.sh` needs no root at all. Without it, the
-script falls back to re-executing itself under `sudo`.
+`flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
+mount points are read back out of `/etc/fstab`, so they can be named anything as long as
+each is distinct.
+
+Naming boards by label instead — `/dev/disk/by-label/RPI-RP2`, `/dev/disk/by-label/RP2350`
+— also works and is shorter, but only while one board of each chip is attached: two Pico 2
+boards both label their volume `RP2350` and the link points at whichever udev saw last.
+The `by-id` path carries the serial and stays unambiguous.
+
+The `user` option lets any user mount that one entry, and nothing else — much narrower
+than a `NOPASSWD` sudoers rule. `/dev/ttyACM*` is already reachable through the `dialout`
+group, so with these entries `flash.sh` needs no root at all. Without a line for the
+attached board, the script falls back to re-executing itself under `sudo` and prints the
+line that would have avoided it.
 
 Two traps worth knowing:
 
@@ -514,6 +566,31 @@ again. With `-d` it comes back as `2e8a:000a` with a `/dev/ttyACM0`, and success
 edits were flashed by rerunning `flash.sh` alone — verified by changing the blink
 period to 100 ms and then 800 ms and watching the LED follow.
 
+Verified again on a **Pico 2 W**, which is an RP2350 board. `flash.sh` wrote the
+`raspberry-pi-pico2` image (`Model: Raspberry Pi RP2350`, `Board-ID: RP2350` out of the
+bootloader's `INFO_UF2.TXT`), the board left BOOTSEL and came back as `2e8a:0009` with a
+`/dev/ttyACM0`. A `-d` build of
+
+```ruby
+counter = 0
+
+loop do
+  counter += 1
+  puts "bareruby on rp2350: #{counter}"
+  sleep_ms(500)
+end
+```
+
+printed to that port continuously — 20 lines in 10 seconds, the counter advancing by 19,
+which is `sleep_ms(500)` keeping time on the hardware. Ruby to BRAST to TAST to LIR to
+C++ to an RP2350 running the result.
+
+The LED is the part worth recording. `samples/blink.rb` was flashed onto the same board,
+and a variant logging each write showed `gp25 high` / `gp25 low` alternating once a
+second on the serial port while **the LED stayed dark the whole time**. The writes reach
+GP25; on a Pico 2 W the LED is not there. Both boards then took the same `samples/blink.rb`
+from one `brd` invocation, and the Pico blinked while the Pico 2 W did not.
+
 ## Versions this was verified against
 
 | Tool | Version |
@@ -524,6 +601,5 @@ period to 100 ms and then 800 ms and watching the LED follow.
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
 
-The end-to-end hardware run above was done under pico-sdk 1.5.1, which is what the
-repository used at the time. The Pico 2 firmware was built but not hardware-flashed: no
-RP2350 board was attached.
+The Pico hardware run was done under pico-sdk 1.5.1, which is what the repository used at
+the time; the Pico 2 W run and the two-board run were done under 2.3.0.
