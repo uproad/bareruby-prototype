@@ -88,6 +88,10 @@ module BareRubyProt
 
     def create_block(parameters, body, type, span) = build(:block, [parameters, body, type], span)
 
+    def create_interrupt(receiver, events, block, type, span)
+      build(:interrupt, [receiver, events, block, type], span)
+    end
+
     def create_return(value, type, span) = build(:return, [value, type], span)
 
     def create_iteration_control(kind, span) = build(:iteration_control, [kind], span)

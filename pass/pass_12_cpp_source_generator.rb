@@ -410,6 +410,8 @@ module BareRubyProt
             int32_t params;
         } bareruby_gpio_t;
 
+        typedef void (*bareruby_interrupt_handler_t)(void);
+
         typedef struct {
             int32_t pin;
             int32_t slice;
@@ -439,6 +441,8 @@ module BareRubyProt
         int32_t bareruby_gpio_read(bareruby_gpio_t *self);
         bool bareruby_gpio_high(bareruby_gpio_t *self);
         bool bareruby_gpio_low(bareruby_gpio_t *self);
+        void bareruby_gpio_on_interrupt(
+            bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler);
 
         void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty);
         void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency);
@@ -519,6 +523,12 @@ module BareRubyProt
         bool bareruby_gpio_low(bareruby_gpio_t *self) {
             fprintf(stderr, "gpio_low(pin=%d) -> true\\n", (int)self->pin);
             return true;
+        }
+
+        void bareruby_gpio_on_interrupt(
+            bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
+            fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
+            handler();
         }
 
         void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
@@ -785,6 +795,14 @@ module BareRubyProt
             stdio_init_all();
         }
 
+        static bareruby_interrupt_handler_t bareruby_gpio_interrupt_handler;
+
+        static void bareruby_gpio_interrupt_callback(uint gpio, uint32_t events) {
+            (void)gpio;
+            (void)events;
+            bareruby_gpio_interrupt_handler();
+        }
+
         void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
             self->pin = pin;
             self->params = params;
@@ -816,6 +834,13 @@ module BareRubyProt
 
         bool bareruby_gpio_low(bareruby_gpio_t *self) {
             return !gpio_get((uint)self->pin);
+        }
+
+        void bareruby_gpio_on_interrupt(
+            bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
+            bareruby_gpio_interrupt_handler = handler;
+            gpio_set_irq_enabled_with_callback(
+                (uint)self->pin, (uint32_t)events, true, bareruby_gpio_interrupt_callback);
         }
 
         void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
@@ -1437,6 +1462,8 @@ module BareRubyProt
         when :call
           name, arguments, = @lir.children_of(node)
           "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+        when :function_reference
+          "&#{@lir.children_of(node)[0]}"
         when :cast
           value, type = @lir.children_of(node)
           "(#{type_text(type)})#{expression_text(value)}"

@@ -25,6 +25,7 @@ module BareRubyProt
       def run
         structs = []
         functions = []
+        @interrupt_functions = []
         @array_structs = {}
         @nilable_structs = {}
 
@@ -39,6 +40,7 @@ module BareRubyProt
         end
 
         functions << lower_main
+        functions.concat(@interrupt_functions)
         @result = @lir.replace_module(@nilable_structs.values + @array_structs.values + structs, functions)
 
         self
@@ -84,6 +86,30 @@ module BareRubyProt
         @void_return = lir_type(return_type) == :void
       end
 
+      def lower_interrupt(node)
+        receiver, events, block, = @tast.children_of(node)
+        handler_name = :"bareruby_interrupt_handler_#{@interrupt_functions.length}"
+        parameters, body, = @tast.children_of(block)
+        raise "GPIO#on_interrupt requires a zero-argument block" unless parameters.empty?
+
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        events_statements, events_expression = lower_expression(events)
+        outer_state = [@declared, @pointer_locals, @temp_index, @arena_index, @self_type, @return_type, @void_return]
+        begin_function(nil, :Nil)
+        statements = predeclare_nilable_locals(body) + body.flat_map { |statement| lower_statement(statement) }
+        @interrupt_functions << @lir.create_function(
+          handler_name, [], :void, statements + [@lir.create_return(nil)], context: :realtime
+        )
+        @declared, @pointer_locals, @temp_index, @arena_index, @self_type, @return_type, @void_return = outer_state
+
+        receiver_statements + events_statements + [@lir.create_expression(
+          @lir.create_call(
+            :bareruby_gpio_on_interrupt,
+            [reference_to(receiver_expression), events_expression, @lir.create_function_reference(handler_name)], :void
+          )
+        )]
+      end
+
       # A local first assigned on only one control-flow path exists as T? outside it.
       # Its tagged storage therefore has to live before the branch, initially in the Nil
       # state, instead of being declared inside the arm where the first assignment occurs.
@@ -123,6 +149,7 @@ module BareRubyProt
           body, rescue_body = @tast.children_of(node)
           [@lir.create_try(lower_body(body), lower_body(rescue_body))]
         when :iteration_control then lower_iteration_control(node)
+        when :interrupt then lower_interrupt(node)
         else
           statements, value = lower_expression(node)
           value && value[:type] == :call ? statements + [@lir.create_expression(value)] : statements

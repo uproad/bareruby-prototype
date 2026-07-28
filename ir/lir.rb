@@ -32,8 +32,8 @@ module BareRubyProt
 
     def create_struct(name, fields) = build(:struct, [name, fields])
 
-    def create_function(name, parameters, return_type, body)
-      build(:function, [name, parameters, return_type, body])
+    def create_function(name, parameters, return_type, body, context: :normal)
+      build(:function, [name, parameters, return_type, body, context])
     end
 
     def create_declare(name, type, value) = build(:declare, [name, type, value])
@@ -84,6 +84,8 @@ module BareRubyProt
 
     def create_call(name, arguments, type) = build(:call, [name, arguments, type])
 
+    def create_function_reference(name) = build(:function_reference, [name, :function_reference])
+
     def create_cast(value, type) = build(:cast, [value, type])
 
     def create_size_of(target, type) = build(:size_of, [target, type])
@@ -117,9 +119,9 @@ module BareRubyProt
     end
 
     def inspect_function(function)
-      name, parameters, return_type, body = function[:children]
+      name, parameters, return_type, body, context = function[:children]
       parameter_text = parameters.map { |parameter| "#{parameter[:name]}: #{type_text(parameter[:type])}" }.join(", ")
-      ["function #{name}(#{parameter_text}) -> #{type_text(return_type)}"] +
+      ["function #{name}(#{parameter_text}) -> #{type_text(return_type)} [#{context}]"] +
         body.flat_map { |statement| inspect_statement(statement, "    ") } + [""]
     end
 
@@ -197,6 +199,7 @@ module BareRubyProt
       when :call
         name, arguments, = node[:children]
         "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+      when :function_reference then "&#{node[:children][0]}"
       when :cast
         value, type = node[:children]
         "(#{type_text(type)})#{expression_text(value)}"

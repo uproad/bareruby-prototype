@@ -23,6 +23,7 @@ module BareRubyProt
         when :assignment then inline_assignment(node)
         when :return then inline_return(node)
         when :call then inline_call(node)
+        when :interrupt then inline_interrupt(node)
         when :if then inline_if(node)
         when :while then inline_while(node)
         when :begin then inline_begin(node)
@@ -135,6 +136,15 @@ module BareRubyProt
           block,
           type,
           span_of(node)
+        )
+      end
+
+      def inline_interrupt(node)
+        receiver, events, block, type = @tast.children_of(node)
+        parameters, body, block_type = @tast.children_of(block)
+        @tast.create_interrupt(
+          inline_node(receiver), inline_node(events),
+          @tast.create_block(parameters, inline_body(body), block_type, span_of(block)), type, span_of(node)
         )
       end
 
