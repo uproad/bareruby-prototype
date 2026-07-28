@@ -116,7 +116,10 @@ Covered so far:
   line instead. Sharing GPIO's interface would only have hidden that. Three
   implementations back one class — the traced host stub, `PICO_DEFAULT_LED_PIN` out of
   pico-sdk's board header, and `cyw43_arch_gpio_put` — and which one a build links
-  follows from the target, so the same six lines of Ruby blink all four boards.
+  follows from the target, so the same six lines of Ruby blink all four boards. A board
+  with no on-board LED is meant to accept all three calls and do nothing, so that the
+  presence of an indicator never decides whether a program compiles; every target here
+  has one, so nothing exercises that.
 
   Reaching the wireless LED means bringing the radio up and uploading its firmware, and
   that costs **255 KB of flash**: `samples/heartbeat.rb` is 15336 B of text on a Pico and
@@ -126,7 +129,10 @@ Covered so far:
   Verified on hardware both ways round. The one program blinks a Pico, whose LED is GP25,
   and a Pico 2 W, whose LED is on the radio — and on that same Pico 2 W,
   `samples/blink.rb` writing GP25 leaves the LED dark. Nothing in the Ruby differs
-  between blinking and not except which class the LED is asked for.
+  between blinking and not except which class the LED is asked for. The Pico 2 and the
+  Pico W are built but not run: neither board is here. They are the non-wireless and
+  wireless halves of the pair already confirmed, so what is left unverified is the
+  combination rather than either mechanism.
 
 - **Targets** — one run compiles for as many machines as it is asked to. `host`, the two
   Pico boards and the two Pico W boards are named on the command line or in
@@ -659,3 +665,7 @@ program names neither.
 
 The Pico hardware run was done under pico-sdk 1.5.1, which is what the repository used at
 the time; the Pico 2 W run and the two-board run were done under 2.3.0.
+
+Of the four board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
+real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
+because neither board is here.
