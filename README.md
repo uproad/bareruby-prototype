@@ -123,6 +123,11 @@ Covered so far:
   270236 B on a Pico W. A program that never lights the LED links none of it, so the
   charge falls on the feature rather than on the board.
 
+  Verified on hardware both ways round. The one program blinks a Pico, whose LED is GP25,
+  and a Pico 2 W, whose LED is on the radio — and on that same Pico 2 W,
+  `samples/blink.rb` writing GP25 leaves the LED dark. Nothing in the Ruby differs
+  between blinking and not except which class the LED is asked for.
+
 - **Targets** — one run compiles for as many machines as it is asked to. `host`, the two
   Pico boards and the two Pico W boards are named on the command line or in
   `target.yml`, and each gets its own directory under `build/`. The board targets share
@@ -636,6 +641,11 @@ and a variant logging each write showed `gp25 high` / `gp25 low` alternating onc
 second on the serial port while **the LED stayed dark the whole time**. The writes reach
 GP25; on a Pico 2 W the LED is not there. Both boards then took the same `samples/blink.rb`
 from one `brd` invocation, and the Pico blinked while the Pico 2 W did not.
+
+`samples/heartbeat.rb` closes that gap and was flashed onto both. The Pico blinks at the
+100 ms on / 900 ms off it asks for, reaching its LED through GP25; the Pico 2 W blinks
+the same way, reaching its LED through the radio. One program, two routes, and the
+program names neither.
 
 ## Versions this was verified against
 
