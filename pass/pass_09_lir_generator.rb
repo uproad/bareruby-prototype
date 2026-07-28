@@ -39,7 +39,7 @@ module BareRubyProt
         end
 
         functions << lower_main
-        @result = @lir.replace_module(@array_structs.values + structs + @nilable_structs.values, functions)
+        @result = @lir.replace_module(@nilable_structs.values + @array_structs.values + structs, functions)
 
         self
       end
@@ -461,13 +461,15 @@ module BareRubyProt
       def lower_assignment(node)
         binding, value, type = @tast.children_of(node)
         return lower_format_assignment(binding, value) if @tast.node_type(value) == :format
-        return lower_array_assignment(binding, value, type) if array_creation?(value)
-        return lower_arena_assignment(binding, value, type) if arena_creation?(value)
-        return lower_object_assignment(binding, value, type) if object_creation?(value)
+        storage_type = binding[:type] || type
+        unless nilable_type?(storage_type)
+          return lower_array_assignment(binding, value, type) if array_creation?(value)
+          return lower_arena_assignment(binding, value, type) if arena_creation?(value)
+          return lower_object_assignment(binding, value, type) if object_creation?(value)
+        end
 
         statements, value_expression = lower_expression(value)
         @pointer_locals << binding[:name] if shared_type?(type) && binding[:kind] == :local
-        storage_type = nilable_type?(binding[:type]) ? binding[:type] : type
         value_expression = coerce_value(value, value_expression, storage_type)
         place = place_of(binding, binding_type(binding, storage_type))
 
@@ -603,7 +605,7 @@ module BareRubyProt
         _receiver, callee, arguments, = @tast.children_of(value)
         struct = lir_type(type)
         place = place_of(binding, struct)
-        [storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
+        [object_storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
       end
 
       # A local that owns storage is declared here rather than initialised from somewhere
@@ -613,6 +615,13 @@ module BareRubyProt
 
         @declared << binding[:name]
         [@lir.create_declare(binding[:name], struct, nil)]
+      end
+
+      def object_storage_declaration(binding, struct)
+        return [] unless binding[:kind] == :local && !@declared.include?(binding[:name])
+
+        @declared << binding[:name]
+        [@lir.create_declare(binding[:name], struct, @lir.create_brace_init([], struct))]
       end
 
       # An array written anywhere other than the right of an assignment still needs
@@ -719,7 +728,8 @@ module BareRubyProt
         instance_name = next_temp
         place = @lir.create_local(instance_name, struct)
 
-        [[@lir.create_declare(instance_name, struct, nil)] + construction_of(place, callee, arguments), place]
+        initialized = @lir.create_brace_init([], struct)
+        [[@lir.create_declare(instance_name, struct, initialized)] + construction_of(place, callee, arguments), place]
       end
 
       def construction_of(place, callee, arguments)

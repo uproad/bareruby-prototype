@@ -1280,6 +1280,7 @@ module BareRubyProt
       def program_source(target)
         @target = target
         sections = [include_text(target)]
+        sections << "#{@lir.structs.map { |struct| "struct #{@lir.children_of(struct)[0]};" }.join("\n")}\n"
         sections.concat(@lir.structs.map { |struct| struct_text(struct) })
         sections << "#{@lir.functions.map { |function| "#{signature_text(function)};" }.join("\n")}\n"
         sections.concat(@lir.functions.map { |function| function_text(function) })
