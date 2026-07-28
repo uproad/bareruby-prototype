@@ -15,8 +15,9 @@ Compiles one BareRuby program, builds the board firmware and flashes it.
                   BOOTSEL. Costs about 27 KB of flash.
   --target=NAME   Build for NAME: host, raspberry-pi-pico or raspberry-pi-pico2.
                   Repeatable. Without it the targets come from target.yml. Only
-                  board targets have firmware to build, and the flash step runs
-                  only when exactly one of them was selected.
+                  board targets have firmware to build, and each is flashed onto
+                  the attached board its chip belongs to, so several boards can be
+                  brought up to date in one run. See './flash.sh --list'.
 
 Environment:
   PICO_SDK_PATH         pico-sdk 2.x, defaults to ~/pico/pico-sdk-2
@@ -86,20 +87,13 @@ for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
     run_quietly cmake --build build
 done
 
-# Flashing addresses one attached board, so it only makes sense when the run
-# produced one image. Several images are left for flash.sh to be pointed at.
-case "${#FIRMWARE_DIRECTORIES[@]}" in
-    0)
-        echo "brd: no board target was selected, so there is no firmware to flash."
-        ;;
-    1)
-        echo "brd: flash"
-        "$HERE/flash.sh" "${FIRMWARE_DIRECTORIES[0]}/build/bareruby_program.uf2"
-        ;;
-    *)
-        echo "brd: several firmware images were built, so none was flashed:"
-        for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
-            echo "brd:   $directory/build/bareruby_program.uf2"
-        done
-        ;;
-esac
+# Each image says which chip it is for, so flash.sh can find its own board among the
+# ones attached. Several boards therefore take their firmware in one run.
+if [ "${#FIRMWARE_DIRECTORIES[@]}" -eq 0 ]; then
+    echo "brd: no board target was selected, so there is no firmware to flash."
+fi
+
+for directory in "${FIRMWARE_DIRECTORIES[@]}"; do
+    echo "brd: flash ($(basename "$directory"))"
+    "$HERE/flash.sh" "$directory/build/bareruby_program.uf2"
+done
