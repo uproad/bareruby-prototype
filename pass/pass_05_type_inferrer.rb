@@ -31,7 +31,7 @@ module BareRubyProt
       PERIPHERAL_CLASSES = {
         GPIO: {
           struct: :bareruby_gpio_t,
-          constants: { IN: 1, OUT: 2, HIGH_Z: 4, PULL_UP: 8, PULL_DOWN: 16, OPEN_DRAIN: 32 },
+          constants: { IN: 1, OUT: 2, HIGH_Z: 4, PULL_UP: 8, PULL_DOWN: 16, OPEN_DRAIN: 32, EDGE_FALL: 4 },
           constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
           methods: {
             write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
@@ -818,6 +818,8 @@ module BareRubyProt
             infer_operator_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
           elsif RECEIVER_ITERATOR_NAMES.include?(name)
             infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, env:, self_class:, span:)
+          elsif receiver_type.is_a?(Hash) && receiver_type[:class_name] == :GPIO && name == :on_interrupt
+            infer_gpio_interrupt_call(receiver_tast, arguments, block, env:, self_class:, span:)
           else
             infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
           end
@@ -1195,6 +1197,14 @@ module BareRubyProt
         )
         arguments = argument_tasts.map { |argument| string_value_of(argument) }
         @tast.create_call(receiver_tast, callee, arguments, nil, signature[:return_type], span)
+      end
+
+      def infer_gpio_interrupt_call(receiver_tast, arguments, block, env:, self_class:, span:)
+        events = resolve_keywords(arguments, { edge: 0 }, env:, self_class:, span:).first
+        parameters, body = @bareruby_ast.children_of(block)
+        typed_body = infer_body(body, env: {}, self_class:)
+        typed_block = @tast.create_block(parameters, typed_body, :Nil, span_of(block))
+        @tast.create_interrupt(receiver_tast, events, typed_block, :Nil, span)
       end
 
       def infer_module_function_call(module_name, name, arguments, env:, self_class:, span:)

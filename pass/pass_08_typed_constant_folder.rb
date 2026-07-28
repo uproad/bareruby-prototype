@@ -31,6 +31,7 @@ module BareRubyProt
         when :assignment then fold_assignment(node)
         when :return then fold_return(node)
         when :call then fold_call(node)
+        when :interrupt then fold_interrupt(node)
         when :if then fold_if(node)
         when :while then fold_while(node)
         when :begin
@@ -152,6 +153,15 @@ module BareRubyProt
         end
 
         @tast.create_call(folded_receiver, callee, folded_arguments, block, type, span_of(node))
+      end
+
+      def fold_interrupt(node)
+        receiver, events, block, type = @tast.children_of(node)
+        parameters, body, block_type = @tast.children_of(block)
+        @tast.create_interrupt(
+          fold_node(receiver), fold_node(events),
+          @tast.create_block(parameters, fold_body(body), block_type, span_of(block)), type, span_of(node)
+        )
       end
 
       def fold_body(statements) = statements.map { |statement| fold_node(statement) }

@@ -16,6 +16,7 @@ it is given no argument.
 | File | What it covers |
 | --- | --- |
 | `blink.rb` | Demo 1 — GPIO |
+| `interrupt.rb` | GPIO falling-edge interrupt feasibility |
 | `servo.rb` | Demo 2 — PWM with keyword arguments, a peripheral held in an ivar |
 | `logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
 | `uart_receive.rb` | UART `read` and `gets` returning variable-length strings from the current arena |

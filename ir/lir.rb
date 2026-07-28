@@ -32,8 +32,8 @@ module BareRubyProt
 
     def create_struct(name, fields) = build(:struct, [name, fields])
 
-    def create_function(name, parameters, return_type, body)
-      build(:function, [name, parameters, return_type, body])
+    def create_function(name, parameters, return_type, body, context: :normal)
+      build(:function, [name, parameters, return_type, body, context])
     end
 
     def create_declare(name, type, value) = build(:declare, [name, type, value])
@@ -84,6 +84,8 @@ module BareRubyProt
 
     def create_call(name, arguments, type) = build(:call, [name, arguments, type])
 
+    def create_function_reference(name) = build(:function_reference, [name, :function_reference])
+
     def create_cast(value, type) = build(:cast, [value, type])
 
     def create_size_of(target, type) = build(:size_of, [target, type])
@@ -105,6 +107,30 @@ module BareRubyProt
 
     def value_type(node) = node[:children].last
 
+    def function_name(function) = children_of(function)[0]
+
+    def function_context(function) = children_of(function)[4]
+
+    def function_body(function) = children_of(function)[3]
+
+    def realtime_reachable_functions
+      functions_by_name = functions.to_h { |function| [function_name(function), function] }
+      reachable = []
+      seen = {}
+      realtime_functions.each do |function|
+        collect_reachable_functions(function, functions_by_name, seen, reachable)
+      end
+      reachable
+    end
+
+    def arena_operation?(function)
+      each_node(function_body(function)) do |node|
+        return true if node_type(node) == :declare_arena_storage ||
+                       (node_type(node) == :call && children_of(node)[0] == :bareruby_arena_alloc)
+      end
+      false
+    end
+
     def inspect_text
       lines = structs.flat_map { |struct| inspect_struct(struct) }
       lines += functions.flat_map { |function| inspect_function(function) }
@@ -117,9 +143,9 @@ module BareRubyProt
     end
 
     def inspect_function(function)
-      name, parameters, return_type, body = function[:children]
+      name, parameters, return_type, body, context = function[:children]
       parameter_text = parameters.map { |parameter| "#{parameter[:name]}: #{type_text(parameter[:type])}" }.join(", ")
-      ["function #{name}(#{parameter_text}) -> #{type_text(return_type)}"] +
+      ["function #{name}(#{parameter_text}) -> #{type_text(return_type)} [#{context}]"] +
         body.flat_map { |statement| inspect_statement(statement, "    ") } + [""]
     end
 
@@ -197,6 +223,7 @@ module BareRubyProt
       when :call
         name, arguments, = node[:children]
         "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+      when :function_reference then "&#{node[:children][0]}"
       when :cast
         value, type = node[:children]
         "(#{type_text(type)})#{expression_text(value)}"
@@ -222,6 +249,31 @@ module BareRubyProt
     end
 
     private
+
+    def realtime_functions = functions.select { |function| function_context(function) == :realtime }
+
+    def collect_reachable_functions(function, functions_by_name, seen, reachable)
+      name = function_name(function)
+      return if seen[name]
+
+      seen[name] = true
+      reachable << function
+      each_node(function_body(function)) do |node|
+        next unless node_type(node) == :call
+
+        target = functions_by_name[children_of(node)[0]]
+        collect_reachable_functions(target, functions_by_name, seen, reachable) if target
+      end
+    end
+
+    def each_node(value, &block)
+      return value.each { |element| each_node(element, &block) } if value.is_a?(Array)
+      return unless value.is_a?(Hash)
+      return value.each_value { |element| each_node(element, &block) } unless value.key?(:type)
+
+      yield(value)
+      each_node(children_of(value), &block)
+    end
 
     def build(type, children) = { type:, children: }
   end

@@ -14,6 +14,7 @@ require_relative "pass/pass_06_block_inliner"
 require_relative "pass/pass_07_symbol_to_id_converter"
 require_relative "pass/pass_08_typed_constant_folder"
 require_relative "pass/pass_09_lir_generator"
+require_relative "pass/pass_11_realtime_context_checker"
 require_relative "pass/pass_12_cpp_source_generator"
 
 module BareRubyProt
@@ -70,6 +71,9 @@ module BareRubyProt
       result = pass_09(result)
       result = boundary("09_low_ir", result)
 
+      result = pass_11(result)
+      result = boundary("11_low_ir", result)
+
       generator = pass_12(result)
       warn STDOUT_NOTICE if generator.stdout_notice
       artifacts = artifact_boundary("12_artifacts", generator.result)
@@ -102,6 +106,8 @@ module BareRubyProt
     def pass_08(typed_ast) = Pass::TypedConstantFolder.new(typed_ast).run.result
 
     def pass_09(typed_ast) = Pass::LirGenerator.new(typed_ast).run.result
+
+    def pass_11(low_ir) = Pass::RealtimeContextChecker.new(low_ir).run.result
 
     def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug, exceptions: @exceptions).run
 
