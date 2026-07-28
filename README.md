@@ -109,8 +109,33 @@ Covered so far:
   2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
 
-- **Targets** — one run compiles for as many machines as it is asked to. `host`,
-  `raspberry-pi-pico` and `raspberry-pi-pico2` are named on the command line or in
+- **The on-board LED** (`samples/heartbeat.rb`) — `OnboardLED.new`, then `on`, `off` and
+  `write`. It is deliberately **not** a `GPIO` with a known pin number, because on a
+  board that has an LED it is frequently not a GPIO at all: a Pico W drives its through
+  the wireless chip, and GP25, where the plain Pico's LED sits, is that chip's select
+  line instead. Sharing GPIO's interface would only have hidden that. Three
+  implementations back one class — the traced host stub, `PICO_DEFAULT_LED_PIN` out of
+  pico-sdk's board header, and `cyw43_arch_gpio_put` — and which one a build links
+  follows from the target, so the same six lines of Ruby blink all four boards. A board
+  with no on-board LED is meant to accept all three calls and do nothing, so that the
+  presence of an indicator never decides whether a program compiles; every target here
+  has one, so nothing exercises that.
+
+  Reaching the wireless LED means bringing the radio up and uploading its firmware, and
+  that costs **255 KB of flash**: `samples/heartbeat.rb` is 15336 B of text on a Pico and
+  270236 B on a Pico W. A program that never lights the LED links none of it, so the
+  charge falls on the feature rather than on the board.
+
+  Verified on hardware both ways round. The one program blinks a Pico, whose LED is GP25,
+  and a Pico 2 W, whose LED is on the radio — and on that same Pico 2 W,
+  `samples/blink.rb` writing GP25 leaves the LED dark. Nothing in the Ruby differs
+  between blinking and not except which class the LED is asked for. The Pico 2 and the
+  Pico W are built but not run: neither board is here. They are the non-wireless and
+  wireless halves of the pair already confirmed, so what is left unverified is the
+  combination rather than either mechanism.
+
+- **Targets** — one run compiles for as many machines as it is asked to. `host`, the two
+  Pico boards and the two Pico W boards are named on the command line or in
   `target.yml`, and each gets its own directory under `build/`. The board targets share
   one pico-sdk binding and differ only in the board handed to the SDK, which is what
   makes a second chip a table entry rather than a second back end: one first stage over
@@ -185,11 +210,17 @@ ruby compile.rb -d samples/blink.rb   # debug firmware
 
 A target is a machine the artifacts are produced for. There are three:
 
-| Target | Machine | `build/` directory |
-| --- | --- | --- |
-| `host` | the machine doing the compiling | `build/host` |
-| `raspberry-pi-pico` | RP2040 board | `build/raspberry-pi-pico` |
-| `raspberry-pi-pico2` | RP2350 board | `build/raspberry-pi-pico2` |
+| Target | Short | Machine | Chip |
+| --- | --- | --- | --- |
+| `host` | — | the machine doing the compiling | — |
+| `raspberry-pi-pico` | `pico` | Raspberry Pi Pico | RP2040 |
+| `raspberry-pi-pico-w` | `picow` | Raspberry Pi Pico W | RP2040 |
+| `raspberry-pi-pico2` | `pico2` | Raspberry Pi Pico 2 | RP2350 |
+| `raspberry-pi-pico2-w` | `pico2w` | Raspberry Pi Pico 2 W | RP2350 |
+
+The short names are for typing at a prompt; the full name is what the `build/` directory
+and the manifest are named after either way, so nothing downstream has two spellings to
+know about.
 
 `--target=` names one and is repeatable, so a single run produces artifacts for as many
 machines as it lists:
@@ -197,6 +228,7 @@ machines as it lists:
 ```sh
 ruby compile.rb --target=host samples/blink.rb
 ruby compile.rb --target=raspberry-pi-pico --target=raspberry-pi-pico2 samples/blink.rb
+ruby compile.rb --target=pico --target=picow --target=pico2 --target=pico2w samples/heartbeat.rb
 ```
 
 Without `--target=` the targets come from `target.yml` at the repository root:
@@ -338,10 +370,16 @@ serves both.
 ```sh
 mkdir -p ~/pico
 git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk-2
-git -C ~/pico/pico-sdk-2 submodule update --init --depth 1 lib/tinyusb
+git -C ~/pico/pico-sdk-2 submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver
 ```
 
-That is 33 MB for the SDK and 25 MB for TinyUSB. **TinyUSB is what `--debug` needs**: it
+That is 33 MB for the SDK, 25 MB for TinyUSB and 10 MB for the CYW43 driver.
+**The CYW43 driver is what a wireless board's on-board LED needs** — that LED hangs off
+the radio, and the driver carries the firmware the radio runs. Without the submodule a
+`raspberry-pi-pico-w` or `raspberry-pi-pico2-w` build that uses `OnboardLED` fails in
+cmake; nothing else needs it.
+
+**TinyUSB is what `--debug` needs**: it
 turns on USB stdio, and without the submodule the SDK prints "TinyUSB submodule has not
 been initialized; USB support will be unavailable" and builds a firmware byte-identical
 to the non-debug one. Default builds disable both stdio channels and do not need it, so
@@ -420,6 +458,25 @@ Output for `samples/blink.rb`, measured on both boards from the same first stage
 instructions on the Pico and Cortex-M33 on the Pico 2 — the latter reaches for `strd`,
 which the M0+ does not have — with `bareruby_main` inlined into `main` on both by the
 release build.
+
+### What the on-board LED costs
+
+`samples/heartbeat.rb` — six lines, `OnboardLED.new` and `on` / `off` — built for all
+four boards from one first stage:
+
+| | `text` | `bss` | `.uf2` |
+| --- | --- | --- | --- |
+| `raspberry-pi-pico` | 15336 B | 1484 B | 22528 B |
+| `raspberry-pi-pico-w` | **270236 B** | 4172 B | 532480 B |
+| `raspberry-pi-pico2` | 14636 B | 1100 B | 22016 B |
+| `raspberry-pi-pico2-w` | **267580 B** | 3532 B | 527872 B |
+
+The 255 KB is the radio: its LED cannot be reached without `cyw43_arch_init()`, and that
+uploads the firmware the CYW43 runs. It is the largest single cost this repository has
+measured, an order of magnitude past the exception mechanism's 4.5 KB, and it buys one
+LED. `pico_cyw43_arch_none` is linked only by a wireless target that actually lights the
+LED, so a program that does not is unaffected — `samples/blink.rb` for
+`raspberry-pi-pico2-w` still links no CYW43 at all.
 
 ### What moving from pico-sdk 1.5.1 cost
 
@@ -591,6 +648,11 @@ second on the serial port while **the LED stayed dark the whole time**. The writ
 GP25; on a Pico 2 W the LED is not there. Both boards then took the same `samples/blink.rb`
 from one `brd` invocation, and the Pico blinked while the Pico 2 W did not.
 
+`samples/heartbeat.rb` closes that gap and was flashed onto both. The Pico blinks at the
+100 ms on / 900 ms off it asks for, reaching its LED through GP25; the Pico 2 W blinks
+the same way, reaching its LED through the radio. One program, two routes, and the
+program names neither.
+
 ## Versions this was verified against
 
 | Tool | Version |
@@ -603,3 +665,7 @@ from one `brd` invocation, and the Pico blinked while the Pico 2 W did not.
 
 The Pico hardware run was done under pico-sdk 1.5.1, which is what the repository used at
 the time; the Pico 2 W run and the two-board run were done under 2.3.0.
+
+Of the four board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
+real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
+because neither board is here.

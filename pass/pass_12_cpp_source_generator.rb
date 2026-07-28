@@ -412,6 +412,13 @@ module BareRubyProt
 
         typedef void (*bareruby_interrupt_handler_t)(void);
 
+        /* The on-board LED has nothing the program needs to carry: where it is and how it
+           is driven belong to the board, which the binding already knows. The struct
+           exists so the instance has storage like every other peripheral. */
+        typedef struct {
+            int32_t state;
+        } bareruby_onboard_led_t;
+
         typedef struct {
             int32_t pin;
             int32_t slice;
@@ -443,6 +450,11 @@ module BareRubyProt
         bool bareruby_gpio_low(bareruby_gpio_t *self);
         void bareruby_gpio_on_interrupt(
             bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler);
+
+        void bareruby_onboard_led_init(bareruby_onboard_led_t *self);
+        void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
+        void bareruby_onboard_led_on(bareruby_onboard_led_t *self);
+        void bareruby_onboard_led_off(bareruby_onboard_led_t *self);
 
         void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty);
         void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency);
@@ -777,6 +789,89 @@ module BareRubyProt
         }
       CPP
 
+      # Three implementations of one interface, and which one a build links is the only
+      # thing that changes. The program says `OnboardLED.new` on all of them.
+      BINDING_ONBOARD_LED_HOST_SOURCE = <<~CPP
+        #include "bareruby_binding.h"
+
+        #include <stdio.h>
+
+        void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+            self->state = 0;
+            fprintf(stderr, "onboard_led_init()\\n");
+        }
+
+        void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+            self->state = (value != 0) ? 1 : 0;
+            fprintf(stderr, "onboard_led_write(value=%d)\\n", (int)self->state);
+        }
+
+        void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 1);
+        }
+
+        void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 0);
+        }
+      CPP
+
+      # A board whose LED is on a pin of the microcontroller. Which pin is the board's
+      # answer, not this file's: pico-sdk's board header defines PICO_DEFAULT_LED_PIN, so
+      # a board that puts its LED somewhere else needs no change here.
+      BINDING_ONBOARD_LED_PIN_SOURCE = <<~CPP
+        #include "bareruby_binding.h"
+
+        #include "hardware/gpio.h"
+        #include "pico/stdlib.h"
+
+        void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+            self->state = 0;
+            gpio_init(PICO_DEFAULT_LED_PIN);
+            gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+        }
+
+        void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+            self->state = (value != 0) ? 1 : 0;
+            gpio_put(PICO_DEFAULT_LED_PIN, self->state != 0);
+        }
+
+        void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 1);
+        }
+
+        void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 0);
+        }
+      CPP
+
+      # A wireless board's LED hangs off the radio, not off a pin, so reaching it means
+      # bringing the CYW43 up first — the chip runs firmware that the host uploads, which
+      # is what this costs. GP25, where the plain board's LED sits, is the radio's select
+      # line on this one; writing it here would fight the driver rather than blink.
+      BINDING_ONBOARD_LED_WIRELESS_SOURCE = <<~CPP
+        #include "bareruby_binding.h"
+
+        #include "pico/cyw43_arch.h"
+
+        void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+            self->state = 0;
+            cyw43_arch_init();
+        }
+
+        void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+            self->state = (value != 0) ? 1 : 0;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, self->state != 0);
+        }
+
+        void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 1);
+        }
+
+        void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+            bareruby_onboard_led_write(self, 0);
+        }
+      CPP
+
       BINDING_PICO_SOURCE = <<~CPP
         #include "bareruby_binding.h"
 
@@ -1096,6 +1191,15 @@ module BareRubyProt
         "bareruby_binding_i2c_read_host.cpp" => BINDING_I2C_READ_HOST_SOURCE
       }.freeze
 
+      # The on-board LED is the one peripheral whose implementation two boards of the
+      # same chip disagree about, so it is split by the target's answer rather than by
+      # the kind of machine.
+      ONBOARD_LED_SOURCES = {
+        host: ["bareruby_binding_onboard_led_host.cpp", BINDING_ONBOARD_LED_HOST_SOURCE],
+        pin: ["bareruby_binding_onboard_led_pin.cpp", BINDING_ONBOARD_LED_PIN_SOURCE],
+        wireless: ["bareruby_binding_onboard_led_wireless.cpp", BINDING_ONBOARD_LED_WIRELESS_SOURCE]
+      }.freeze
+
       # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
       # through pico-sdk, which spells them the same way whichever chip is underneath.
       # Only the board name handed to the SDK tells the two apart.
@@ -1120,9 +1224,28 @@ module BareRubyProt
         @result = RUNTIME_SOURCES.dup
         @result.merge!(HOST_BINDING_SOURCES) if @targets.any?(&:hosted?)
         @result.merge!(PICO_BINDING_SOURCES) unless @targets.all?(&:hosted?)
+        if lights_onboard_led?
+          @targets.each { |target| @result.store(*ONBOARD_LED_SOURCES.fetch(target.led)) }
+        end
         @targets.each { |target| @result.merge!(target_sources(target)) }
 
         self
+      end
+
+      def onboard_led_source_of(target) = ONBOARD_LED_SOURCES.fetch(target.led)[0]
+
+      # A program that never lights the LED links none of this, which matters most on a
+      # wireless board: reaching that LED means uploading the radio's firmware.
+      def lights_onboard_led?
+        @lir.functions.any? { |function| calls_onboard_led?(@lir.children_of(function)[3]) }
+      end
+
+      def calls_onboard_led?(value)
+        return value.any? { |element| calls_onboard_led?(element) } if value.is_a?(Array)
+        return false unless value.is_a?(Hash)
+        return true if value[:type] == :call && value[:children][0].to_s.start_with?("bareruby_onboard_led_")
+
+        calls_onboard_led?(value[:children])
       end
 
       # Each target owns a directory named after itself, holding the entry point, the
@@ -1144,6 +1267,7 @@ module BareRubyProt
         sources << "../bareruby_binding_uart_receive_host.cpp" if receives_uart?
         sources << "../bareruby_binding_i2c_host.cpp" if uses_i2c?
         sources << "../bareruby_binding_i2c_read_host.cpp" if reads_i2c?
+        sources << "../bareruby_binding_onboard_led_host.cpp" if lights_onboard_led?
         sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
@@ -1249,16 +1373,26 @@ module BareRubyProt
         calls_i2c_read?(value[:children])
       end
 
-      def pico_sources
+      def pico_sources(target)
         sources = ["main.cpp", "../bareruby_binding_pico.cpp", "../bareruby_runtime_fixed.cpp",
                    "../bareruby_runtime_stdio.cpp"]
         sources << "../bareruby_binding_uart_receive_pico.cpp" if receives_uart?
         sources << "../bareruby_binding_i2c_pico.cpp" if uses_i2c?
         sources << "../bareruby_binding_i2c_read_pico.cpp" if reads_i2c?
+        sources << "../#{onboard_led_source_of(target)}" if lights_onboard_led?
         sources << "../bareruby_runtime_arena.cpp" if allocates?
         sources << "../bareruby_runtime_string.cpp" if builds_strings?
         sources << "../bareruby_runtime_throw.cpp" if throws?
         sources
+      end
+
+      # The radio's driver is linked only by a wireless board that actually lights its
+      # LED, so the firmware blob it carries is not a tax on every build for that board.
+      def pico_libraries(target)
+        libraries = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
+                       hardware_i2c hardware_clocks]
+        libraries << "pico_cyw43_arch_none" if target.led == :wireless && lights_onboard_led?
+        libraries
       end
 
       def pico_manifest(target)
@@ -1270,8 +1404,8 @@ module BareRubyProt
           language_standard = gnu++20
           compile_options = -std=gnu++20 -fno-rtti
           include_directories = ..
-          sources = #{pico_sources.join(' ')}
-          link_libraries = pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_i2c hardware_clocks
+          sources = #{pico_sources(target).join(' ')}
+          link_libraries = #{pico_libraries(target).join(' ')}
           stdout_channel = #{@debug ? 'usb' : 'none'}
           debug = #{@debug ? 'enabled' : 'disabled'}
           exceptions = #{@exceptions ? 'enabled' : 'disabled'}
@@ -1302,12 +1436,12 @@ module BareRubyProt
           pico_sdk_init()
 
           add_executable(bareruby_program
-          #{pico_sources.map { |source| "    #{source}" }.join("\n")}
+          #{pico_sources(target).map { |source| "    #{source}" }.join("\n")}
           )
 
           target_include_directories(bareruby_program PRIVATE ..)
           target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
-          target_link_libraries(bareruby_program pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart hardware_i2c hardware_clocks)
+          target_link_libraries(bareruby_program #{pico_libraries(target).join(' ')})
           #{cmake_stdio_text}
           pico_add_extra_outputs(bareruby_program)
         CMAKE

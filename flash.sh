@@ -87,9 +87,11 @@ attached_boards() {
     for tty in /dev/ttyACM*; do
         [ -c "$tty" ] || continue
         usb=$(readlink -f "/sys/class/tty/$(basename "$tty")/device/..")
+        # A board resetting into BOOTSEL can vanish mid-scan, so read defensively.
         [ "$(cat "$usb/idVendor" 2>/dev/null)" = 2e8a ] || continue
-        product=$(cat "$usb/idProduct")
-        serial=$(cat "$usb/serial")
+        product=$(cat "$usb/idProduct" 2>/dev/null) || continue
+        serial=$(cat "$usb/serial" 2>/dev/null) || continue
+        [ -n "$serial" ] || continue
         echo "$serial $(chip_of_usb_product "$product") running $tty"
     done
 }
