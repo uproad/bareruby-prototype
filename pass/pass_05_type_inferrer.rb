@@ -1442,6 +1442,7 @@ module BareRubyProt
       def unify(left, right)
         return right if left == :NoReturn
         return left if right == :NoReturn
+        return unify_array_types(left, right) if same_array_shape?(left, right)
         return left if left == right
         return right if left == :Nil && nilable_type?(right)
         return left if right == :Nil && nilable_type?(left)
@@ -1454,6 +1455,31 @@ module BareRubyProt
         end
 
         widen(left, right)
+      end
+
+      # A missing element type means inference has not reached the first write yet; it is
+      # not Nil. Propagate the known element type into both views of the same-shaped array.
+      # Returning the newer view keeps later first-write inference connected to the
+      # binding when both sides are still open here.
+      def unify_array_types(left, right)
+        element =
+          if left[:element].nil?
+            right[:element]
+          elsif right[:element].nil?
+            left[:element]
+          else
+            unify(left[:element], right[:element])
+          end
+        left[:element] = element
+        right[:element] = element
+        right
+      end
+
+      def same_array_shape?(left, right)
+        return false unless left.is_a?(Hash) && right.is_a?(Hash)
+        return true if left[:kind] == :arena_array && right[:kind] == :arena_array
+
+        left[:kind] == :array && right[:kind] == :array && left[:capacity] == right[:capacity]
       end
 
       def nilable_type?(type) = type.is_a?(Hash) && type[:kind] == :nilable
