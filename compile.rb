@@ -3,6 +3,7 @@
 
 require "fileutils"
 
+require_relative "target"
 require_relative "ir/bareruby_ast"
 require_relative "ir/typed_ast"
 require_relative "ir/lir"
@@ -32,8 +33,9 @@ module BareRubyProt
       LIR::SCHEMA => LIR
     }.freeze
 
-    def initialize(source_file_name, debug:, exceptions:)
+    def initialize(source_file_name, targets:, debug:, exceptions:)
       @source_file_name = source_file_name
+      @targets = targets
       @debug = debug
       @exceptions = exceptions
     end
@@ -109,7 +111,9 @@ module BareRubyProt
 
     def pass_11(low_ir) = Pass::RealtimeContextChecker.new(low_ir).run.result
 
-    def pass_12(low_ir) = Pass::CppSourceGenerator.new(low_ir, debug: @debug, exceptions: @exceptions).run
+    def pass_12(low_ir)
+      Pass::CppSourceGenerator.new(low_ir, targets: @targets, debug: @debug, exceptions: @exceptions).run
+    end
 
     # --no-exceptions removes the mechanism, so begin has nothing to land on and is
     # rejected outright rather than quietly doing nothing.
@@ -159,6 +163,9 @@ end
 arguments = ARGV.dup
 debug = [arguments.delete("-d"), arguments.delete("--debug")].any?
 exceptions = arguments.delete("--no-exceptions").nil?
+target_options = arguments.grep(/\A#{BareRubyProt::Target::OPTION_PREFIX}/)
+targets = BareRubyProt::Target.select(target_options)
+arguments -= target_options
 source_file_name = arguments[0] || File.expand_path("ref.rb", __dir__)
 
-exit BareRubyProt::Compiler.new(source_file_name, debug:, exceptions:).run
+exit BareRubyProt::Compiler.new(source_file_name, targets:, debug:, exceptions:).run
