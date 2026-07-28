@@ -87,9 +87,10 @@ Covered so far:
   value representation. A local tested by `if` or assigned in a `while` condition is
   narrowed to `T` in its true path, `nil?` reads absence, local safe navigation produces
   another nilable value, and `maybe || default` unwraps or substitutes without exposing
-  the tag to Ruby. A missing `else` contributes `Nil`, and a local assigned on only one
-  path is declared before the branch in the Nil state. The sample exercises both
-  `Int32?` and a variable-length
+  the tag to Ruby. A missing `else` contributes `Nil`; a local first assigned on a path
+  that may not run is declared beforehand in the Nil state; and an instance variable not
+  assigned on every path through `initialize` starts in that same state. The sample
+  exercises both `Int32?` and a variable-length
   string pointer in the same representation scheme. This feasibility slice follows the
   local-only withdrawal line: instance-variable narrowing and invalidation are not
   implemented. No new pass.

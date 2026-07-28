@@ -143,7 +143,7 @@ module BareRubyProt
 
       PERIPHERALS = PERIPHERAL_CLASSES.merge(PERIPHERAL_CLASSES_EXTRA).freeze
 
-      ClassInfo = Struct.new(:sources, :methods, :ivars)
+      ClassInfo = Struct.new(:sources, :methods, :ivars, :initialized_ivars)
       MethodInfo = Struct.new(
         :owner, :name, :parameters, :body,
         :parameter_types, :return_type, :parameter_bindings, :typed_body, :ancestor, :depth
@@ -232,9 +232,9 @@ module BareRubyProt
       def class_definition?(node) = @bareruby_ast.node_type(node) == :class_definition
 
       def register_builtin_classes
-        @classes[:BasicObject] = ClassInfo.new([], {}, {})
+        @classes[:BasicObject] = ClassInfo.new([], {}, {}, [])
         initialize_info = MethodInfo.new(:Object, :initialize, [], [], [], :Nil, [], [], nil, 0)
-        @classes[:Object] = ClassInfo.new([:BasicObject], { initialize: initialize_info }, {})
+        @classes[:Object] = ClassInfo.new([:BasicObject], { initialize: initialize_info }, {}, [])
       end
 
       def module_definition?(node) = @bareruby_ast.node_type(node) == :module_definition
@@ -273,7 +273,7 @@ module BareRubyProt
         end
         methods.each_value { |info| number_chain(info) }
 
-        @classes[name] = ClassInfo.new(included_names(body), methods, {})
+        @classes[name] = ClassInfo.new(included_names(body), methods, {}, [])
       end
 
       # The winner is depth 0; each definition it shadowed sits one deeper, which is
@@ -375,12 +375,63 @@ module BareRubyProt
         enclosing = @current_method
         @current_method = method_info
         typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
+        finalize_initialize_ivars(method_info.owner, typed_body) if method_info.name == :initialize
         @current_method = enclosing
         @local_bindings = enclosing_bindings
 
         method_info.typed_body = typed_body
         method_info.return_type =
           method_info.name == :initialize ? :Nil : method_return_type(typed_body)
+      end
+
+      # An instance starts with every field in its Nil state. Assignments guaranteed on
+      # every path through initialize replace that state; every other field keeps the
+      # Nil path and therefore has T? storage.
+      def finalize_initialize_ivars(owner, typed_body)
+        class_info = @classes.fetch(owner)
+        class_info.initialized_ivars |= definitely_assigned_ivars(typed_body)
+        class_info.ivars.each do |name, type|
+          class_info.ivars[name] = unify(:Nil, type) unless class_info.initialized_ivars.include?(name)
+        end
+        annotate_ivar_storage_types!(typed_body, class_info.ivars)
+      end
+
+      def definitely_assigned_ivars(statements, assigned = [])
+        statements.reduce(assigned.dup) do |current, statement|
+          case @tast.node_type(statement)
+          when :assignment
+            binding = @tast.children_of(statement)[0]
+            binding[:kind] == :instance ? current | [binding[:name]] : current
+          when :if
+            _condition, then_body, else_body, = @tast.children_of(statement)
+            then_assigned = definitely_assigned_ivars(then_body, current)
+            else_assigned = else_body ? definitely_assigned_ivars(else_body, current) : current
+            then_assigned & else_assigned
+          when :begin
+            body, rescue_body = @tast.children_of(statement)
+            definitely_assigned_ivars(body, current) & definitely_assigned_ivars(rescue_body, current)
+          when :arena
+            definitely_assigned_ivars(@tast.children_of(statement)[2], current)
+          when :return
+            value = @tast.children_of(statement)[0]
+            value ? definitely_assigned_ivars([value], current) : current
+          else
+            current
+          end
+        end
+      end
+
+      def annotate_ivar_storage_types!(value, ivars)
+        return value.each { |element| annotate_ivar_storage_types!(element, ivars) } if value.is_a?(Array)
+        return unless value.is_a?(Hash) && value.key?(:children)
+
+        if %i[assignment reference].include?(@tast.node_type(value))
+          binding = @tast.children_of(value)[0]
+          if binding[:kind] == :instance && ivars.key?(binding[:name])
+            binding[:type] = ivars.fetch(binding[:name])
+          end
+        end
+        annotate_ivar_storage_types!(value[:children], ivars)
       end
 
       # Every return in the body contributes, plus the value the body falls off the end
@@ -560,8 +611,11 @@ module BareRubyProt
 
         then_tast = infer_body(then_body, env: then_env, self_class:)
         else_tast = else_body && infer_body(else_body, env: else_env, self_class:)
-        merge_branch_env!(env, then_env, else_env)
-        type = unify(branch_type(then_tast), else_tast ? branch_type(else_tast) : :Nil)
+        then_type = branch_type(then_tast)
+        else_type = else_tast ? branch_type(else_tast) : :Nil
+        merge_branch_env!(env, then_env, else_env,
+                          left_reachable: then_type != :NoReturn, right_reachable: else_type != :NoReturn)
+        type = unify(then_type, else_type)
         @tast.create_if(condition_tast, then_tast, else_tast, type, span_of(node))
       end
 
@@ -581,6 +635,7 @@ module BareRubyProt
         narrow_condition!(condition_tast, body_env, truthy: true)
         typed_body = infer_body(body, env: body_env, self_class:)
         narrow_condition!(condition_tast, env, truthy: false)
+        merge_loop_env!(env, body_env)
         @tast.create_while(condition_tast, typed_body, span_of(node))
       end
 
@@ -619,12 +674,28 @@ module BareRubyProt
         env[binding[:name]] = [binding, truthy ? type[:inner] : :Nil]
       end
 
-      def merge_branch_env!(env, left, right)
+      def merge_branch_env!(env, left, right, left_reachable: true, right_reachable: true)
+        return env.replace(left) unless right_reachable
+        return env.replace(right) unless left_reachable
+        return unless left_reachable || right_reachable
+
         (left.keys | right.keys).each do |name|
           left_entry = left[name]
           right_entry = right[name]
           binding = (left_entry || right_entry)[0]
           type = unify(left_entry ? left_entry[1] : :Nil, right_entry ? right_entry[1] : :Nil)
+          binding[:type] = binding[:type] ? unify(binding[:type], type) : type
+          env[name] = [binding, type]
+        end
+      end
+
+      # The body may execute zero times. Only names introduced by it need a new Nil path;
+      # existing names retain the type known at loop exit, while their binding storage has
+      # already absorbed any types assigned in the body.
+      def merge_loop_env!(env, body_env)
+        (body_env.keys - env.keys).each do |name|
+          binding, body_type = body_env.fetch(name)
+          type = unify(:Nil, body_type)
           binding[:type] = binding[:type] ? unify(binding[:type], type) : type
           env[name] = [binding, type]
         end
@@ -644,7 +715,8 @@ module BareRubyProt
           @tast.create_reference(binding, type, span_of(node))
         when :instance
           type = @classes.fetch(self_class).ivars.fetch(name)
-          @tast.create_reference(@tast.create_binding(:instance, name), type, span_of(node))
+          binding = @tast.create_binding(:instance, name, type)
+          @tast.create_reference(binding, type, span_of(node))
         end
       end
 
@@ -667,8 +739,18 @@ module BareRubyProt
           binding[:type] = binding[:type] ? unify(binding[:type], value_type) : value_type
           env[name] = [binding, value_type]
         when :instance
-          ivars = @classes.fetch(self_class).ivars
-          ivars[name] = value_type unless ivars.key?(name)
+          class_info = @classes.fetch(self_class)
+          storage_type =
+            if class_info.ivars.key?(name)
+              unify(class_info.ivars.fetch(name), value_type)
+            else
+              value_type
+            end
+          unless @current_method&.name == :initialize || class_info.initialized_ivars.include?(name)
+            storage_type = unify(:Nil, storage_type)
+          end
+          class_info.ivars[name] = storage_type
+          binding = @tast.create_binding(:instance, name, storage_type)
         end
 
         @tast.create_assignment(binding, value_tast, value_type, span_of(node))
