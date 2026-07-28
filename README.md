@@ -113,7 +113,10 @@ Covered so far:
   `raspberry-pi-pico` and `raspberry-pi-pico2` are named on the command line or in
   `target.yml`, and each gets its own directory under `build/`. The board targets share
   one pico-sdk binding and differ only in the board handed to the SDK, which is what
-  makes a second chip a table entry rather than a second back end.
+  makes a second chip a table entry rather than a second back end: one first stage over
+  `samples/blink.rb` produced both an RP2040 and an RP2350 `.uf2`, Cortex-M0+ and
+  Cortex-M33, from the same generated `main.cpp`. Built but not hardware-flashed on the
+  Pico 2.
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -156,10 +159,11 @@ cd bareruby-prototype
 ./brd                                        # prints usage
 ```
 
-It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
-takes them from the environment when they are already set. cmake output is shown only
-when a step fails. It builds every board target the run selected and flashes when there
-is exactly one, since flashing addresses one attached board.
+It defaults `PICO_SDK_PATH`, `PICO_SDK_2_PATH` and `PICO_TOOLCHAIN_PATH` to the locations
+used below and takes them from the environment when they are already set. cmake output is
+shown only when a step fails. It builds every board target the run selected — handing
+each the SDK its platform needs — and flashes when there is exactly one, since flashing
+addresses one attached board.
 
 The rest of this file is what `brd` does, step by step, and how to install what it
 needs.
@@ -313,23 +317,33 @@ Three tools are required. None of them need `sudo`.
 
 ### 1. pico-sdk
 
-Use **1.5.1** for `raspberry-pi-pico`. That release generates the `.uf2` with the
-`elf2uf2` bundled in the SDK. SDK 2.x moved `.uf2` generation out to `picotool`, which
-then has to be installed separately — avoid that where it can be avoided.
+The two boards take two SDKs, and both checkouts live side by side.
 
-`raspberry-pi-pico2` is where it cannot: RP2350 support arrived in **SDK 2.0.0**, and
-1.5.1 stops at `rp2350.cmake does not exist`. Building that target therefore means an
-SDK 2.x checkout and `picotool` alongside it. The first stage produces the target's
-sources and `CMakeLists.txt` either way; only the second stage needs the newer SDK.
+`raspberry-pi-pico` uses **1.5.1**, which generates the `.uf2` with the `elf2uf2` bundled
+in the SDK. SDK 2.x moved `.uf2` generation out to `picotool`, so staying on 1.5.1 keeps
+that dependency out of the RP2040 build.
 
 ```sh
 mkdir -p ~/pico
 git clone -b 1.5.1 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk
 ```
 
-The TinyUSB submodule is not needed: both stdio channels are disabled in the generated
-`CMakeLists.txt`, so the "TinyUSB submodule has not been initialized" warning during
-configuration is expected and harmless.
+`raspberry-pi-pico2` cannot: RP2350 support arrived in **SDK 2.0.0**, and 1.5.1 stops at
+`rp2350.cmake does not exist`. It gets its own checkout, 33 MB without submodules:
+
+```sh
+git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk-2
+```
+
+`picotool` needs no separate install: SDK 2.x downloads and builds it on demand. Left
+alone it lands inside the target's build tree, which the next first-stage run deletes, so
+`PICOTOOL_FETCH_FROM_GIT_PATH` points it somewhere outside — `brd` defaults that to
+`~/pico/picotool` (17 MB, built once). Its libusb-dependent parts are skipped when the
+headers are absent, which costs nothing here: only `.uf2` generation is wanted.
+
+The TinyUSB submodule is not needed by either: both stdio channels are disabled in the
+generated `CMakeLists.txt`, so the "TinyUSB submodule has not been initialized" warning
+during configuration is expected and harmless.
 
 ### 2. ARM GNU toolchain
 
@@ -377,19 +391,22 @@ cmake --build build
 The result is `build/bareruby_program.uf2`. The `build/raspberry-pi-pico/build/` tree is
 gitignored; `compile.rb` deletes it on the next run along with the rest of `build/`.
 `build/raspberry-pi-pico2` is built by exactly the same two cmake commands, with
-`PICO_SDK_PATH` pointing at an SDK 2.x checkout.
+`PICO_SDK_PATH` pointing at the SDK 2.x checkout instead. `brd` does that selection
+itself, from the `platform` line in each target's manifest.
 
-Verified output for `samples/blink.rb`:
+Output for `samples/blink.rb`, measured on both boards from the same first stage:
 
-| Property | Value |
-| --- | --- |
-| `.uf2` size | 17408 bytes, 34 blocks |
-| UF2 family id | `0xE48BFF56` (RP2040) |
-| UF2 target address | `0x10000000` (XIP flash base) |
-| `text` / `data` / `bss` | 8604 B / 0 B / 1160 B |
+| Property | `raspberry-pi-pico` | `raspberry-pi-pico2` |
+| --- | --- | --- |
+| `.uf2` size | 26624 B | 22016 B |
+| UF2 family id | `0xE48BFF56` (RP2040) | `0xE48BFF57` (RP2350 Arm-S) |
+| UF2 target address | `0x10000000` (XIP flash base) | `0x10000000` (XIP flash base) |
+| `text` / `data` / `bss` | 13236 B / 0 B / 1476 B | 14768 B / 0 B / 1100 B |
 
 `arm-none-eabi-objdump -d bareruby_program.elf` shows the blink loop as Cortex-M0+
-instructions, with `bareruby_main` inlined into `main` by the release build.
+instructions on the Pico and Cortex-M33 on the Pico 2 — the latter reaches for `strd`,
+which the M0+ does not have — with `bareruby_main` inlined into `main` on both by the
+release build.
 
 ## Flashing a Pico from WSL
 
@@ -471,10 +488,8 @@ period to 100 ms and then 800 ms and watching the LED follow.
 | --- | --- |
 | Ruby | 4.0.3 |
 | GNU g++ (hosted) | 13.3.0 |
-| pico-sdk | 1.5.1 |
+| pico-sdk | 1.5.1 (RP2040), 2.3.0 (RP2350) |
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
 
-`raspberry-pi-pico2` is not in that list: its second stage needs pico-sdk 2.x, which is
-not installed here, so the target has been verified as far as the first stage produces
-it and no further.
+The Pico 2 firmware was built but not hardware-flashed: no RP2350 board was attached.
