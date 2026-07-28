@@ -7,8 +7,9 @@ VM and no garbage collector; every type is resolved at compile time.
 
 **This repository is a throwaway feasibility prototype, not that compiler.** It exists to
 answer one question by running it: can the pipeline the design calls for actually be
-built end to end? It has no tests, no diagnostics, no error handling and no CLI options.
-Happy path only, and it is meant to be thrown away once it has answered the question.
+built end to end? It has no tests, no diagnostics and no error handling, and the only
+command-line options are the few the build itself cannot do without. Happy path only, and
+it is meant to be thrown away once it has answered the question.
 
 The language specification and the real implementation live in separate repositories
 that are not public yet. Nothing here points at them. Comments record why a decision was
@@ -108,6 +109,12 @@ Covered so far:
   1.5.1, the sample produced a 29,184 B UF2 with 14,588 B of ELF text and 1,496 B of bss;
   it was built but not hardware-flashed.
 
+- **Targets** — one run compiles for as many machines as it is asked to. `host`,
+  `raspberry-pi-pico` and `raspberry-pi-pico2` are named on the command line or in
+  `target.yml`, and each gets its own directory under `build/`. The board targets share
+  one pico-sdk binding and differ only in the board handed to the SDK, which is what
+  makes a second chip a table entry rather than a second back end.
+
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
 not a copy — so what it changes, the caller sees — and a method that returns an object
@@ -143,14 +150,16 @@ because it is what `compile.rb` compiles when it is given no argument.
 
 ```sh
 cd bareruby-prototype
-./brd app.rb -d      # debug firmware: USB stays up, reflashable without the button
-./brd app.rb         # default firmware
-./brd                # prints usage
+./brd app.rb -d                              # debug firmware: USB stays up, reflashable without the button
+./brd app.rb                                 # default firmware
+./brd app.rb --target=raspberry-pi-pico2     # for a Pico 2 instead
+./brd                                        # prints usage
 ```
 
 It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
 takes them from the environment when they are already set. cmake output is shown only
-when a step fails.
+when a step fails. It builds every board target the run selected and flashes when there
+is exactly one, since flashing addresses one attached board.
 
 The rest of this file is what `brd` does, step by step, and how to install what it
 needs.
@@ -162,6 +171,44 @@ ruby compile.rb                       # defaults to ref.rb
 ruby compile.rb samples/blink.rb
 ruby compile.rb -d samples/blink.rb   # debug firmware
 ```
+
+### Choosing targets
+
+A target is a machine the artifacts are produced for. There are three:
+
+| Target | Machine | `build/` directory |
+| --- | --- | --- |
+| `host` | the machine doing the compiling | `build/host` |
+| `raspberry-pi-pico` | RP2040 board | `build/raspberry-pi-pico` |
+| `raspberry-pi-pico2` | RP2350 board | `build/raspberry-pi-pico2` |
+
+`--target=` names one and is repeatable, so a single run produces artifacts for as many
+machines as it lists:
+
+```sh
+ruby compile.rb --target=host samples/blink.rb
+ruby compile.rb --target=raspberry-pi-pico --target=raspberry-pi-pico2 samples/blink.rb
+```
+
+Without `--target=` the targets come from `target.yml` at the repository root:
+
+```yaml
+bareruby:
+  compile:
+    target:
+      - host
+      - raspberry-pi-pico
+```
+
+Naming even one target on the command line settles the question, so `target.yml` is not
+consulted at all in that case rather than merged into — a run produces exactly what it
+was asked for. With neither, the target is `host`.
+
+Only the selected targets are written. Their directories hold `main.cpp`, `manifest.txt`
+and, for a board, `CMakeLists.txt`; the runtime and the bindings sit above them in
+`build/` and are shared. Both boards use the same pico-sdk binding — the peripherals are
+reached through the SDK, which spells them the same way whichever chip is underneath —
+and differ only in the board name their `CMakeLists.txt` hands to it.
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
 the unwinder and its tables are left out. On an rp2040 build of `samples/blink.rb` that is
@@ -225,8 +272,9 @@ every commit while they were:
   before handing it to the next pass, so resumability and byte-level determinism are
   exercised on every run.
 - `build/` — the first-stage artifacts: the peripheral binding (declaration plus one
-  implementation per target), the hosted runtime, and per-target `main.cpp`, build
-  manifest and `CMakeLists.txt`. **`build/` is deleted and regenerated on every run.**
+  implementation per kind of machine), the runtime, and one directory per selected
+  target holding `main.cpp`, the build manifest and, for a board, `CMakeLists.txt`.
+  **`build/` is deleted and regenerated on every run.**
 
 ## Second stage: hosted
 
@@ -234,7 +282,7 @@ Needs a GNU `g++` (version 12 or newer). Ubuntu 24.04 ships 13.3, which is fine.
 The build command is recorded in the manifest, so just run what it says:
 
 ```sh
-cd build/hosted
+cd build/host
 g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
     main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp \
     ../bareruby_runtime_stdio.cpp
@@ -259,15 +307,20 @@ printf 'OK' | ./bareruby_program
 `samples/blink.rb` loops forever by design; use `timeout 1 ./bareruby_program` to look at
 the head of the trace.
 
-## Second stage: freestanding (rp2040, `.uf2`)
+## Second stage: freestanding (`.uf2`)
 
 Three tools are required. None of them need `sudo`.
 
 ### 1. pico-sdk
 
-Use **1.5.1**. That release generates the `.uf2` with the `elf2uf2` bundled in the SDK.
-SDK 2.x moved `.uf2` generation out to `picotool`, which then has to be installed
-separately — avoid that for now.
+Use **1.5.1** for `raspberry-pi-pico`. That release generates the `.uf2` with the
+`elf2uf2` bundled in the SDK. SDK 2.x moved `.uf2` generation out to `picotool`, which
+then has to be installed separately — avoid that where it can be avoided.
+
+`raspberry-pi-pico2` is where it cannot: RP2350 support arrived in **SDK 2.0.0**, and
+1.5.1 stops at `rp2350.cmake does not exist`. Building that target therefore means an
+SDK 2.x checkout and `picotool` alongside it. The first stage produces the target's
+sources and `CMakeLists.txt` either way; only the second stage needs the newer SDK.
 
 ```sh
 mkdir -p ~/pico
@@ -314,15 +367,17 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 ### Building the firmware
 
 ```sh
-cd build/rp2040
+cd build/raspberry-pi-pico
 export PICO_SDK_PATH=$HOME/pico/pico-sdk
 export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
 cmake --build build
 ```
 
-The result is `build/bareruby_program.uf2`. The `build/rp2040/build/` tree is gitignored;
-`compile.rb` deletes it on the next run along with the rest of `build/`.
+The result is `build/bareruby_program.uf2`. The `build/raspberry-pi-pico/build/` tree is
+gitignored; `compile.rb` deletes it on the next run along with the rest of `build/`.
+`build/raspberry-pi-pico2` is built by exactly the same two cmake commands, with
+`PICO_SDK_PATH` pointing at an SDK 2.x checkout.
 
 Verified output for `samples/blink.rb`:
 
@@ -351,12 +406,13 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-./flash.sh                       # defaults to the rp2040 artifact
+./flash.sh                       # defaults to the raspberry-pi-pico artifact
 ./flash.sh path/to/other.uf2
 ```
 
-The script locates the device by SCSI vendor `RPI` and model `RP2` rather than by a
-fixed path, refuses to write unless the mounted volume carries the bootloader's
+The script locates the device by SCSI vendor `RPI` and model `RP2` (an RP2040
+bootloader) or `RP2350` rather than by a fixed path, refuses to write unless the mounted
+volume carries the bootloader's
 `INFO_UF2.TXT`, and treats the device disappearing as the success signal — the RP2040
 resets the moment the last block lands, so the copy, the sync and the unmount are all
 expected to fail at the end.
@@ -387,8 +443,9 @@ Only the mount needs privileges. One line in `/etc/fstab` removes even that:
 /dev/disk/by-label/RPI-RP2 /mnt/pico vfat noauto,user,umask=000 0 0
 ```
 
-The `user` option lets any user mount that one entry, and nothing else — much narrower
-than a `NOPASSWD` sudoers rule. `/dev/ttyACM*` is already reachable through the
+A Pico 2 labels its bootloader volume `RP2350` instead of `RPI-RP2`, so a board of that
+kind needs a second line with that label. The `user` option lets any user mount that one
+entry, and nothing else — much narrower than a `NOPASSWD` sudoers rule. `/dev/ttyACM*` is already reachable through the
 `dialout` group, so with this entry `flash.sh` needs no root at all. Without it, the
 script falls back to re-executing itself under `sudo`.
 
@@ -417,3 +474,7 @@ period to 100 ms and then 800 ms and watching the LED follow.
 | pico-sdk | 1.5.1 |
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
+
+`raspberry-pi-pico2` is not in that list: its second stage needs pico-sdk 2.x, which is
+not installed here, so the target has been verified as far as the first stage produces
+it and no further.
