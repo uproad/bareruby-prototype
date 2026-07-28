@@ -82,7 +82,8 @@ Covered so far:
   timeout handling stay outside the successful path this prototype implements. The
   target-specific sources are linked only when an I2C operation reaches the program. No
   new pass.
-- **M3 — nilable values** (`samples/nilable.rb`): `nil` joins with `T` as inferred `T?`
+- **M3 — nilable values** (`samples/nilable.rb`, `samples/definite_assignment.rb`): `nil`
+  joins with `T` as inferred `T?`
   and lowers uniformly to a struct containing an explicit presence tag and the ordinary
   value representation. A local tested by `if` or assigned in a `while` condition is
   narrowed to `T` in its true path, `nil?` reads absence, local safe navigation produces
