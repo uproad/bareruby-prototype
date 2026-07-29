@@ -26,6 +26,8 @@ module BareRubyProt
 
     def struct_type(name) = { kind: :struct, name: }
 
+    def pointer_type?(type) = type.is_a?(Hash) && type[:kind] == :pointer
+
     def c_array_type(element, capacity) = { kind: :c_array, element:, capacity: }
 
     def create_field(name, type) = { name:, type: }
