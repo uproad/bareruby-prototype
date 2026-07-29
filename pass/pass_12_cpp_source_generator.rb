@@ -5,6 +5,8 @@ require_relative "pass_12_cpp_source_generator/binding_declaration"
 require_relative "pass_12_cpp_source_generator/host_binding_source"
 require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/pico_binding_source"
+require_relative "pass_12_cpp_source_generator/host_build"
+require_relative "pass_12_cpp_source_generator/pico_build"
 
 module BareRubyProt
   module Pass
@@ -36,8 +38,6 @@ module BareRubyProt
         self
       end
 
-      def onboard_led_source_of(target) = OnboardLedSource.file_name(target.led)
-
       # A program that never lights the LED links none of this, which matters most on a
       # wireless board: reaching that LED means uploading the radio's firmware.
       def lights_onboard_led? = @lir.calls_prefixed?("bareruby_onboard_led_")
@@ -67,135 +67,32 @@ module BareRubyProt
       # Each target owns a directory named after itself, holding the entry point, the
       # record of how it is built, and — for a board — the build system that does it.
       def target_sources(target)
-        sources = {
-          "#{target.name}/main.cpp" => program_source(target),
-          "#{target.name}/manifest.txt" => manifest(target)
-        }
-        sources["#{target.name}/CMakeLists.txt"] = cmake_lists(target) unless target.hosted?
-        sources
+        files = { "main.cpp" => program_source(target) }.merge(build_of(target).files)
+        files.transform_keys { |name| "#{target.name}/#{name}" }
       end
 
-      def manifest(target) = target.hosted? ? hosted_manifest : pico_manifest(target)
+      def build_of(target)
+        return HostBuild.new(sources: sources(target)) if target.hosted?
 
-      def hosted_sources
-        sources = ["main.cpp", "../bareruby_binding_host.cpp", "../bareruby_runtime_fixed.cpp",
-                   "../bareruby_runtime_stdio.cpp"]
-        sources << "../bareruby_binding_uart_receive_host.cpp" if receives_uart?
-        sources << "../bareruby_binding_i2c_host.cpp" if uses_i2c?
-        sources << "../bareruby_binding_i2c_read_host.cpp" if reads_i2c?
-        sources << "../bareruby_binding_onboard_led_host.cpp" if lights_onboard_led?
-        sources << "../bareruby_runtime_arena.cpp" if allocates?
-        sources << "../bareruby_runtime_string.cpp" if builds_strings?
-        sources << "../bareruby_runtime_throw.cpp" if throws?
-        sources
+        PicoBuild.new(target, sources: sources(target), onboard_led: lights_onboard_led?,
+                              debug: @debug, exceptions: @exceptions)
       end
 
-      def hosted_manifest
-        <<~MANIFEST
-          target = host
-          toolchain = g++
-          language_standard = gnu++20
-          compile_options = -std=gnu++20 -fno-rtti
-          include_directories = ..
-          sources = #{hosted_sources.join(' ')}
-          link_libraries =
-          stdout_channel = printf
-          exceptions = enabled
-          artifact = bareruby_program
-          build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program #{hosted_sources.join(' ')}
-        MANIFEST
-      end
-
-      def pico_sources(target)
-        sources = ["main.cpp", "../bareruby_binding_pico.cpp", "../bareruby_runtime_fixed.cpp",
-                   "../bareruby_runtime_stdio.cpp"]
-        sources << "../bareruby_binding_uart_receive_pico.cpp" if receives_uart?
-        sources << "../bareruby_binding_i2c_pico.cpp" if uses_i2c?
-        sources << "../bareruby_binding_i2c_read_pico.cpp" if reads_i2c?
-        sources << "../#{onboard_led_source_of(target)}" if lights_onboard_led?
-        sources << "../bareruby_runtime_arena.cpp" if allocates?
-        sources << "../bareruby_runtime_string.cpp" if builds_strings?
-        sources << "../bareruby_runtime_throw.cpp" if throws?
-        sources
-      end
-
-      # The radio's driver is linked only by a wireless board that actually lights its
-      # LED, so the firmware blob it carries is not a tax on every build for that board.
-      def pico_libraries(target)
-        libraries = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
-                       hardware_i2c hardware_clocks]
-        libraries << "pico_cyw43_arch_none" if target.led == :wireless && lights_onboard_led?
-        libraries
-      end
-
-      def pico_manifest(target)
-        <<~MANIFEST
-          target = #{target.name}
-          board = #{target.board}
-          platform = #{target.platform}
-          toolchain = arm-none-eabi-g++
-          language_standard = gnu++20
-          compile_options = -std=gnu++20 -fno-rtti
-          include_directories = ..
-          sources = #{pico_sources(target).join(' ')}
-          link_libraries = #{pico_libraries(target).join(' ')}
-          stdout_channel = #{@debug ? 'usb' : 'none'}
-          debug = #{@debug ? 'enabled' : 'disabled'}
-          exceptions = #{@exceptions ? 'enabled' : 'disabled'}
-          artifact = bareruby_program.uf2
-          build_command = cmake -B build -S . && cmake --build build
-        MANIFEST
-      end
-
-      def cmake_lists(target)
-        <<~CMAKE
-          cmake_minimum_required(VERSION 3.13)
-
-          # The board picks the chip, the linker script and the register headers, so it has
-          # to be set before the SDK is imported rather than passed to the build later.
-          set(PICO_BOARD #{target.board})
-          set(PICO_PLATFORM #{target.platform})
-
-          include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
-
-          # pico-sdk leaves C++ exceptions off unless asked, so whether the unwinder and
-          # its tables are linked is a decision the first stage records here.
-          set(PICO_CXX_ENABLE_EXCEPTIONS #{@exceptions ? 1 : 0})
-
-          project(bareruby_program C CXX ASM)
-          set(CMAKE_C_STANDARD 11)
-          set(CMAKE_CXX_STANDARD 20)
-
-          pico_sdk_init()
-
-          add_executable(bareruby_program
-          #{pico_sources(target).map { |source| "    #{source}" }.join("\n")}
-          )
-
-          target_include_directories(bareruby_program PRIVATE ..)
-          target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
-          target_link_libraries(bareruby_program #{pico_libraries(target).join(' ')})
-          #{cmake_stdio_text}
-          pico_add_extra_outputs(bareruby_program)
-        CMAKE
-      end
-
-      def cmake_stdio_text
-        return "\npico_enable_stdio_usb(bareruby_program 0)\npico_enable_stdio_uart(bareruby_program 0)\n" unless @debug
-
-        <<~CMAKE
-
-          pico_enable_stdio_usb(bareruby_program 1)
-          pico_enable_stdio_uart(bareruby_program 0)
-
-          # Keep the USB device enumerated so the board can be reset into BOOTSEL from
-          # the host instead of by replugging it with the button held.
-          target_compile_definitions(bareruby_program PRIVATE
-              PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
-              PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
-              PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
-          )
-        CMAKE
+      # The entry point, then what a build of this kind always links, then the units this
+      # program reaches for. Both kinds of machine take the same shape and differ only in
+      # which binding answers, so one list serves both — and no file is named here, only
+      # asked for.
+      def sources(target)
+        binding_source = target.hosted? ? HostBindingSource : PicoBindingSource
+        names = binding_source::ALWAYS + RuntimeSource::ALWAYS
+        names << binding_source::UART_RECEIVE_FILE if receives_uart?
+        names << binding_source::I2C_FILE if uses_i2c?
+        names << binding_source::I2C_READ_FILE if reads_i2c?
+        names << OnboardLedSource.file_name(target.led) if lights_onboard_led?
+        names << RuntimeSource::ARENA_FILE if allocates?
+        names << RuntimeSource::STRING_FILE if builds_strings?
+        names << RuntimeSource::THROW_FILE if throws?
+        ["main.cpp"] + names.map { |name| "../#{name}" }
       end
 
       def program_source(target)

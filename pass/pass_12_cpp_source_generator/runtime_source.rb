@@ -387,13 +387,25 @@ module BareRubyProt
       }
     CPP
 
+    HEADER_FILE = "bareruby_runtime.h"
+    FIXED_FILE = "bareruby_runtime_fixed.cpp"
+    ARENA_FILE = "bareruby_runtime_arena.cpp"
+    STRING_FILE = "bareruby_runtime_string.cpp"
+    THROW_FILE = "bareruby_runtime_throw.cpp"
+    STDIO_FILE = "bareruby_runtime_stdio.cpp"
+
     FILES = {
-      "bareruby_runtime.h" => HEADER,
-      "bareruby_runtime_fixed.cpp" => FIXED,
-      "bareruby_runtime_arena.cpp" => ARENA,
-      "bareruby_runtime_string.cpp" => STRING,
-      "bareruby_runtime_throw.cpp" => THROW,
-      "bareruby_runtime_stdio.cpp" => STDIO
+      HEADER_FILE => HEADER,
+      FIXED_FILE => FIXED,
+      ARENA_FILE => ARENA,
+      STRING_FILE => STRING,
+      THROW_FILE => THROW,
+      STDIO_FILE => STDIO
     }.freeze
+
+    # Fixed arithmetic is pure and the output runtime is what puts and the to_s family
+    # need, so neither depends on what a program does and both are always linked. The
+    # other three are a cost only the programs that reach them should carry.
+    ALWAYS = [FIXED_FILE, STDIO_FILE].freeze
   end
 end
