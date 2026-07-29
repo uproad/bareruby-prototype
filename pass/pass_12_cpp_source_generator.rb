@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../runtime/source_set"
+require_relative "pass_12_cpp_source_generator/source_set"
 
 module BareRubyProt
   module Pass
