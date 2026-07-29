@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../ir/typed_ast"
-require_relative "pass_05_type_inferrer/program_classes"
+require_relative "pass_05_type_inferrer/class_definition"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
 require_relative "pass_05_type_inferrer/arena_array"
@@ -172,7 +172,7 @@ module BareRubyProt
       def initialize(bareruby_ast)
         @bareruby_ast = bareruby_ast
         @tast = TypedAST.new
-        @program_classes = ProgramClasses.new(bareruby_ast)
+        @classes = {}
         @current_method = nil
         @arena = nil
       end
@@ -180,7 +180,7 @@ module BareRubyProt
       def run
         @rescues_present = contains_begin?(@bareruby_ast.program_body)
         @constant_locals = collect_constant_locals
-        @program_classes.register(@bareruby_ast.program_body)
+        @classes = ClassDefinition.declared_in(@bareruby_ast.program_body, @bareruby_ast)
 
         @local_bindings = {}
         env = {}
@@ -250,13 +250,15 @@ module BareRubyProt
 
       def definition?(node) = class_definition?(node) || module_definition?(node)
 
+      def method_named(class_name, name) = @classes.fetch(class_name).method_named(name)
+
       # Every definition the class flattened is emitted, including the ones a subclass
       # or a later include shadowed, because super still reaches them.
       def build_class_definition(node)
         name, = @bareruby_ast.children_of(node)
-        program_class = @program_classes.fetch(name)
-        methods = program_class.definitions.filter_map { |definition| build_method_definition(definition) }
-        @tast.create_class_definition(name, program_class.ivars, methods, span_of(node))
+        class_definition = @classes.fetch(name)
+        methods = class_definition.definitions.filter_map { |definition| build_method_definition(definition) }
+        @tast.create_class_definition(name, class_definition.ivars, methods, span_of(node))
       end
 
       def build_method_definition(method_info)
@@ -305,10 +307,10 @@ module BareRubyProt
       # every path through initialize replace that state; every other field keeps the
       # Nil path and therefore has T? storage.
       def finalize_initialize_ivars(owner, typed_body)
-        program_class = @program_classes.fetch(owner)
-        program_class.note_initialized(definitely_assigned_ivars(typed_body))
-        program_class.nil_unless_initialized { |type| unify(:Nil, type) }
-        annotate_ivar_storage_types!(typed_body, program_class)
+        class_definition = @classes.fetch(owner)
+        class_definition.note_initialized(definitely_assigned_ivars(typed_body))
+        class_definition.nil_unless_initialized { |type| unify(:Nil, type) }
+        annotate_ivar_storage_types!(typed_body, class_definition)
       end
 
       def definitely_assigned_ivars(statements, assigned = [])
@@ -336,17 +338,17 @@ module BareRubyProt
         end
       end
 
-      def annotate_ivar_storage_types!(value, program_class)
-        return value.each { |element| annotate_ivar_storage_types!(element, program_class) } if value.is_a?(Array)
+      def annotate_ivar_storage_types!(value, class_definition)
+        return value.each { |element| annotate_ivar_storage_types!(element, class_definition) } if value.is_a?(Array)
         return unless value.is_a?(Hash) && value.key?(:children)
 
         if %i[assignment reference].include?(@tast.node_type(value))
           binding = @tast.children_of(value)[0]
-          if binding[:kind] == :instance && program_class.ivar?(binding[:name])
-            binding[:type] = program_class.ivar_type(binding[:name])
+          if binding[:kind] == :instance && class_definition.ivar?(binding[:name])
+            binding[:type] = class_definition.ivar_type(binding[:name])
           end
         end
-        annotate_ivar_storage_types!(value[:children], program_class)
+        annotate_ivar_storage_types!(value[:children], class_definition)
       end
 
       # Every return in the body contributes, plus the value the body falls off the end
@@ -629,7 +631,7 @@ module BareRubyProt
           binding, type = env.fetch(name)
           @tast.create_reference(binding, type, span_of(node))
         when :instance
-          type = @program_classes.fetch(self_class).ivar_type(name)
+          type = @classes.fetch(self_class).ivar_type(name)
           binding = @tast.create_binding(:instance, name, type)
           @tast.create_reference(binding, type, span_of(node))
         end
@@ -654,12 +656,12 @@ module BareRubyProt
           binding[:type] = binding[:type] ? unify(binding[:type], value_type) : value_type
           env[name] = [binding, value_type]
         when :instance
-          program_class = @program_classes.fetch(self_class)
-          storage_type = program_class.ivar?(name) ? unify(program_class.ivar_type(name), value_type) : value_type
-          unless @current_method&.name == :initialize || program_class.initialized?(name)
+          class_definition = @classes.fetch(self_class)
+          storage_type = class_definition.ivar?(name) ? unify(class_definition.ivar_type(name), value_type) : value_type
+          unless @current_method&.name == :initialize || class_definition.initialized?(name)
             storage_type = unify(:Nil, storage_type)
           end
-          program_class.remember_ivar(name, storage_type)
+          class_definition.remember_ivar(name, storage_type)
           binding = @tast.create_binding(:instance, name, storage_type)
         end
 
@@ -927,7 +929,7 @@ module BareRubyProt
 
       def infer_self_method_call(name, arguments, env:, self_class:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        resolved = resolve_method_call(@program_classes.method_named(self_class, name), argument_types(argument_tasts))
+        resolved = resolve_method_call(method_named(self_class, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
           :user_method, resolved.owner, name, function_name(resolved.owner, name),
           resolved.parameter_types, resolved.return_type
@@ -961,7 +963,7 @@ module BareRubyProt
 
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
 
-        resolved = resolve_method_call(@program_classes.method_named(class_name, name), argument_types(argument_tasts))
+        resolved = resolve_method_call(method_named(class_name, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
           :user_method, resolved.owner, name, function_name(resolved.owner, name),
           resolved.parameter_types, resolved.return_type
@@ -1010,7 +1012,7 @@ module BareRubyProt
       def infer_new_call(class_name, arguments, env:, self_class:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         types = argument_types(argument_tasts)
-        resolve_method_call(@program_classes.method_named(class_name, :initialize), types)
+        resolve_method_call(method_named(class_name, :initialize), types)
         instance_type = @tast.create_instance_type(class_name)
         callee = @tast.create_callee(
           :new, class_name, :new, function_name(class_name, :initialize), types, instance_type
