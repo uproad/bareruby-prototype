@@ -3,6 +3,7 @@
 require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
 require_relative "pass_09_lir_generator/i2c_payload"
+require_relative "pass_09_lir_generator/arena_storage"
 require_relative "pass_09_lir_generator/function_scope"
 
 module BareRubyProt
@@ -14,8 +15,6 @@ module BareRubyProt
         :== => "==", :!= => "!=", :< => "<", :<= => "<=", :> => ">", :>= => ">=",
         :-@ => "-", :~ => "~", :! => "!"
       }.freeze
-      ARENA_STRUCT = :bareruby_arena_t
-      ARENA_SCOPE_STRUCT = :bareruby_arena_scope
       attr_reader :result
 
       def initialize(typed_ast)
@@ -104,7 +103,7 @@ module BareRubyProt
         receiver_statements + events_statements + [@lir.create_expression(
           @lir.create_call(
             :bareruby_gpio_on_interrupt,
-            [reference_to(receiver_expression), events_expression, @lir.create_function_reference(handler_name)], :void
+            [@lir.reference_to(receiver_expression), events_expression, @lir.create_function_reference(handler_name)], :void
           )
         )]
       end
@@ -202,17 +201,8 @@ module BareRubyProt
       # leaves it, which is the exception safety the design requires.
       def lower_arena(node)
         binding, size, body = @tast.children_of(node)
-        index = @function_scope.next_arena
-        struct = @lir.struct_type(ARENA_STRUCT)
-        place = @lir.create_local(binding[:name], struct)
         @function_scope.declare(binding[:name])
-        scope_struct = @lir.struct_type(ARENA_SCOPE_STRUCT)
-
-        opening = [@lir.create_declare(binding[:name], struct, nil)] + arena_setup(place, size, index) +
-                  [@lir.create_declare(
-                    :"arena_scope_#{index}", scope_struct,
-                    @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
-                  )]
+        opening, = arena_storage.opened(binding[:name], size)
         [@lir.create_scope(opening + lower_block_body(body))]
       end
 
@@ -223,14 +213,12 @@ module BareRubyProt
         @function_scope.nested { predeclare_nilable_locals(body) + lower_body(body) }
       end
 
-      # A long-lived arena outlives no scope, so it takes no guard: reset is the only
-      # thing that releases it.
       def lower_arena_new(node)
         size, type = @tast.children_of(node)
         struct = @value_layout.type_of(type)
         name = @function_scope.next_temporary
         place = @lir.create_local(name, struct)
-        [[@lir.create_declare(name, struct, nil)] + arena_setup(place, size, @function_scope.next_arena), place]
+        [[@lir.create_declare(name, struct, nil)] + arena_storage.reserved_for(place, size), place]
       end
 
       # A creation expression is where the region comes from, so the binding it is
@@ -239,19 +227,7 @@ module BareRubyProt
         struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
         [storage_declaration(binding, struct) +
-          arena_setup(place, @tast.children_of(value)[0], @function_scope.next_arena), place]
-      end
-
-      def arena_setup(place, size, index)
-        storage = :"arena_storage_#{index}"
-        initializer = @lir.create_call(
-          :bareruby_arena_init,
-          [reference_to(place),
-           @lir.create_local(storage, @lir.pointer_type(:uint8)),
-           @lir.create_const_int(size, :int32)],
-          :void
-        )
-        [@lir.create_declare_arena_storage(storage, size), @lir.create_expression(initializer)]
+          arena_storage.reserved_for(place, @tast.children_of(value)[0]), place]
       end
 
       # The length is bound to a local first, because the handle stores it as well as
@@ -270,19 +246,12 @@ module BareRubyProt
         statements = receiver_statements + length_statements +
                      [@lir.create_declare(length_name, :int32, length_expression),
                       @lir.create_declare(name, struct, nil),
-                      @lir.create_assign(@value_layout.items_of(place), allocation_of(receiver_expression, length_local, element)),
+                      @lir.create_assign(
+                        @value_layout.items_of(place),
+                        arena_storage.allocation(@lir.reference_to(receiver_expression), length_local, element)
+                      ),
                       @lir.create_assign(@value_layout.length_of(place), length_local)]
         [statements, place]
-      end
-
-      def allocation_of(arena_expression, length_local, element)
-        bytes = @lir.create_binary("*", length_local, @lir.create_size_of(element, :int32), :int32)
-        call = @lir.create_call(
-          :bareruby_arena_alloc,
-          [reference_to(arena_expression), bytes],
-          @lir.pointer_type(:void)
-        )
-        @lir.create_cast(call, @lir.pointer_type(element))
       end
 
       def lower_arena_length(node)
@@ -572,20 +541,11 @@ module BareRubyProt
         @function_scope.pointer?(binding[:name])
       end
 
-      # A shared value in value position is its address, so storage has to be taken the
-      # address of and a pointer is already one.
+      # A shared value in value position is its address.
       def shared_rvalue(node, expression)
         return expression unless @value_layout.shared?(@tast.value_type(node))
 
-        reference_to(expression)
-      end
-
-      def reference_to(expression)
-        pointer_expression?(expression) ? expression : @lir.create_address_of(expression)
-      end
-
-      def pointer_expression?(expression)
-        @lir.pointer_type?(@lir.value_type(expression))
+        @lir.reference_to(expression)
       end
 
       # A creation expression is where storage comes from, so the binding it is assigned to
@@ -646,7 +606,7 @@ module BareRubyProt
         receiver, type = @tast.children_of(value)
         struct = @value_layout.type_of(type)
         statements, expression = lower_expression(receiver)
-        source = pointer_expression?(expression) ? @lir.create_unary("*", expression, struct) : expression
+        source = @lir.pointer_type?(@lir.value_type(expression)) ? @lir.create_unary("*", expression, struct) : expression
         statements + [@lir.create_assign(place, source)]
       end
 
@@ -734,14 +694,14 @@ module BareRubyProt
 
       def construction_of(place, callee, arguments)
         argument_statements, argument_expressions = lower_arguments(arguments)
-        initializer = @lir.create_call(callee[:function], [reference_to(place)] + argument_expressions, :void)
+        initializer = @lir.create_call(callee[:function], [@lir.reference_to(place)] + argument_expressions, :void)
 
         argument_statements + [@lir.create_expression(initializer)]
       end
 
       def lower_method_call(receiver, callee, arguments)
         receiver_statements, receiver_expression = receiver ? lower_expression(receiver) : [[], nil]
-        self_argument = receiver_expression ? reference_to(receiver_expression) : @lir.create_self_pointer(@function_scope.self_type)
+        self_argument = receiver_expression ? @lir.reference_to(receiver_expression) : @lir.create_self_pointer(@function_scope.self_type)
         argument_statements, argument_expressions = lower_arguments(arguments)
 
         [receiver_statements + argument_statements,
@@ -766,11 +726,11 @@ module BareRubyProt
         end
 
         output_statements, output_bytes, output_length =
-          payload.flattened(reference_to(arena_expression), outputs) { |output| lower_expression(output) }
-        binding_arguments = [reference_to(receiver_expression)]
+          payload.flattened(@lir.reference_to(arena_expression), outputs) { |output| lower_expression(output) }
+        binding_arguments = [@lir.reference_to(receiver_expression)]
         if callee[:name] == :read
           binding_arguments += [
-            reference_to(arena_expression), address_expression, length_expression,
+            @lir.reference_to(arena_expression), address_expression, length_expression,
             output_bytes, output_length
           ]
         else
@@ -785,6 +745,8 @@ module BareRubyProt
       end
 
       def payload = I2cPayload.new(@lir, @tast, @value_layout, @function_scope)
+
+      def arena_storage = ArenaStorage.new(@lir, @function_scope)
 
       def lower_arguments(arguments)
         statements = []

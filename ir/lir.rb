@@ -28,6 +28,12 @@ module BareRubyProt
 
     def pointer_type?(type) = type.is_a?(Hash) && type[:kind] == :pointer
 
+    # A shared value in value position is its address, so storage has to be taken the
+    # address of and a pointer is already one.
+    def reference_to(expression)
+      pointer_type?(value_type(expression)) ? expression : create_address_of(expression)
+    end
+
     def c_array_type(element, capacity) = { kind: :c_array, element:, capacity: }
 
     def create_field(name, type) = { name:, type: }
