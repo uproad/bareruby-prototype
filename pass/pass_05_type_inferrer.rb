@@ -2,6 +2,7 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
+require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
@@ -15,11 +16,6 @@ module BareRubyProt
       UNARY_OPERATORS = %i[-@ ~].freeze
       BINARY_OPERATORS = %i[+ - * / % << >> & | ^].freeze
       COMPARISON_OPERATORS = %i[== != < <= > >=].freeze
-      FIXED_ONE = 65_536
-      CONVERSIONS = {
-        to_fixed: { function: :bareruby_int32_to_fixed, return_type: :Fixed, from: :Int32 },
-        to_i32: { function: :bareruby_fixed_to_i32, return_type: :Int32, from: :Fixed }
-      }.freeze
       INTEGER_WIDTHS = %i[Int8 Int16 Int32 Int64].freeze
       INTEGER_RANGES = {
         Int8: (-128..127),
@@ -424,7 +420,7 @@ module BareRubyProt
       # time and carried as its internal integer form.
       def infer_float(node)
         value = @bareruby_ast.children_of(node)[0]
-        @tast.create_integer((value * FIXED_ONE).round, :Fixed, span_of(node))
+        @tast.create_integer(Fixed.scaled(value), :Fixed, span_of(node))
       end
 
       # begin/rescue lowers to try/catch. Only the untyped rescue form is handled: an
@@ -725,7 +721,7 @@ module BareRubyProt
             infer_arena_string_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
           elsif Arena.type?(receiver_type)
             infer_arena_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
-          elsif CONVERSIONS.key?(name)
+          elsif Fixed.conversion?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
           elsif operator?(name)
             infer_operator_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
@@ -1125,13 +1121,11 @@ module BareRubyProt
         :"#{owner}_#{name.to_s.sub(/\?\z/, '_p').sub(/!\z/, '_bang').sub(/=\z/, '_set')}"
       end
 
-      def fixed?(type) = type == :Fixed
-
       # A conversion whose source already has the target type is the identity.
       def infer_conversion_call(name, receiver_tast, receiver_type, span)
-        conversion = CONVERSIONS.fetch(name)
+        conversion = Fixed.conversion(name)
         return receiver_tast if receiver_type == conversion[:return_type]
-        return to_fixed(receiver_tast) if name == :to_fixed
+        return Fixed.of(@tast, receiver_tast) if name == :to_fixed
 
         callee = @tast.create_callee(
           :builtin_function, nil, name, conversion[:function], [receiver_type], conversion[:return_type]
@@ -1139,38 +1133,17 @@ module BareRubyProt
         @tast.create_call(nil, callee, [receiver_tast], nil, conversion[:return_type], span)
       end
 
-      # The builtin signature table for Fixed: an integer
-      # operand is converted with to_fixed semantics, add and subtract act directly on
-      # the Q16.16 representation, and multiply and divide go through the runtime so the
-      # doubled intermediate, the rounding and the saturation all happen there.
+      # An integer operand joins the fraction rather than the other way round, so both
+      # sides are scaled before the operation is chosen.
       def infer_fixed_operator_call(name, receiver_tast, argument_tasts, span)
-        receiver = to_fixed(receiver_tast)
-        arguments = argument_tasts.map { |argument| to_fixed(argument) }
+        receiver = Fixed.of(@tast, receiver_tast)
+        arguments = argument_tasts.map { |argument| Fixed.of(@tast, argument) }
 
-        return infer_fixed_runtime_call(name, receiver, arguments, span) if %i[* /].include?(name)
+        return Fixed.runtime_call(@tast, name, receiver, arguments, span) if Fixed.runtime_operator?(name)
 
         result_type = COMPARISON_OPERATORS.include?(name) ? :Bool : :Fixed
         callee = @tast.create_callee(:builtin_operator, nil, name, nil, argument_types(arguments), result_type)
         @tast.create_call(receiver, callee, arguments, nil, result_type, span)
-      end
-
-      def infer_fixed_runtime_call(name, receiver, arguments, span)
-        function = name == :* ? :bareruby_fixed_mul : :bareruby_fixed_div
-        callee = @tast.create_callee(:builtin_function, nil, name, function, %i[Fixed Fixed], :Fixed)
-        @tast.create_call(nil, callee, [receiver] + arguments, nil, :Fixed, span)
-      end
-
-      def to_fixed(node)
-        return node if fixed?(@tast.value_type(node))
-
-        if @tast.node_type(node) == :integer
-          return @tast.create_integer(@tast.children_of(node)[0] * FIXED_ONE, :Fixed, @tast.span_of(node))
-        end
-
-        callee = @tast.create_callee(
-          :builtin_function, nil, :to_fixed, :bareruby_int32_to_fixed, %i[Int32], :Fixed
-        )
-        @tast.create_call(nil, callee, [node], nil, :Fixed, @tast.span_of(node))
       end
 
       def operator?(name)
@@ -1180,7 +1153,7 @@ module BareRubyProt
 
       def infer_operator_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        if fixed?(receiver_type) || argument_tasts.any? { |a| fixed?(@tast.value_type(a)) }
+        if Fixed.type?(receiver_type) || argument_tasts.any? { |a| Fixed.type?(@tast.value_type(a)) }
           return infer_fixed_operator_call(name, receiver_tast, argument_tasts, span)
         end
 
