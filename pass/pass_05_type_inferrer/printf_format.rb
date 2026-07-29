@@ -3,11 +3,11 @@
 require_relative "arena_string"
 
 module BareRubyProt
-  # One interpolation, read once, as the printf that renders it: the static parts become
-  # the format and the rest become its values. Every one of the four forms that can ask —
-  # puts, a UART write, an assignment to a fixed-capacity local, an arena string — wants
-  # some of the same three answers out of it.
-  class Format
+  # The printf one interpolation renders as: the static parts become the format, the rest
+  # become its values, and the widths they can reach become the room a buffer needs. Every
+  # one of the four forms that can ask — puts, a UART write, an assignment to a
+  # fixed-capacity local, an arena string — wants some of these same three answers.
+  class PrintfFormat
     # Widest rendering of each type, used to size the temporary buffer an interpolation
     # assigns into. A String of unknown capacity has no honest bound here; a real
     # implementation would carry the capacity in the type, so this is the one number in

@@ -2,7 +2,7 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
-require_relative "pass_05_type_inferrer/format"
+require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
 require_relative "pass_05_type_inferrer/arena_array"
@@ -1246,7 +1246,7 @@ module BareRubyProt
 
       def format_of(node, env:, self_class:)
         parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
-        Format.new(parts, @tast)
+        PrintfFormat.new(parts, @tast)
       end
 
       def infer_iterator_block(block_node, element_type, env:, self_class:)
