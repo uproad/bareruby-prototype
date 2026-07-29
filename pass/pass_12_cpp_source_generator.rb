@@ -7,7 +7,7 @@ require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/pico_binding_source"
 require_relative "pass_12_cpp_source_generator/host_build"
 require_relative "pass_12_cpp_source_generator/pico_build"
-require_relative "pass_12_cpp_source_generator/program_source"
+require_relative "pass_12_cpp_source_generator/cpp_renderer"
 
 module BareRubyProt
   module Pass
@@ -69,9 +69,9 @@ module BareRubyProt
       end
 
       def program_text(build)
-        source = ProgramSource.new(@lir, stdout: build.stdout?, entry: build.entry)
-        text = source.text
-        @stdout_notice ||= source.dropped_puts
+        renderer = CppRenderer.new(@lir, stdout: build.stdout?, entry: build.entry)
+        text = renderer.text
+        @stdout_notice ||= renderer.dropped_puts
         text
       end
 

@@ -4,11 +4,11 @@ require_relative "binding_declaration"
 require_relative "runtime_source"
 
 module BareRubyProt
-  # The C++ for one program: the low-level IR rendered as declarations, structs and
+  # Renders one program as C++: the low-level IR written out as declarations, structs and
   # functions, with the entry point the machine it is built for asks for. A build with no
   # stdout channel drops the output calls rather than emitting calls that reach nothing,
   # and says so.
-  class ProgramSource
+  class CppRenderer
     def initialize(low_ir, stdout:, entry:)
       @lir = low_ir
       @stdout = stdout
