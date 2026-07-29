@@ -326,6 +326,17 @@ every commit while they were:
   target holding `main.cpp`, the build manifest and, for a board, `CMakeLists.txt`.
   **`build/` is deleted and regenerated on every run.**
 
+### Where the shipped C++ comes from
+
+Most of the C++ that lands in `build/` is carried by this repository rather than written
+line by line by the compiler. It lives in `runtime/`, one file per area — the runtime
+proper, the binding declarations, the hosted implementations, the pico-sdk
+implementations, and the three on-board LED implementations — and `runtime/source_set.rb`
+answers which of them a build is given, from the targets and from whether the program
+lights the LED. The last pass asks for that set and adds only what it generates from the
+program itself: `main.cpp`, the manifest and `CMakeLists.txt`. The two were one file
+until the C++ grew to two thirds of it, which is a poor place to read either from.
+
 ## Second stage: hosted
 
 Needs a GNU `g++` (version 12 or newer). Ubuntu 24.04 ships 13.3, which is fine.
