@@ -858,7 +858,6 @@ module BareRubyProt
       def infer_binding_new_call(class_name, arguments, type_environment:, span:)
         peripheral = Peripheral[class_name]
         argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, type_environment:, span:)
-        peripheral.verify(argument_tasts, @tast)
         instance_type = peripheral.instance_type(@tast)
         callee = @tast.create_callee(
           :binding_new, class_name, :new, peripheral.constructor_function,

@@ -31,7 +31,9 @@ Covered so far:
   expansion. No new pass; pass 5 does the flattening.
 - **M2.6** — the ADC binding (`samples/adc.rb`). `read` and `read_voltage` return `Fixed`
   rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
-  converter channel is rejected while compiling. No new pass.
+  converter channel is passed through as written: what values an interface accepts is the
+  running code's business, not the compiler's, which checks types and nothing else. No new
+  pass.
 - **M2.7** — fixed-capacity arrays (`samples/array.rb`): `Array.new(n[, init])`, array
   literals, `[]`, `[]=`, `size` and `dup`. Single element type, capacity settled while
   compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
