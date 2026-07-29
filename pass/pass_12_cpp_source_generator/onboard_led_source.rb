@@ -94,6 +94,11 @@ module BareRubyProt
       wireless: ["bareruby_binding_onboard_led_wireless.cpp", WIRELESS]
     }.freeze
 
+    # Reaching the wireless LED means bringing the radio up, which is a driver and a
+    # firmware blob rather than a register write, so the implementation that does it
+    # names what it needs linked.
+    WIRELESS_LIBRARY = "pico_cyw43_arch_none"
+
     def self.files(led) = { file_name(led) => IMPLEMENTATIONS.fetch(led)[1] }
 
     def self.file_name(led) = IMPLEMENTATIONS.fetch(led)[0]
