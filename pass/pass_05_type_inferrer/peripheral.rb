@@ -6,11 +6,8 @@ module BareRubyProt
   # behind its constructor and its methods. Which implementation those functions have is
   # the second stage's business; what a program may say to them is settled here.
   class Peripheral
-    # One-hot, matching PicoRuby. A direction constant of 0 would make "IN" and "no
-    # direction given" the same value, so the mandatory-direction check the standard
-    # guideline requires could not be expressed at all.
-    GPIO_DIRECTION_MASK = 0b111
-
+    # One-hot, matching PicoRuby, so that directions and pulls combine with | the way
+    # the standard guideline spells them.
     CLASSES = {
       GPIO: {
         struct: :bareruby_gpio_t,
@@ -28,8 +25,6 @@ module BareRubyProt
     # The guideline returns a Float from read_voltage, but Fixed is the default
     # fractional type here, so the binding returns Fixed. Q16.16 resolves to 1/65536 V,
     # finer than the 12-bit converter's least significant bit.
-    ADC_CHANNEL_PINS = (26..29).freeze
-
     # The on-board LED is its own class rather than a GPIO with a known pin, because on
     # a board that has one it is frequently not a GPIO at all — a Pico W drives its LED
     # through the wireless chip, and GP25, where the plain Pico's LED sits, is that
@@ -150,37 +145,6 @@ module BareRubyProt
     def method_signature(name) = @methods.fetch(name)
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, @struct)
-
-    # What can be settled about a call to the constructor while compiling. The standard
-    # guideline raises at run time; a constant argument can be read here instead.
-    def verify(argument_tasts, typed_ast)
-      case @name
-      when :GPIO then verify_direction(argument_tasts, typed_ast)
-      when :ADC then verify_pin(argument_tasts, typed_ast)
-      end
-    end
-
-    # Exactly one of IN / OUT / HIGH_Z is mandatory. One-hot constants let the params
-    # expression be folded and rejected while compiling.
-    def verify_direction(argument_tasts, typed_ast)
-      params = typed_ast.constant_integer(argument_tasts[1])
-      return if params.nil?
-
-      directions = (params & GPIO_DIRECTION_MASK).digits(2).count(1)
-      return if directions == 1
-
-      raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
-    end
-
-    # Pins without a converter channel are rejected while compiling.
-    def verify_pin(argument_tasts, typed_ast)
-      pin = typed_ast.constant_integer(argument_tasts[0])
-      return if pin.nil? || ADC_CHANNEL_PINS.include?(pin)
-
-      raise "ADC.new: pin #{pin} has no converter channel (expected #{ADC_CHANNEL_PINS})"
-    end
-
-    private :verify_direction, :verify_pin
 
     CATALOG = CLASSES.merge(EXTRA, ONBOARD).freeze
     ALL = CATALOG.to_h { |name, entry| [name, new(name, entry)] }.freeze
