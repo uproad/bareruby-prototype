@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require_relative "../ir/typed_ast"
+require_relative "pass_05_type_inferrer/arena"
+require_relative "pass_05_type_inferrer/arena_string"
+require_relative "pass_05_type_inferrer/arena_array"
 
 module BareRubyProt
   module Pass
@@ -178,7 +181,7 @@ module BareRubyProt
         @modules = {}
         @class_bodies = {}
         @current_method = nil
-        @arena_scopes = []
+        @arena = nil
       end
 
       def run
@@ -826,11 +829,11 @@ module BareRubyProt
             infer_nil_predicate(receiver_tast, receiver_type, span)
           elsif array_type?(receiver_type)
             infer_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
-          elsif arena_array_type?(receiver_type)
+          elsif ArenaArray.type?(receiver_type)
             infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
-          elsif arena_string_type?(receiver_type)
+          elsif ArenaString.type?(receiver_type)
             infer_arena_string_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
-          elsif arena_type?(receiver_type)
+          elsif Arena.type?(receiver_type)
             infer_arena_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
           elsif CONVERSIONS.key?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
@@ -883,16 +886,6 @@ module BareRubyProt
         @tast.create_index_assign(receiver_tast, index, value, receiver_type[:element], span)
       end
 
-      def arena_type?(type) = type.is_a?(Hash) && type[:class_name] == :Arena
-
-      def arena_array_type?(type) = type.is_a?(Hash) && type[:kind] == :arena_array
-
-      def arena_string_type?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
-
-      def arena_type = @tast.create_instance_type(:Arena, :bareruby_arena_t)
-
-      def arena_string_type = @tast.create_arena_string_type
-
       # The region is created when the block is entered and released when it is left, so
       # its size is what the whole block may allocate and has to be settled while
       # compiling: the storage is reserved statically, not taken from a heap.
@@ -902,11 +895,11 @@ module BareRubyProt
 
         parameters, body = @bareruby_ast.children_of(block)
         binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
-        block_env = env.merge(binding[:name] => [binding, arena_type])
+        block_env = env.merge(binding[:name] => [binding, Arena.type(@tast)])
 
-        @arena_scopes.push(names: env.keys, binding:)
-        typed_body = infer_body(body, env: block_env, self_class:)
-        @arena_scopes.pop
+        typed_body = inside_arena(Arena.new(binding, enclosing: @arena, outer_names: env.keys)) do
+          infer_body(body, env: block_env, self_class:)
+        end
 
         @tast.create_arena(binding, size, typed_body, span)
       end
@@ -915,7 +908,7 @@ module BareRubyProt
         size = constant_capacity(keyword_value(arguments, :size), env:, self_class:)
         raise "Arena.new: the size must be known at compile time" if size.nil?
 
-        @tast.create_arena_new(size, arena_type, span)
+        @tast.create_arena_new(size, Arena.type(@tast), span)
       end
 
       def keyword_value(arguments, name)
@@ -937,7 +930,7 @@ module BareRubyProt
         raise "an arena answers array, string and reset, not #{name}" unless name == :array
 
         length = infer_node(arguments[0], env:, self_class:)
-        @tast.create_arena_alloc(receiver_tast, length, @tast.create_arena_array_type(nil), span)
+        @tast.create_arena_alloc(receiver_tast, length, ArenaArray.type(@tast), span)
       end
 
       # The string a program can grow. Its handle lives in the region along with its bytes,
@@ -949,43 +942,34 @@ module BareRubyProt
       def infer_arena_string_call(receiver_tast, source, env:, self_class:, span:)
         if formatted?(source)
           arguments = format_arguments(receiver_tast, source, env:, self_class:, span:)
-          return string_call(:string, :bareruby_string_format, arguments, arena_string_type, span)
+          return string_call(:string, ArenaString::FORMAT_FUNCTION, arguments, ArenaString.type(@tast), span)
         end
 
         initial = source ? text_of(source, env:, self_class:) : @tast.create_string("", :String, span)
-        string_call(:string, :bareruby_string_new, [receiver_tast, initial], arena_string_type, span)
+        string_call(:string, ArenaString::NEW_FUNCTION, [receiver_tast, initial], ArenaString.type(@tast), span)
       end
 
       # Growing, joining and comparing all reach the runtime, which owns the representation:
       # nothing the backend emits knows what a string is made of.
       def infer_arena_string_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
         return receiver_tast if name == :to_s
-        return string_call(name, :bareruby_string_length, [receiver_tast], :Int32, span) if SIZE_NAMES.include?(name)
-        return string_call(name, :bareruby_string_dup, [receiver_tast], arena_string_type, span) if name == :dup
+        return string_call(name, ArenaString::LENGTH_FUNCTION, [receiver_tast], :Int32, span) if SIZE_NAMES.include?(name)
+        return string_call(name, ArenaString::DUP_FUNCTION, [receiver_tast], ArenaString.type(@tast), span) if name == :dup
 
         source = arguments.first
         if name == :<< && formatted?(source)
           appended = format_arguments(receiver_tast, source, env:, self_class:, span:)
-          return string_call(name, :bareruby_string_append_format, appended, arena_string_type, span)
+          return string_call(name, ArenaString::APPEND_FORMAT_FUNCTION, appended, ArenaString.type(@tast), span)
         end
 
         infer_string_operator_call(name, receiver_tast, source, env:, self_class:, span:)
       end
 
-      STRING_OPERATOR_FUNCTIONS = {
-        :<< => :bareruby_string_append,
-        :+ => :bareruby_string_concat,
-        :== => :bareruby_string_equal,
-        :!= => :bareruby_string_equal
-      }.freeze
-
       def infer_string_operator_call(name, receiver_tast, source, env:, self_class:, span:)
-        function = STRING_OPERATOR_FUNCTIONS[name]
-        raise "a variable-length string answers <<, +, ==, size, dup and to_s, not #{name}" if function.nil?
-
+        function = ArenaString.operator_function(name)
         comparison = COMPARISON_OPERATORS.include?(name)
         arguments = [receiver_tast, text_of(source, env:, self_class:)]
-        call = string_call(name, function, arguments, comparison ? :Bool : arena_string_type, span)
+        call = string_call(name, function, arguments, comparison ? :Bool : ArenaString.type(@tast), span)
         name == :!= ? negate(call, span) : call
       end
 
@@ -1011,13 +995,13 @@ module BareRubyProt
       # A variable-length string reaches everything that takes a static string — puts, a
       # UART, a format value, another string — through the bytes the region holds.
       def string_value_of(node)
-        return node unless arena_string_type?(@tast.value_type(node))
+        return node unless ArenaString.type?(@tast.value_type(node))
 
-        string_call(:bytes, :bareruby_string_bytes, [node], :String, @tast.span_of(node))
+        string_call(:bytes, ArenaString::BYTES_FUNCTION, [node], :String, @tast.span_of(node))
       end
 
       def infer_arena_reset_call(receiver_tast, span)
-        callee = @tast.create_callee(:binding_method, :Arena, :reset, :bareruby_arena_reset, [], :Nil)
+        callee = @tast.create_callee(:binding_method, :Arena, :reset, Arena::RESET_FUNCTION, [], :Nil)
         @tast.create_call(receiver_tast, callee, [], nil, :Nil, span)
       end
 
@@ -1042,9 +1026,9 @@ module BareRubyProt
       # thing that is not an escape, because it is where that arena begins.
       def reject_arena_escape(kind, name, value_tast)
         type = @tast.value_type(value_tast)
-        return unless arena_array_type?(type) || arena_string_type?(type) ||
-                      (arena_type?(type) && @tast.node_type(value_tast) != :arena_new)
-        return unless kind == :instance || @arena_scopes.any? { |scope| scope[:names].include?(name) }
+        return unless ArenaArray.type?(type) || ArenaString.type?(type) ||
+                      (Arena.type?(type) && @tast.node_type(value_tast) != :arena_new)
+        return unless kind == :instance || @arena&.outlived_by?(name)
 
         raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
       end
@@ -1107,9 +1091,9 @@ module BareRubyProt
         argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, env:, self_class:) }
         callee = @tast.create_callee(
           :binding_method, :UART, name, signature[:function],
-          argument_types(argument_tasts), arena_string_type
+          argument_types(argument_tasts), ArenaString.type(@tast)
         )
-        @tast.create_call(receiver_tast, callee, argument_tasts, nil, arena_string_type, span)
+        @tast.create_call(receiver_tast, callee, argument_tasts, nil, ArenaString.type(@tast), span)
       end
 
       # I2C uses the current region both for a read result and for the temporary byte
@@ -1118,7 +1102,7 @@ module BareRubyProt
         signature = PERIPHERALS.fetch(:I2C)[:methods].fetch(name)
         argument_tasts = [current_arena(span)] +
                          arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        return_type = name == :read ? arena_string_type : :Int32
+        return_type = name == :read ? ArenaString.type(@tast) : :Int32
         callee = @tast.create_callee(
           :binding_i2c, :I2C, name, signature[:function],
           argument_types(argument_tasts), return_type
@@ -1126,9 +1110,14 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
       end
 
-      def current_arena(span)
-        scope = @arena_scopes.last
-        @tast.create_reference(scope[:binding], arena_type, span)
+      def current_arena(span) = @tast.create_reference(@arena.binding, Arena.type(@tast), span)
+
+      def inside_arena(arena)
+        enclosing = @arena
+        @arena = arena
+        yield
+      ensure
+        @arena = enclosing
       end
 
       def infer_new_call(class_name, arguments, env:, self_class:, span:)
@@ -1410,7 +1399,7 @@ module BareRubyProt
       def escape_format(text) = text.gsub("%", "%%")
 
       def conversion_of(type)
-        return "%s" if arena_string_type?(type)
+        return "%s" if ArenaString.type?(type)
 
         case type
         when :Int64 then "%lld"
@@ -1423,7 +1412,7 @@ module BareRubyProt
       TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s }.freeze
 
       def to_s_of(part)
-        return string_value_of(part) if arena_string_type?(@tast.value_type(part))
+        return string_value_of(part) if ArenaString.type?(@tast.value_type(part))
 
         function = TO_S_FUNCTIONS[@tast.value_type(part)]
         return part unless function
