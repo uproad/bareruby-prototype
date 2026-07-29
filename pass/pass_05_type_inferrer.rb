@@ -171,6 +171,7 @@ module BareRubyProt
         @tast = TypedAST.new
         @classes = {}
         @current_method = nil
+        @initializing = false
         @arena = nil
       end
 
@@ -289,9 +290,14 @@ module BareRubyProt
         method_info.parameter_bindings = bindings
 
         enclosing = @current_method
+        enclosing_initializing = @initializing
         @current_method = method_info
+        # A method initialize calls is part of initialising: what it assigns is assigned
+        # before the object is anyone else's to look at.
+        @initializing = enclosing_initializing || method_info.name == :initialize
         typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
         finalize_initialize_ivars(method_info.owner, typed_body) if method_info.name == :initialize
+        @initializing = enclosing_initializing
         @current_method = enclosing
         @local_bindings = enclosing_bindings
 
@@ -307,6 +313,9 @@ module BareRubyProt
         class_definition = @classes.fetch(owner)
         class_definition.note_initialized(definitely_assigned_ivars(typed_body))
         class_definition.nil_unless_initialized { |type| unify(:Nil, type) }
+        class_definition.definitions.each do |definition|
+          annotate_ivar_storage_types!(definition.typed_body, class_definition) if definition.typed_body
+        end
         annotate_ivar_storage_types!(typed_body, class_definition)
       end
 
@@ -329,10 +338,24 @@ module BareRubyProt
           when :return
             value = @tast.children_of(statement)[0]
             value ? definitely_assigned_ivars([value], current) : current
+          when :call
+            definitely_assigned_by_call(statement, current)
           else
             current
           end
         end
+      end
+
+      # A call on self reaches the object's own method, and what that method assigns on
+      # every one of its paths is assigned on this one.
+      def definitely_assigned_by_call(statement, current)
+        receiver, callee, = @tast.children_of(statement)
+        return current unless receiver.nil? && callee[:kind] == :user_method
+
+        definition = @classes.fetch(callee[:owner]).method_named(callee[:name])
+        return current unless definition&.typed_body
+
+        definitely_assigned_ivars(definition.typed_body, current)
       end
 
       def annotate_ivar_storage_types!(value, class_definition)
@@ -655,7 +678,7 @@ module BareRubyProt
         when :instance
           class_definition = @classes.fetch(self_class)
           storage_type = class_definition.ivar?(name) ? unify(class_definition.ivar_type(name), value_type) : value_type
-          unless @current_method&.name == :initialize || class_definition.initialized?(name)
+          unless @initializing || class_definition.initialized?(name)
             storage_type = unify(:Nil, storage_type)
           end
           class_definition.remember_ivar(name, storage_type)
