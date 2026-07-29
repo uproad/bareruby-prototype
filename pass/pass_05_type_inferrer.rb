@@ -4,6 +4,7 @@ require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
 require_relative "pass_05_type_inferrer/peripheral"
 require_relative "pass_05_type_inferrer/binding_function"
+require_relative "pass_05_type_inferrer/type_union"
 require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
@@ -18,13 +19,6 @@ module BareRubyProt
       UNARY_OPERATORS = %i[-@ ~].freeze
       BINARY_OPERATORS = %i[+ - * / % << >> & | ^].freeze
       COMPARISON_OPERATORS = %i[== != < <= > >=].freeze
-      INTEGER_WIDTHS = %i[Int8 Int16 Int32 Int64].freeze
-      INTEGER_RANGES = {
-        Int8: (-128..127),
-        Int16: (-32_768..32_767),
-        Int32: (-(2**31)..(2**31 - 1)),
-        Int64: (-(2**63)..(2**63 - 1))
-      }.freeze
 
 
       attr_reader :result
@@ -175,7 +169,7 @@ module BareRubyProt
       def finalize_initialize_ivars(owner, typed_body)
         class_definition = @classes.fetch(owner)
         class_definition.note_initialized(definitely_assigned_ivars(typed_body))
-        class_definition.nil_unless_initialized { |type| unify(:Nil, type) }
+        class_definition.nil_unless_initialized { |type| TypeUnion.of(@tast, :Nil, type) }
         class_definition.definitions.each do |definition|
           annotate_ivar_storage_types!(definition.typed_body, class_definition) if definition.typed_body
         end
@@ -242,7 +236,7 @@ module BareRubyProt
         types = collect_return_types(typed_body)
         types << @tast.value_type(typed_body.last) unless terminator?(typed_body.last)
         types = types.reject { |type| type == :NoReturn }
-        types.empty? ? :Nil : types.reduce { |left, right| unify(left, right) }
+        types.empty? ? :Nil : types.reduce { |left, right| TypeUnion.of(@tast, left, right) }
       end
 
       def collect_return_types(statements)
@@ -295,7 +289,7 @@ module BareRubyProt
 
       def infer_integer(node)
         value = @bareruby_ast.children_of(node)[0]
-        @tast.create_integer(value, literal_type(value), span_of(node))
+        @tast.create_integer(value, TypeUnion.literal(value), span_of(node))
       end
 
       def infer_boolean(node)
@@ -361,11 +355,11 @@ module BareRubyProt
           infer_node(element, env:, self_class:)
         end
         types = argument_types(elements)
-        unless types.uniq.one? || types.all? { |element| INTEGER_WIDTHS.include?(element) }
+        unless types.uniq.one? || types.all? { |element| TypeUnion::WIDTHS.include?(element) }
           raise "array literal mixes #{types.uniq.join(' and ')}, which have no common type"
         end
 
-        type = @tast.create_array_type(types.reduce { |left, right| unify(left, right) }, elements.length)
+        type = @tast.create_array_type(types.reduce { |left, right| TypeUnion.of(@tast, left, right) }, elements.length)
         @tast.create_array(elements, type, span_of(node))
       end
 
@@ -415,7 +409,7 @@ module BareRubyProt
         else_type = else_tast ? branch_type(else_tast) : :Nil
         merge_branch_env!(env, then_env, else_env,
                           left_reachable: then_type != :NoReturn, right_reachable: else_type != :NoReturn)
-        type = unify(then_type, else_type)
+        type = TypeUnion.of(@tast, then_type, else_type)
         @tast.create_if(condition_tast, then_tast, else_tast, type, span_of(node))
       end
 
@@ -448,14 +442,14 @@ module BareRubyProt
         left_type = @tast.value_type(left_tast)
         right_type = @tast.value_type(right_tast)
         type =
-          if operator == :or && nilable_type?(left_type)
-            unify(left_type[:inner], right_type)
+          if operator == :or && TypeUnion.nilable?(left_type)
+            TypeUnion.of(@tast, left_type[:inner], right_type)
           elsif operator == :or && left_type == :Nil
             right_type
-          elsif operator == :and && nilable_type?(left_type)
-            unify(:Nil, right_type)
+          elsif operator == :and && TypeUnion.nilable?(left_type)
+            TypeUnion.of(@tast, :Nil, right_type)
           else
-            unify(left_type, right_type)
+            TypeUnion.of(@tast, left_type, right_type)
           end
         @tast.create_logical(operator, left_tast, right_tast, type, span_of(node))
       end
@@ -469,7 +463,7 @@ module BareRubyProt
             assignment_binding, _value, assignment_type = @tast.children_of(condition)
             [assignment_binding, assignment_type]
           end
-        return unless binding && binding[:kind] == :local && nilable_type?(type)
+        return unless binding && binding[:kind] == :local && TypeUnion.nilable?(type)
 
         env[binding[:name]] = [binding, truthy ? type[:inner] : :Nil]
       end
@@ -483,8 +477,8 @@ module BareRubyProt
           left_entry = left[name]
           right_entry = right[name]
           binding = (left_entry || right_entry)[0]
-          type = unify(left_entry ? left_entry[1] : :Nil, right_entry ? right_entry[1] : :Nil)
-          binding[:type] = binding[:type] ? unify(binding[:type], type) : type
+          type = TypeUnion.of(@tast, left_entry ? left_entry[1] : :Nil, right_entry ? right_entry[1] : :Nil)
+          binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], type) : type
           env[name] = [binding, type]
         end
       end
@@ -495,8 +489,8 @@ module BareRubyProt
       def merge_loop_env!(env, body_env)
         (body_env.keys - env.keys).each do |name|
           binding, body_type = body_env.fetch(name)
-          type = unify(:Nil, body_type)
-          binding[:type] = binding[:type] ? unify(binding[:type], type) : type
+          type = TypeUnion.of(@tast, :Nil, body_type)
+          binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], type) : type
           env[name] = [binding, type]
         end
       end
@@ -504,7 +498,7 @@ module BareRubyProt
       def infer_constant_path(node)
         owner, name = @bareruby_ast.children_of(node)
         value = Peripheral[owner].constant(name)
-        @tast.create_integer(value, literal_type(value), span_of(node))
+        @tast.create_integer(value, TypeUnion.literal(value), span_of(node))
       end
 
       def infer_reference(node, env:, self_class:)
@@ -536,13 +530,13 @@ module BareRubyProt
         case kind
         when :local
           binding = @local_bindings[name] ||= binding
-          binding[:type] = binding[:type] ? unify(binding[:type], value_type) : value_type
+          binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], value_type) : value_type
           env[name] = [binding, value_type]
         when :instance
           class_definition = @classes.fetch(self_class)
-          storage_type = class_definition.ivar?(name) ? unify(class_definition.ivar_type(name), value_type) : value_type
+          storage_type = class_definition.ivar?(name) ? TypeUnion.of(@tast, class_definition.ivar_type(name), value_type) : value_type
           unless @initializing || class_definition.initialized?(name)
-            storage_type = unify(:Nil, storage_type)
+            storage_type = TypeUnion.of(@tast, :Nil, storage_type)
           end
           class_definition.remember_ivar(name, storage_type)
           binding = @tast.create_binding(:instance, name, storage_type)
@@ -623,7 +617,7 @@ module BareRubyProt
 
       def infer_nil_predicate(receiver_tast, receiver_type, span)
         return @tast.create_boolean(true, :Bool, span) if receiver_type == :Nil
-        return @tast.create_boolean(false, :Bool, span) unless nilable_type?(receiver_type)
+        return @tast.create_boolean(false, :Bool, span) unless TypeUnion.nilable?(receiver_type)
 
         callee = @tast.create_callee(:builtin_nil_p, nil, :nil?, nil, [], :Bool)
         @tast.create_call(receiver_tast, callee, [], nil, :Bool, span)
@@ -638,7 +632,7 @@ module BareRubyProt
         return @tast.create_array_dup(receiver_tast, receiver_type, span) if name == :dup
 
         capacity = receiver_type[:capacity]
-        return @tast.create_integer(capacity, literal_type(capacity), span) if SIZE_NAMES.include?(name)
+        return @tast.create_integer(capacity, TypeUnion.literal(capacity), span) if SIZE_NAMES.include?(name)
 
         index = infer_node(arguments[0], env:, self_class:)
         return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
@@ -923,7 +917,7 @@ module BareRubyProt
         tasts = positional.map { |argument| infer_node(argument, env:, self_class:) }
         keywords.each do |name, default|
           value = supplied[name]
-          tasts << (value ? infer_node(value, env:, self_class:) : @tast.create_integer(default, literal_type(default), span))
+          tasts << (value ? infer_node(value, env:, self_class:) : @tast.create_integer(default, TypeUnion.literal(default), span))
         end
         tasts
       end
@@ -1013,7 +1007,7 @@ module BareRubyProt
           elsif UNARY_OPERATORS.include?(name)
             receiver_type
           else
-            widen(receiver_type, @tast.value_type(argument_tasts.first))
+            TypeUnion.widest(receiver_type, @tast.value_type(argument_tasts.first))
           end
         callee = @tast.create_callee(:builtin_operator, nil, name, nil, argument_types(argument_tasts), result_type)
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, result_type, span)
@@ -1021,7 +1015,7 @@ module BareRubyProt
 
       def infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, env:, self_class:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        element_type = name == :upto ? widen(receiver_type, @tast.value_type(argument_tasts.first)) : receiver_type
+        element_type = name == :upto ? TypeUnion.widest(receiver_type, @tast.value_type(argument_tasts.first)) : receiver_type
         block_tast = block && infer_iterator_block(block, element_type, env:, self_class:)
         callee = @tast.create_callee(:builtin_iterator, nil, name, nil, argument_types(argument_tasts), :Nil)
         @tast.create_call(receiver_tast, callee, argument_tasts, block_tast, :Nil, span)
@@ -1097,60 +1091,6 @@ module BareRubyProt
         else :bareruby_puts_int32
         end
       end
-
-      def literal_type(value)
-        width = INTEGER_WIDTHS.find { |candidate| INTEGER_RANGES.fetch(candidate).cover?(value) }
-        widen(width, :Int32)
-      end
-
-      def widen(left, right)
-        INTEGER_WIDTHS[[INTEGER_WIDTHS.index(left), INTEGER_WIDTHS.index(right)].max]
-      end
-
-      def unify(left, right)
-        return right if left == :NoReturn
-        return left if right == :NoReturn
-        return unify_array_types(left, right) if same_array_shape?(left, right)
-        return left if left == right
-        return right if left == :Nil && nilable_type?(right)
-        return left if right == :Nil && nilable_type?(left)
-        return @tast.create_nilable_type(right) if left == :Nil
-        return @tast.create_nilable_type(left) if right == :Nil
-        if nilable_type?(left) || nilable_type?(right)
-          left_inner = nilable_type?(left) ? left[:inner] : left
-          right_inner = nilable_type?(right) ? right[:inner] : right
-          return @tast.create_nilable_type(unify(left_inner, right_inner))
-        end
-
-        widen(left, right)
-      end
-
-      # A missing element type means inference has not reached the first write yet; it is
-      # not Nil. Propagate the known element type into both views of the same-shaped array.
-      # Returning the newer view keeps later first-write inference connected to the
-      # binding when both sides are still open here.
-      def unify_array_types(left, right)
-        element =
-          if left[:element].nil?
-            right[:element]
-          elsif right[:element].nil?
-            left[:element]
-          else
-            unify(left[:element], right[:element])
-          end
-        left[:element] = element
-        right[:element] = element
-        right
-      end
-
-      def same_array_shape?(left, right)
-        return false unless left.is_a?(Hash) && right.is_a?(Hash)
-        return true if left[:kind] == :arena_array && right[:kind] == :arena_array
-
-        left[:kind] == :array && right[:kind] == :array && left[:capacity] == right[:capacity]
-      end
-
-      def nilable_type?(type) = type.is_a?(Hash) && type[:kind] == :nilable
 
       def span_of(node) = @bareruby_ast.span_of(node)
     end
