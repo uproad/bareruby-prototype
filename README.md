@@ -326,6 +326,19 @@ every commit while they were:
   target holding `main.cpp`, the build manifest and, for a board, `CMakeLists.txt`.
   **`build/` is deleted and regenerated on every run.**
 
+### Where the shipped C++ comes from
+
+Most of the C++ that lands in `build/` is carried by this repository rather than written
+line by line by the compiler. It belongs to the last pass and to nothing else, so it sits
+beside it in `pass/pass_12_cpp_source_generator/`, one file per area — the runtime proper,
+the binding declarations, the hosted implementations, the pico-sdk implementations, and
+the three on-board LED implementations. Each of those files also names its own
+translation units: the name a piece of C++ is written under belongs with that C++ and
+nowhere else. The pass asks each of them for its files, keeps the ones the targets call
+for, and adds what it generates from the program itself — `main.cpp`, the manifest and
+`CMakeLists.txt`. All of it was one file until the C++ grew to two thirds of it, which is
+a poor place to read either from.
+
 ## Second stage: hosted
 
 Needs a GNU `g++` (version 12 or newer). Ubuntu 24.04 ships 13.3, which is fine.
