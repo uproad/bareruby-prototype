@@ -387,6 +387,13 @@ module BareRubyProt
       }
     CPP
 
+    # The output functions this runtime defines. A build with no stdout channel has
+    # nowhere for them to write, so the generated code leaves the calls out.
+    PUTS_FUNCTIONS = %i[
+      bareruby_puts_int32 bareruby_puts_int64 bareruby_puts_string bareruby_puts_bool
+      bareruby_puts_fixed bareruby_printf
+    ].freeze
+
     HEADER_FILE = "bareruby_runtime.h"
     FIXED_FILE = "bareruby_runtime_fixed.cpp"
     ARENA_FILE = "bareruby_runtime_arena.cpp"

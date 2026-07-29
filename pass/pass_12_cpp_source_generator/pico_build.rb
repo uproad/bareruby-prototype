@@ -9,6 +9,11 @@ module BareRubyProt
     SDK_LIBRARIES = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
                        hardware_i2c hardware_clocks].freeze
 
+    # A board starts the SDK before the program and has nowhere to return to, so it
+    # idles rather than ending.
+    ENTRY = "int main(void) {\n    bareruby_startup();\n    bareruby_main();\n    for (;;) {\n" \
+            "        bareruby_sleep_ms(1000);\n    }\n}\n"
+
     def initialize(target, sources:, onboard_led:, debug:, exceptions:)
       @target = target
       @sources = sources
@@ -18,6 +23,12 @@ module BareRubyProt
     end
 
     def files = { "manifest.txt" => manifest, "CMakeLists.txt" => cmake_lists }
+
+    # Without a debug build there is no channel for output to leave by, so a puts has
+    # nowhere to arrive and the generated code does not make the call.
+    def stdout? = @debug
+
+    def entry = ENTRY
 
     def manifest
       <<~MANIFEST
@@ -30,7 +41,7 @@ module BareRubyProt
         include_directories = ..
         sources = #{@sources.join(' ')}
         link_libraries = #{libraries.join(' ')}
-        stdout_channel = #{@debug ? 'usb' : 'none'}
+        stdout_channel = #{stdout? ? 'usb' : 'none'}
         debug = #{@debug ? 'enabled' : 'disabled'}
         exceptions = #{@exceptions ? 'enabled' : 'disabled'}
         artifact = bareruby_program.uf2
