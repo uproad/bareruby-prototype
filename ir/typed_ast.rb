@@ -139,6 +139,21 @@ module BareRubyProt
 
     def value_type(node) = node[:children].last
 
+    # What integer a node is, if it is one before the program runs — including the
+    # constants a program combines with |.
+    def constant_integer(node)
+      return nil if node.nil?
+      return children_of(node)[0] if node_type(node) == :integer
+      return nil unless node_type(node) == :call
+
+      receiver, callee, arguments = children_of(node)
+      return nil unless callee[:kind] == :builtin_operator && callee[:name] == :|
+
+      left = constant_integer(receiver)
+      right = constant_integer(arguments[0])
+      left && right && (left | right)
+    end
+
     def inspect_text
       program_body.flat_map { |statement| inspect_lines(statement, "") }.join("\n")
     end

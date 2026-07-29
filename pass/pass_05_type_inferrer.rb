@@ -2,6 +2,8 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
+require_relative "pass_05_type_inferrer/peripheral"
+require_relative "pass_05_type_inferrer/binding_function"
 require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
@@ -24,145 +26,6 @@ module BareRubyProt
         Int64: (-(2**63)..(2**63 - 1))
       }.freeze
 
-      # One-hot, matching PicoRuby. A direction constant of 0 would make "IN" and "no
-      # direction given" the same value, so the mandatory-direction check the standard
-      # guideline requires could not be expressed at all.
-      GPIO_DIRECTION_MASK = 0b111
-
-      PERIPHERAL_CLASSES = {
-        GPIO: {
-          struct: :bareruby_gpio_t,
-          constants: { IN: 1, OUT: 2, HIGH_Z: 4, PULL_UP: 8, PULL_DOWN: 16, OPEN_DRAIN: 32, EDGE_FALL: 4 },
-          constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
-          methods: {
-            write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
-            read: { function: :bareruby_gpio_read, parameter_types: [], return_type: :Int32 },
-            high?: { function: :bareruby_gpio_high, parameter_types: [], return_type: :Bool },
-            low?: { function: :bareruby_gpio_low, parameter_types: [], return_type: :Bool }
-          }
-        }
-      }.freeze
-
-      # The guideline returns a Float from read_voltage, but Fixed is the default
-      # fractional type here, so the binding returns Fixed. Q16.16 resolves to 1/65536 V,
-      # finer than the 12-bit converter's least significant bit.
-      ADC_CHANNEL_PINS = (26..29).freeze
-
-      # The on-board LED is its own class rather than a GPIO with a known pin, because on
-      # a board that has one it is frequently not a GPIO at all — a Pico W drives its LED
-      # through the wireless chip, and GP25, where the plain Pico's LED sits, is that
-      # chip's select line instead. Sharing GPIO's interface would only hide that. Which
-      # board the program is being built for decides how the binding reaches it, so a
-      # program that blinks says nothing about the board it will run on.
-      PERIPHERAL_CLASSES_ONBOARD = {
-        OnboardLED: {
-          struct: :bareruby_onboard_led_t,
-          constants: {},
-          constructor: { function: :bareruby_onboard_led_init, parameter_types: [] },
-          methods: {
-            write: { function: :bareruby_onboard_led_write, parameter_types: %i[Int32], return_type: :Nil },
-            on: { function: :bareruby_onboard_led_on, parameter_types: [], return_type: :Nil },
-            off: { function: :bareruby_onboard_led_off, parameter_types: [], return_type: :Nil }
-          }
-        }
-      }.freeze
-
-      PERIPHERAL_CLASSES_EXTRA = {
-        ADC: {
-          struct: :bareruby_adc_t,
-          constants: {},
-          constructor: { function: :bareruby_adc_init, parameter_types: %i[Int32] },
-          methods: {
-            read: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
-            read_voltage: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
-            read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
-          }
-        },
-        PWM: {
-          struct: :bareruby_pwm_t,
-          constants: {},
-          constructor: {
-            function: :bareruby_pwm_init,
-            parameter_types: %i[Int32],
-            keywords: { frequency: 0, duty: 0 }
-          },
-          methods: {
-            frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Nil },
-            period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Nil },
-            duty: { function: :bareruby_pwm_duty, parameter_types: %i[Int32], return_type: :Nil },
-            pulse_width_us: {
-              function: :bareruby_pwm_pulse_width_us, parameter_types: %i[Int32], return_type: :Nil
-            }
-          }
-        },
-        UART: {
-          struct: :bareruby_uart_t,
-          constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4 },
-          constructor: {
-            function: :bareruby_uart_init,
-            parameter_types: %i[Int32],
-            keywords: { baud: 115_200, parity: 0 }
-          },
-          methods: {
-            write: { function: :bareruby_uart_write, parameter_types: %i[String], return_type: :Int32 },
-            puts: { function: :bareruby_uart_puts, parameter_types: %i[String], return_type: :Nil },
-            read: { function: :bareruby_uart_read, parameter_types: %i[Int32], return_type: :arena_string },
-            gets: { function: :bareruby_uart_gets, parameter_types: [], return_type: :arena_string },
-            bytes_available: {
-              function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
-            },
-            can_read_line: {
-              function: :bareruby_uart_can_read_line, parameter_types: [], return_type: :Bool
-            },
-            flush: { function: :bareruby_uart_flush, parameter_types: [], return_type: :Nil },
-            clear_rx_buffer: {
-              function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :Nil
-            },
-            clear_tx_buffer: {
-              function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
-            }
-          }
-        },
-        I2C: {
-          struct: :bareruby_i2c_t,
-          constants: {},
-          constructor: {
-            function: :bareruby_i2c_init,
-            parameter_types: %i[Int32],
-            keywords: { frequency: 100_000 }
-          },
-          methods: {
-            write: { function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32 },
-            read: { function: :bareruby_i2c_read, parameter_types: [], return_type: :arena_string }
-          }
-        }
-      }.freeze
-
-      # sleep waits from the moment it is called, so a loop drifts by however long its
-      # body takes. asleep waits from the moment the previous asleep returned, which is
-      # what a loop that has to keep a period needs.
-      PERIPHERAL_FUNCTIONS = {
-        sleep: { function: :bareruby_sleep, parameter_types: %i[Int32], return_type: :Nil },
-        sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32], return_type: :Nil },
-        asleep: { function: :bareruby_asleep, parameter_types: %i[Int32], return_type: :Nil },
-        asleep_ms: { function: :bareruby_asleep_ms, parameter_types: %i[Int32], return_type: :Nil },
-        asleep_us: { function: :bareruby_asleep_us, parameter_types: %i[Int32], return_type: :Nil }
-      }.freeze
-
-      PERIPHERAL_MODULES = {
-        Machine: {
-          delay_us: { function: :bareruby_machine_delay_us, parameter_types: %i[Int32], return_type: :Nil }
-        }
-      }.freeze
-
-      # puts and write on a UART take the same printf expansion as the global puts.
-      PRINTF_BINDINGS = {
-        bareruby_uart_puts: :bareruby_uart_printf,
-        bareruby_uart_write: :bareruby_uart_printf
-      }.freeze
-
-      PERIPHERALS =
-        PERIPHERAL_CLASSES.merge(PERIPHERAL_CLASSES_EXTRA, PERIPHERAL_CLASSES_ONBOARD).freeze
 
       attr_reader :result
 
@@ -522,7 +385,7 @@ module BareRubyProt
         return nil if node.nil?
         return @constant_locals[@bareruby_ast.children_of(node)[1]] if reference_to_local?(node)
 
-        constant_integer(infer_node(node, env:, self_class:))
+        @tast.constant_integer(infer_node(node, env:, self_class:))
       end
 
       def reference_to_local?(node)
@@ -640,7 +503,7 @@ module BareRubyProt
 
       def infer_constant_path(node)
         owner, name = @bareruby_ast.children_of(node)
-        value = PERIPHERALS.fetch(owner)[:constants].fetch(name)
+        value = Peripheral[owner].constant(name)
         @tast.create_integer(value, literal_type(value), span_of(node))
       end
 
@@ -709,13 +572,13 @@ module BareRubyProt
           when :raise then infer_raise_call(arguments, env:, self_class:, span:)
           when :arena then infer_arena_call(arguments, block, env:, self_class:, span:)
           else
-            if PERIPHERAL_FUNCTIONS.key?(name)
+            if BindingFunction.bare?(name)
               infer_binding_function_call(name, arguments, env:, self_class:, span:)
             else
               infer_self_method_call(name, arguments, env:, self_class:, span:)
             end
           end
-        elsif constant_receiver?(receiver) && PERIPHERAL_MODULES.key?(@bareruby_ast.children_of(receiver)[1])
+        elsif constant_receiver?(receiver) && BindingFunction.module?(@bareruby_ast.children_of(receiver)[1])
           infer_module_function_call(
             @bareruby_ast.children_of(receiver)[1], name, arguments, env:, self_class:, span:
           )
@@ -725,7 +588,7 @@ module BareRubyProt
             infer_array_new_call(arguments, env:, self_class:, span:)
           elsif class_name == :Arena
             infer_arena_new_call(arguments, env:, self_class:, span:)
-          elsif PERIPHERALS.key?(class_name)
+          elsif Peripheral.known?(class_name)
             infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
           else
             infer_new_call(class_name, arguments, env:, self_class:, span:)
@@ -953,7 +816,7 @@ module BareRubyProt
 
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
         class_name = receiver_type[:class_name]
-        if PERIPHERALS.key?(class_name)
+        if Peripheral.known?(class_name)
           if class_name == :UART && %i[read gets].include?(name)
             return infer_uart_receive_call(
               receiver_tast, name, arguments, env:, self_class:, span:
@@ -963,8 +826,8 @@ module BareRubyProt
             return infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
           end
 
-          signature = PERIPHERALS.fetch(class_name)[:methods].fetch(name)
-          printf_function = PRINTF_BINDINGS[signature[:function]]
+          signature = Peripheral[class_name].method_signature(name)
+          printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)
             return infer_printf_call(
               printf_function, receiver_tast, arguments.first, env:, self_class:, span:
@@ -989,7 +852,7 @@ module BareRubyProt
       # implementation argument only: the Ruby call keeps the standard UART read/gets
       # shape while the generated binding receives somewhere to put the bytes.
       def infer_uart_receive_call(receiver_tast, name, arguments, env:, self_class:, span:)
-        signature = PERIPHERALS.fetch(:UART)[:methods].fetch(name)
+        signature = Peripheral[:UART].method_signature(name)
         arena = current_arena(span)
         argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, env:, self_class:) }
         callee = @tast.create_callee(
@@ -1002,7 +865,7 @@ module BareRubyProt
       # I2C uses the current region both for a read result and for the temporary byte
       # sequence that makes heterogeneous write arguments one bus transaction.
       def infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
-        signature = PERIPHERALS.fetch(:I2C)[:methods].fetch(name)
+        signature = Peripheral[:I2C].method_signature(name)
         argument_tasts = [current_arena(span)] +
                          arguments.map { |argument| infer_node(argument, env:, self_class:) }
         return_type = name == :read ? ArenaString.type(@tast) : :Int32
@@ -1035,51 +898,15 @@ module BareRubyProt
       end
 
       def infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
-        peripheral = PERIPHERALS.fetch(class_name)
-        constructor = peripheral[:constructor]
-        argument_tasts = resolve_keywords(arguments, constructor[:keywords] || {}, env:, self_class:, span:)
-        verify_gpio_direction(argument_tasts) if class_name == :GPIO
-        verify_adc_pin(argument_tasts) if class_name == :ADC
-        instance_type = @tast.create_instance_type(class_name, peripheral[:struct])
+        peripheral = Peripheral[class_name]
+        argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, env:, self_class:, span:)
+        peripheral.verify(argument_tasts, @tast)
+        instance_type = peripheral.instance_type(@tast)
         callee = @tast.create_callee(
-          :binding_new, class_name, :new, constructor[:function],
+          :binding_new, class_name, :new, peripheral.constructor_function,
           argument_types(argument_tasts), instance_type
         )
         @tast.create_call(nil, callee, argument_tasts, nil, instance_type, span)
-      end
-
-      # Exactly one of IN / OUT / HIGH_Z is mandatory. The standard guideline raises
-      # ArgumentError at run time; one-hot constants let us fold the params expression and
-      # reject it while compiling instead.
-      def verify_gpio_direction(argument_tasts)
-        params = constant_integer(argument_tasts[1])
-        return if params.nil?
-
-        directions = (params & GPIO_DIRECTION_MASK).digits(2).count(1)
-        return if directions == 1
-
-        raise "GPIO.new: params must name exactly one of GPIO::IN, GPIO::OUT and GPIO::HIGH_Z"
-      end
-
-      # Pins without a converter channel are rejected while compiling.
-      def verify_adc_pin(argument_tasts)
-        pin = constant_integer(argument_tasts[0])
-        return if pin.nil? || ADC_CHANNEL_PINS.include?(pin)
-
-        raise "ADC.new: pin #{pin} has no converter channel (expected #{ADC_CHANNEL_PINS})"
-      end
-
-      def constant_integer(node)
-        return nil if node.nil?
-        return @tast.children_of(node)[0] if @tast.node_type(node) == :integer
-        return nil unless @tast.node_type(node) == :call
-
-        receiver, callee, arguments = @tast.children_of(node)
-        return nil unless callee[:kind] == :builtin_operator && callee[:name] == :|
-
-        left = constant_integer(receiver)
-        right = constant_integer(arguments[0])
-        left && right && (left | right)
       end
 
       # A fixed key set: every declared keyword becomes a
@@ -1102,7 +929,7 @@ module BareRubyProt
       end
 
       def infer_binding_method_call(receiver_tast, class_name, name, argument_tasts, span)
-        signature = PERIPHERALS.fetch(class_name)[:methods].fetch(name)
+        signature = Peripheral[class_name].method_signature(name)
         callee = @tast.create_callee(
           :binding_method, class_name, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
@@ -1120,7 +947,7 @@ module BareRubyProt
       end
 
       def infer_module_function_call(module_name, name, arguments, env:, self_class:, span:)
-        signature = PERIPHERAL_MODULES.fetch(module_name).fetch(name)
+        signature = BindingFunction.of_module(module_name, name)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         callee = @tast.create_callee(
           :binding_function, module_name, name, signature[:function],
@@ -1130,7 +957,7 @@ module BareRubyProt
       end
 
       def infer_binding_function_call(name, arguments, env:, self_class:, span:)
-        signature = PERIPHERAL_FUNCTIONS.fetch(name)
+        signature = BindingFunction.bare(name)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
         callee = @tast.create_callee(
           :binding_function, nil, name, signature[:function],
