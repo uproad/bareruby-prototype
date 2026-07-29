@@ -334,10 +334,12 @@ beside it in `pass/pass_12_cpp_source_generator/`, one file per area — the run
 the binding declarations, the hosted implementations, the pico-sdk implementations, and
 the three on-board LED implementations. Each of those files also names its own
 translation units: the name a piece of C++ is written under belongs with that C++ and
-nowhere else. The pass asks each of them for its files, keeps the ones the targets call
-for, and adds what it generates from the program itself — `main.cpp`, the manifest and
-`CMakeLists.txt`. All of it was one file until the C++ grew to two thirds of it, which is
-a poor place to read either from.
+nowhere else. Beside them sits how the second stage builds each kind of machine — one g++
+invocation for the host, pico-sdk through cmake for a board — so a toolchain is described
+in one place rather than woven through the pass. What is left of the pass reads the
+program: it asks each source for its files, keeps the ones this program reaches for, and
+generates `main.cpp` from the low-level IR. All of it was one file until the C++ grew to
+two thirds of it, which is a poor place to read any of it from.
 
 ## Second stage: hosted
 
