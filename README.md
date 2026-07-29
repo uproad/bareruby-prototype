@@ -332,9 +332,10 @@ Most of the C++ that lands in `build/` is carried by this repository rather than
 line by line by the compiler. It belongs to the last pass and to nothing else, so it sits
 beside it in `pass/pass_12_cpp_source_generator/`, one file per area — the runtime proper,
 the binding declarations, the hosted implementations, the pico-sdk implementations, and
-the three on-board LED implementations. `source_set.rb` there answers which of them a
-build is given, from the targets and from whether the program lights the LED, and the
-pass adds only what it generates from the program itself: `main.cpp`, the manifest and
+the three on-board LED implementations. Each of those files also names its own
+translation units: the name a piece of C++ is written under belongs with that C++ and
+nowhere else. The pass asks each of them for its files, keeps the ones the targets call
+for, and adds what it generates from the program itself — `main.cpp`, the manifest and
 `CMakeLists.txt`. All of it was one file until the C++ grew to two thirds of it, which is
 a poor place to read either from.
 
