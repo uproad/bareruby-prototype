@@ -5,6 +5,7 @@ require_relative "pass_05_type_inferrer/class_definition"
 require_relative "pass_05_type_inferrer/peripheral"
 require_relative "pass_05_type_inferrer/binding_function"
 require_relative "pass_05_type_inferrer/type_union"
+require_relative "pass_05_type_inferrer/type_environment"
 require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
@@ -38,9 +39,9 @@ module BareRubyProt
         @classes = ClassDefinition.declared_in(@bareruby_ast.program_body, @bareruby_ast)
 
         @local_bindings = {}
-        env = {}
+        environment = TypeEnvironment.new(@tast)
         typed = @bareruby_ast.program_body.map do |statement|
-          definition?(statement) ? statement : infer_node(statement, env:, self_class: nil)
+          definition?(statement) ? statement : infer_node(statement, environment:)
         end
 
         body = @bareruby_ast.program_body.zip(typed).filter_map do |original, typed_statement|
@@ -140,7 +141,10 @@ module BareRubyProt
           @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0], argument_types[index])
         end
         bindings.each { |binding| @local_bindings[binding[:name]] = binding }
-        env = bindings.each_with_index.to_h { |binding, index| [binding[:name], [binding, argument_types[index]]] }
+        environment = TypeEnvironment.new(
+          @tast, self_class: method_info.owner,
+          bindings: bindings.each_with_index.to_h { |binding, index| [binding[:name], [binding, argument_types[index]]] }
+        )
         # Recorded before the body is inferred, because a bare super inside it forwards
         # these very parameters.
         method_info.parameter_types = argument_types
@@ -152,7 +156,7 @@ module BareRubyProt
         # A method initialize calls is part of initialising: what it assigns is assigned
         # before the object is anyone else's to look at.
         @initializing = enclosing_initializing || method_info.name == :initialize
-        typed_body = infer_body(method_info.body, env:, self_class: method_info.owner)
+        typed_body = infer_body(method_info.body, environment:)
         finalize_initialize_ivars(method_info.owner, typed_body) if method_info.name == :initialize
         @initializing = enclosing_initializing
         @current_method = enclosing
@@ -260,11 +264,11 @@ module BareRubyProt
         end
       end
 
-      def infer_body(statements, env:, self_class:)
-        statements.map { |statement| infer_node(statement, env:, self_class:) }
+      def infer_body(statements, environment:)
+        statements.map { |statement| infer_node(statement, environment:) }
       end
 
-      def infer_node(node, env:, self_class:)
+      def infer_node(node, environment:)
         case @bareruby_ast.node_type(node)
         when :integer then infer_integer(node)
         when :nil then @tast.create_nil(span_of(node))
@@ -272,17 +276,17 @@ module BareRubyProt
         when :boolean then infer_boolean(node)
         when :string then infer_string(node)
         when :symbol then infer_symbol(node)
-        when :super then infer_super(node, env:, self_class:)
-        when :begin then infer_begin(node, env:, self_class:)
+        when :super then infer_super(node, environment:)
+        when :begin then infer_begin(node, environment:)
         when :constant_path then infer_constant_path(node)
-        when :if then infer_if(node, env:, self_class:)
-        when :while then infer_while(node, env:, self_class:)
-        when :logical then infer_logical(node, env:, self_class:)
-        when :reference then infer_reference(node, env:, self_class:)
-        when :assignment then infer_assignment(node, env:, self_class:)
-        when :array then infer_array(node, env:, self_class:)
-        when :call then infer_call(node, env:, self_class:)
-        when :return then infer_return(node, env:, self_class:)
+        when :if then infer_if(node, environment:)
+        when :while then infer_while(node, environment:)
+        when :logical then infer_logical(node, environment:)
+        when :reference then infer_reference(node, environment:)
+        when :assignment then infer_assignment(node, environment:)
+        when :array then infer_array(node, environment:)
+        when :call then infer_call(node, environment:)
+        when :return then infer_return(node, environment:)
         when :iteration_control then infer_iteration_control(node)
         end
       end
@@ -305,17 +309,17 @@ module BareRubyProt
 
       # begin/rescue lowers to try/catch. Only the untyped rescue form is handled: an
       # exception class hierarchy is still undecided, so nothing here invents one.
-      def infer_begin(node, env:, self_class:)
+      def infer_begin(node, environment:)
         body, rescue_body = @bareruby_ast.children_of(node)
         @tast.create_begin(
-          infer_body(body, env:, self_class:), infer_body(rescue_body, env:, self_class:), span_of(node)
+          infer_body(body, environment:), infer_body(rescue_body, environment:), span_of(node)
         )
       end
 
       # raise degrades to panic when the program has no begin at all, and throws
       # otherwise. Only the string form is accepted; the other forms are not settled.
-      def infer_raise_call(arguments, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| text_of(argument, env:, self_class:) }
+      def infer_raise_call(arguments, environment:, span:)
+        argument_tasts = arguments.map { |argument| text_of(argument, environment:) }
         function = @rescues_present ? :bareruby_throw : :bareruby_panic
         callee = @tast.create_callee(:builtin_function, nil, :raise, function, %i[String], :NoReturn)
         @tast.create_call(nil, callee, argument_tasts, nil, :NoReturn, span)
@@ -323,7 +327,7 @@ module BareRubyProt
 
       # super is a static call to the definition this one shadowed. No arguments means
       # forward the ones the method received.
-      def infer_super(node, env:, self_class:)
+      def infer_super(node, environment:)
         ancestor = @current_method.ancestor
         arguments = @bareruby_ast.children_of(node)[0]
         argument_tasts =
@@ -331,7 +335,7 @@ module BareRubyProt
             @current_method.parameter_bindings.zip(@current_method.parameter_types)
                            .map { |binding, type| @tast.create_reference(binding, type, span_of(node)) }
           else
-            arguments.map { |argument| infer_node(argument, env:, self_class:) }
+            arguments.map { |argument| infer_node(argument, environment:) }
           end
 
         resolved = resolve_method_call(ancestor, argument_types(argument_tasts))
@@ -350,9 +354,9 @@ module BareRubyProt
       # The element type is the least upper bound of the elements, so a literal that mixes
       # types with no common widening is an error here rather than something the backend
       # has to represent.
-      def infer_array(node, env:, self_class:)
+      def infer_array(node, environment:)
         elements = @bareruby_ast.children_of(node)[0].map do |element|
-          infer_node(element, env:, self_class:)
+          infer_node(element, environment:)
         end
         types = argument_types(elements)
         unless types.uniq.one? || types.all? { |element| TypeUnion::WIDTHS.include?(element) }
@@ -366,20 +370,20 @@ module BareRubyProt
       # The capacity must be settled while compiling. The initial value may be left out, in
       # which case the storage is not written and the element type comes from the first
       # assignment instead.
-      def infer_array_new_call(arguments, env:, self_class:, span:)
-        capacity = constant_capacity(arguments[0], env:, self_class:)
+      def infer_array_new_call(arguments, environment:, span:)
+        capacity = constant_capacity(arguments[0], environment:)
         raise "Array.new: the capacity must be known at compile time" if capacity.nil?
         return @tast.create_array_fill(nil, @tast.create_array_type(nil, capacity), span) if arguments.length < 2
 
-        value = infer_node(arguments[1], env:, self_class:)
+        value = infer_node(arguments[1], environment:)
         @tast.create_array_fill(value, @tast.create_array_type(@tast.value_type(value), capacity), span)
       end
 
-      def constant_capacity(node, env:, self_class:)
+      def constant_capacity(node, environment:)
         return nil if node.nil?
         return @constant_locals[@bareruby_ast.children_of(node)[1]] if reference_to_local?(node)
 
-        @tast.constant_integer(infer_node(node, env:, self_class:))
+        @tast.constant_integer(infer_node(node, environment:))
       end
 
       def reference_to_local?(node)
@@ -394,21 +398,20 @@ module BareRubyProt
       # A missing else is the Nil branch. Branch-local environments preserve the
       # truthiness fact while each arm is inferred, then merge back into a T? where one
       # path has Nil or never assigned a new local.
-      def infer_if(node, env:, self_class:)
+      def infer_if(node, environment:)
         condition, then_body, else_body = @bareruby_ast.children_of(node)
-        condition_tast = infer_node(condition, env:, self_class:)
-        base_env = env.dup
-        then_env = base_env.dup
-        else_env = base_env.dup
-        narrow_condition!(condition_tast, then_env, truthy: true)
-        narrow_condition!(condition_tast, else_env, truthy: false)
+        condition_tast = infer_node(condition, environment:)
+        then_environment = environment.branched
+        else_environment = environment.branched
+        then_environment.narrow(condition_tast, truthy: true)
+        else_environment.narrow(condition_tast, truthy: false)
 
-        then_tast = infer_body(then_body, env: then_env, self_class:)
-        else_tast = else_body && infer_body(else_body, env: else_env, self_class:)
+        then_tast = infer_body(then_body, environment: then_environment)
+        else_tast = else_body && infer_body(else_body, environment: else_environment)
         then_type = branch_type(then_tast)
         else_type = else_tast ? branch_type(else_tast) : :Nil
-        merge_branch_env!(env, then_env, else_env,
-                          left_reachable: then_type != :NoReturn, right_reachable: else_type != :NoReturn)
+        environment.merge_branch(then_environment, else_environment,
+                                 left_reachable: then_type != :NoReturn, right_reachable: else_type != :NoReturn)
         type = TypeUnion.of(@tast, then_type, else_type)
         @tast.create_if(condition_tast, then_tast, else_tast, type, span_of(node))
       end
@@ -422,23 +425,23 @@ module BareRubyProt
 
       def terminator?(node) = %i[return iteration_control].include?(@tast.node_type(node))
 
-      def infer_while(node, env:, self_class:)
+      def infer_while(node, environment:)
         condition, body = @bareruby_ast.children_of(node)
-        condition_tast = infer_node(condition, env:, self_class:)
-        body_env = env.dup
-        narrow_condition!(condition_tast, body_env, truthy: true)
-        typed_body = infer_body(body, env: body_env, self_class:)
-        narrow_condition!(condition_tast, env, truthy: false)
-        merge_loop_env!(env, body_env)
+        condition_tast = infer_node(condition, environment:)
+        body_environment = environment.branched
+        body_environment.narrow(condition_tast, truthy: true)
+        typed_body = infer_body(body, environment: body_environment)
+        environment.narrow(condition_tast, truthy: false)
+        environment.merge_loop(body_environment)
         @tast.create_while(condition_tast, typed_body, span_of(node))
       end
 
-      def infer_logical(node, env:, self_class:)
+      def infer_logical(node, environment:)
         operator, left, right = @bareruby_ast.children_of(node)
-        left_tast = infer_node(left, env:, self_class:)
-        right_env = env.dup
-        narrow_condition!(left_tast, right_env, truthy: operator == :and)
-        right_tast = infer_node(right, env: right_env, self_class:)
+        left_tast = infer_node(left, environment:)
+        right_environment = environment.branched
+        right_environment.narrow(left_tast, truthy: operator == :and)
+        right_tast = infer_node(right, environment: right_environment)
         left_type = @tast.value_type(left_tast)
         right_type = @tast.value_type(right_tast)
         type =
@@ -454,73 +457,32 @@ module BareRubyProt
         @tast.create_logical(operator, left_tast, right_tast, type, span_of(node))
       end
 
-      def narrow_condition!(condition, env, truthy:)
-        binding, type =
-          case @tast.node_type(condition)
-          when :reference
-            @tast.children_of(condition)
-          when :assignment
-            assignment_binding, _value, assignment_type = @tast.children_of(condition)
-            [assignment_binding, assignment_type]
-          end
-        return unless binding && binding[:kind] == :local && TypeUnion.nilable?(type)
-
-        env[binding[:name]] = [binding, truthy ? type[:inner] : :Nil]
-      end
-
-      def merge_branch_env!(env, left, right, left_reachable: true, right_reachable: true)
-        return env.replace(left) unless right_reachable
-        return env.replace(right) unless left_reachable
-        return unless left_reachable || right_reachable
-
-        (left.keys | right.keys).each do |name|
-          left_entry = left[name]
-          right_entry = right[name]
-          binding = (left_entry || right_entry)[0]
-          type = TypeUnion.of(@tast, left_entry ? left_entry[1] : :Nil, right_entry ? right_entry[1] : :Nil)
-          binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], type) : type
-          env[name] = [binding, type]
-        end
-      end
-
-      # The body may execute zero times. Only names introduced by it need a new Nil path;
-      # existing names retain the type known at loop exit, while their binding storage has
-      # already absorbed any types assigned in the body.
-      def merge_loop_env!(env, body_env)
-        (body_env.keys - env.keys).each do |name|
-          binding, body_type = body_env.fetch(name)
-          type = TypeUnion.of(@tast, :Nil, body_type)
-          binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], type) : type
-          env[name] = [binding, type]
-        end
-      end
-
       def infer_constant_path(node)
         owner, name = @bareruby_ast.children_of(node)
         value = Peripheral[owner].constant(name)
         @tast.create_integer(value, TypeUnion.literal(value), span_of(node))
       end
 
-      def infer_reference(node, env:, self_class:)
+      def infer_reference(node, environment:)
         kind, name = @bareruby_ast.children_of(node)
         case kind
         when :local
-          binding, type = env.fetch(name)
+          binding, type = environment.fetch(name)
           @tast.create_reference(binding, type, span_of(node))
         when :instance
-          type = @classes.fetch(self_class).ivar_type(name)
+          type = @classes.fetch(environment.self_class).ivar_type(name)
           binding = @tast.create_binding(:instance, name, type)
           @tast.create_reference(binding, type, span_of(node))
         end
       end
 
-      def infer_assignment(node, env:, self_class:)
+      def infer_assignment(node, environment:)
         target, value = @bareruby_ast.children_of(node)
         value_tast =
           if @bareruby_ast.node_type(value) == :interpolation
-            infer_format(value, env:, self_class:)
+            infer_format(value, environment:)
           else
-            infer_node(value, env:, self_class:)
+            infer_node(value, environment:)
           end
         value_type = @tast.value_type(value_tast)
         kind, name = @bareruby_ast.children_of(target)
@@ -531,9 +493,9 @@ module BareRubyProt
         when :local
           binding = @local_bindings[name] ||= binding
           binding[:type] = binding[:type] ? TypeUnion.of(@tast, binding[:type], value_type) : value_type
-          env[name] = [binding, value_type]
+          environment.bind(name, binding, value_type)
         when :instance
-          class_definition = @classes.fetch(self_class)
+          class_definition = @classes.fetch(environment.self_class)
           storage_type = class_definition.ivar?(name) ? TypeUnion.of(@tast, class_definition.ivar_type(name), value_type) : value_type
           unless @initializing || class_definition.initialized?(name)
             storage_type = TypeUnion.of(@tast, :Nil, storage_type)
@@ -545,9 +507,9 @@ module BareRubyProt
         @tast.create_assignment(binding, value_tast, value_type, span_of(node))
       end
 
-      def infer_return(node, env:, self_class:)
+      def infer_return(node, environment:)
         value = @bareruby_ast.children_of(node)[0]
-        value_tast = value && infer_node(value, env:, self_class:)
+        value_tast = value && infer_node(value, environment:)
         @tast.create_return(value_tast, value_tast ? @tast.value_type(value_tast) : :Nil, span_of(node))
       end
 
@@ -555,62 +517,62 @@ module BareRubyProt
         @tast.create_iteration_control(@bareruby_ast.children_of(node)[0], span_of(node))
       end
 
-      def infer_call(node, env:, self_class:)
+      def infer_call(node, environment:)
         receiver, name, arguments, block = @bareruby_ast.children_of(node)
         span = span_of(node)
 
         if receiver.nil?
           case name
-          when :puts then infer_puts_call(arguments, env:, self_class:, span:)
-          when :loop then infer_loop_call(block, env:, self_class:, span:)
-          when :raise then infer_raise_call(arguments, env:, self_class:, span:)
-          when :arena then infer_arena_call(arguments, block, env:, self_class:, span:)
+          when :puts then infer_puts_call(arguments, environment:, span:)
+          when :loop then infer_loop_call(block, environment:, span:)
+          when :raise then infer_raise_call(arguments, environment:, span:)
+          when :arena then infer_arena_call(arguments, block, environment:, span:)
           else
             if BindingFunction.bare?(name)
-              infer_binding_function_call(name, arguments, env:, self_class:, span:)
+              infer_binding_function_call(name, arguments, environment:, span:)
             else
-              infer_self_method_call(name, arguments, env:, self_class:, span:)
+              infer_self_method_call(name, arguments, environment:, span:)
             end
           end
         elsif constant_receiver?(receiver) && BindingFunction.module?(@bareruby_ast.children_of(receiver)[1])
           infer_module_function_call(
-            @bareruby_ast.children_of(receiver)[1], name, arguments, env:, self_class:, span:
+            @bareruby_ast.children_of(receiver)[1], name, arguments, environment:, span:
           )
         elsif constant_receiver?(receiver) && name == :new
           class_name = @bareruby_ast.children_of(receiver)[1]
           if class_name == :Array
-            infer_array_new_call(arguments, env:, self_class:, span:)
+            infer_array_new_call(arguments, environment:, span:)
           elsif class_name == :Arena
-            infer_arena_new_call(arguments, env:, self_class:, span:)
+            infer_arena_new_call(arguments, environment:, span:)
           elsif Peripheral.known?(class_name)
-            infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
+            infer_binding_new_call(class_name, arguments, environment:, span:)
           else
-            infer_new_call(class_name, arguments, env:, self_class:, span:)
+            infer_new_call(class_name, arguments, environment:, span:)
           end
         else
-          receiver_tast = infer_node(receiver, env:, self_class:)
+          receiver_tast = infer_node(receiver, environment:)
           receiver_type = @tast.value_type(receiver_tast)
 
           if name == :nil?
             infer_nil_predicate(receiver_tast, receiver_type, span)
           elsif array_type?(receiver_type)
-            infer_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
+            infer_array_method_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
           elsif ArenaArray.type?(receiver_type)
-            infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
+            infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
           elsif ArenaString.type?(receiver_type)
-            infer_arena_string_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
+            infer_arena_string_method_call(name, receiver_tast, arguments, environment:, span:)
           elsif Arena.type?(receiver_type)
-            infer_arena_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
+            infer_arena_method_call(name, receiver_tast, arguments, environment:, span:)
           elsif Fixed.conversion?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
           elsif operator?(name)
-            infer_operator_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
+            infer_operator_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
           elsif RECEIVER_ITERATOR_NAMES.include?(name)
-            infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, env:, self_class:, span:)
+            infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, environment:, span:)
           elsif receiver_type.is_a?(Hash) && receiver_type[:class_name] == :GPIO && name == :on_interrupt
-            infer_gpio_interrupt_call(receiver_tast, arguments, block, env:, self_class:, span:)
+            infer_gpio_interrupt_call(receiver_tast, arguments, block, environment:, span:)
           else
-            infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
+            infer_instance_method_call(receiver_tast, receiver_type, name, arguments, environment:, span:)
           end
         end
       end
@@ -628,14 +590,14 @@ module BareRubyProt
       # size folds to the capacity because a fixed-capacity array can have no other length
       # Indexing is pointer arithmetic and is not range checked, at compile time or at run
       # time; a negative index is out of range like any other and is left alone.
-      def infer_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
+      def infer_array_method_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
         return @tast.create_array_dup(receiver_tast, receiver_type, span) if name == :dup
 
         capacity = receiver_type[:capacity]
         return @tast.create_integer(capacity, TypeUnion.literal(capacity), span) if SIZE_NAMES.include?(name)
 
-        index = infer_node(arguments[0], env:, self_class:)
-        return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
+        index = infer_node(arguments[0], environment:)
+        return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], environment:, span:) if name == :[]=
 
         element_type = receiver_type[:element]
         raise "the element type of this array is not known yet" if element_type.nil?
@@ -646,8 +608,8 @@ module BareRubyProt
       # Array.new(n) leaves the element type open, and the first assignment settles it
       # The type hash is shared with every reference to the array, so filling it in here
       # reaches all of them.
-      def infer_index_assign(receiver_tast, receiver_type, index, value_node, env:, self_class:, span:)
-        value = infer_node(value_node, env:, self_class:)
+      def infer_index_assign(receiver_tast, receiver_type, index, value_node, environment:, span:)
+        value = infer_node(value_node, environment:)
         receiver_type[:element] ||= @tast.value_type(value)
         @tast.create_index_assign(receiver_tast, index, value, receiver_type[:element], span)
       end
@@ -655,23 +617,23 @@ module BareRubyProt
       # The region is created when the block is entered and released when it is left, so
       # its size is what the whole block may allocate and has to be settled while
       # compiling: the storage is reserved statically, not taken from a heap.
-      def infer_arena_call(arguments, block, env:, self_class:, span:)
-        size = constant_capacity(keyword_value(arguments, :size), env:, self_class:)
+      def infer_arena_call(arguments, block, environment:, span:)
+        size = constant_capacity(keyword_value(arguments, :size), environment:)
         raise "arena: the size must be known at compile time" if size.nil?
 
         parameters, body = @bareruby_ast.children_of(block)
         binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
-        block_env = env.merge(binding[:name] => [binding, Arena.type(@tast)])
+        block_environment = environment.with(binding[:name], binding, Arena.type(@tast))
 
-        typed_body = inside_arena(Arena.new(binding, enclosing: @arena, outer_names: env.keys)) do
-          infer_body(body, env: block_env, self_class:)
+        typed_body = inside_arena(Arena.new(binding, enclosing: @arena, outer_names: environment.names)) do
+          infer_body(body, environment: block_environment)
         end
 
         @tast.create_arena(binding, size, typed_body, span)
       end
 
-      def infer_arena_new_call(arguments, env:, self_class:, span:)
-        size = constant_capacity(keyword_value(arguments, :size), env:, self_class:)
+      def infer_arena_new_call(arguments, environment:, span:)
+        size = constant_capacity(keyword_value(arguments, :size), environment:)
         raise "Arena.new: the size must be known at compile time" if size.nil?
 
         @tast.create_arena_new(size, Arena.type(@tast), span)
@@ -688,14 +650,14 @@ module BareRubyProt
       # The length is a run-time value: reserving room for it is the whole reason the
       # arena exists. The element type is left open and the first assignment settles it,
       # as Array.new(n) does.
-      def infer_arena_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
+      def infer_arena_method_call(name, receiver_tast, arguments, environment:, span:)
         return infer_arena_reset_call(receiver_tast, span) if name == :reset
         if name == :string
-          return infer_arena_string_call(receiver_tast, arguments.first, env:, self_class:, span:)
+          return infer_arena_string_call(receiver_tast, arguments.first, environment:, span:)
         end
         raise "an arena answers array, string and reset, not #{name}" unless name == :array
 
-        length = infer_node(arguments[0], env:, self_class:)
+        length = infer_node(arguments[0], environment:)
         @tast.create_arena_alloc(receiver_tast, length, ArenaArray.type(@tast), span)
       end
 
@@ -705,42 +667,42 @@ module BareRubyProt
       # The initial contents may be a static string, another variable-length string, or an
       # interpolation, which is the one form whose length is measured while running rather
       # than estimated while compiling.
-      def infer_arena_string_call(receiver_tast, source, env:, self_class:, span:)
+      def infer_arena_string_call(receiver_tast, source, environment:, span:)
         if formatted?(source)
-          arguments = format_arguments(receiver_tast, source, env:, self_class:, span:)
+          arguments = format_arguments(receiver_tast, source, environment:, span:)
           return string_call(:string, ArenaString::FORMAT_FUNCTION, arguments, ArenaString.type(@tast), span)
         end
 
-        initial = source ? text_of(source, env:, self_class:) : @tast.create_string("", :String, span)
+        initial = source ? text_of(source, environment:) : @tast.create_string("", :String, span)
         string_call(:string, ArenaString::NEW_FUNCTION, [receiver_tast, initial], ArenaString.type(@tast), span)
       end
 
       # Growing, joining and comparing all reach the runtime, which owns the representation:
       # nothing the backend emits knows what a string is made of.
-      def infer_arena_string_method_call(name, receiver_tast, arguments, env:, self_class:, span:)
+      def infer_arena_string_method_call(name, receiver_tast, arguments, environment:, span:)
         return receiver_tast if name == :to_s
         return string_call(name, ArenaString::LENGTH_FUNCTION, [receiver_tast], :Int32, span) if SIZE_NAMES.include?(name)
         return string_call(name, ArenaString::DUP_FUNCTION, [receiver_tast], ArenaString.type(@tast), span) if name == :dup
 
         source = arguments.first
         if name == :<< && formatted?(source)
-          appended = format_arguments(receiver_tast, source, env:, self_class:, span:)
+          appended = format_arguments(receiver_tast, source, environment:, span:)
           return string_call(name, ArenaString::APPEND_FORMAT_FUNCTION, appended, ArenaString.type(@tast), span)
         end
 
-        infer_string_operator_call(name, receiver_tast, source, env:, self_class:, span:)
+        infer_string_operator_call(name, receiver_tast, source, environment:, span:)
       end
 
-      def infer_string_operator_call(name, receiver_tast, source, env:, self_class:, span:)
+      def infer_string_operator_call(name, receiver_tast, source, environment:, span:)
         function = ArenaString.operator_function(name)
         comparison = COMPARISON_OPERATORS.include?(name)
-        arguments = [receiver_tast, text_of(source, env:, self_class:)]
+        arguments = [receiver_tast, text_of(source, environment:)]
         call = string_call(name, function, arguments, comparison ? :Bool : ArenaString.type(@tast), span)
         name == :!= ? negate(call, span) : call
       end
 
-      def format_arguments(receiver_tast, source, env:, self_class:, span:)
-        format = format_of(source, env:, self_class:)
+      def format_arguments(receiver_tast, source, environment:, span:)
+        format = format_of(source, environment:)
         [receiver_tast, @tast.create_string(format.text, :String, span)] + format.values
       end
 
@@ -756,7 +718,7 @@ module BareRubyProt
         @tast.create_call(nil, callee, arguments, nil, return_type, span)
       end
 
-      def text_of(node, env:, self_class:) = ArenaString.bytes_of(@tast, infer_node(node, env:, self_class:))
+      def text_of(node, environment:) = ArenaString.bytes_of(@tast, infer_node(node, environment:))
 
       # A variable-length string reaches everything that takes a static string — puts, a
       # UART, a format value, another string — through the bytes the region holds.
@@ -767,11 +729,11 @@ module BareRubyProt
 
       # size is a field rather than a folded constant, because an arena array is the one
       # array whose length the compiler does not know.
-      def infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
+      def infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
         return @tast.create_arena_length(receiver_tast, :Int32, span) if SIZE_NAMES.include?(name)
 
-        index = infer_node(arguments[0], env:, self_class:)
-        return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], env:, self_class:, span:) if name == :[]=
+        index = infer_node(arguments[0], environment:)
+        return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], environment:, span:) if name == :[]=
 
         element_type = receiver_type[:element]
         raise "the element type of this arena array is not known yet" if element_type.nil?
@@ -798,9 +760,9 @@ module BareRubyProt
           @bareruby_ast.children_of(receiver)[0] == :constant
       end
 
-      def infer_self_method_call(name, arguments, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
-        resolved = resolve_method_call(method_named(self_class, name), argument_types(argument_tasts))
+      def infer_self_method_call(name, arguments, environment:, span:)
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
+        resolved = resolve_method_call(method_named(environment.self_class, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
           :user_method, resolved.owner, name, function_name(resolved.owner, name),
           resolved.parameter_types, resolved.return_type
@@ -808,31 +770,31 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, resolved.return_type, span)
       end
 
-      def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, env:, self_class:, span:)
+      def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, environment:, span:)
         class_name = receiver_type[:class_name]
         if Peripheral.known?(class_name)
           if class_name == :UART && %i[read gets].include?(name)
             return infer_uart_receive_call(
-              receiver_tast, name, arguments, env:, self_class:, span:
+              receiver_tast, name, arguments, environment:, span:
             )
           end
           if class_name == :I2C && %i[read write].include?(name)
-            return infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
+            return infer_i2c_call(receiver_tast, name, arguments, environment:, span:)
           end
 
           signature = Peripheral[class_name].method_signature(name)
           printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)
             return infer_printf_call(
-              printf_function, receiver_tast, arguments.first, env:, self_class:, span:
+              printf_function, receiver_tast, arguments.first, environment:, span:
             )
           end
 
-          argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+          argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
           return infer_binding_method_call(receiver_tast, class_name, name, argument_tasts, span)
         end
 
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
 
         resolved = resolve_method_call(method_named(class_name, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
@@ -845,10 +807,10 @@ module BareRubyProt
       # A received string belongs to the innermost active region. The region is an
       # implementation argument only: the Ruby call keeps the standard UART read/gets
       # shape while the generated binding receives somewhere to put the bytes.
-      def infer_uart_receive_call(receiver_tast, name, arguments, env:, self_class:, span:)
+      def infer_uart_receive_call(receiver_tast, name, arguments, environment:, span:)
         signature = Peripheral[:UART].method_signature(name)
         arena = current_arena(span)
-        argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, environment:) }
         callee = @tast.create_callee(
           :binding_method, :UART, name, signature[:function],
           argument_types(argument_tasts), ArenaString.type(@tast)
@@ -858,10 +820,10 @@ module BareRubyProt
 
       # I2C uses the current region both for a read result and for the temporary byte
       # sequence that makes heterogeneous write arguments one bus transaction.
-      def infer_i2c_call(receiver_tast, name, arguments, env:, self_class:, span:)
+      def infer_i2c_call(receiver_tast, name, arguments, environment:, span:)
         signature = Peripheral[:I2C].method_signature(name)
         argument_tasts = [current_arena(span)] +
-                         arguments.map { |argument| infer_node(argument, env:, self_class:) }
+                         arguments.map { |argument| infer_node(argument, environment:) }
         return_type = name == :read ? ArenaString.type(@tast) : :Int32
         callee = @tast.create_callee(
           :binding_i2c, :I2C, name, signature[:function],
@@ -880,8 +842,8 @@ module BareRubyProt
         @arena = enclosing
       end
 
-      def infer_new_call(class_name, arguments, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+      def infer_new_call(class_name, arguments, environment:, span:)
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
         types = argument_types(argument_tasts)
         resolve_method_call(method_named(class_name, :initialize), types)
         instance_type = @tast.create_instance_type(class_name)
@@ -891,9 +853,9 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, instance_type, span)
       end
 
-      def infer_binding_new_call(class_name, arguments, env:, self_class:, span:)
+      def infer_binding_new_call(class_name, arguments, environment:, span:)
         peripheral = Peripheral[class_name]
-        argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, env:, self_class:, span:)
+        argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, environment:, span:)
         peripheral.verify(argument_tasts, @tast)
         instance_type = peripheral.instance_type(@tast)
         callee = @tast.create_callee(
@@ -905,7 +867,7 @@ module BareRubyProt
 
       # A fixed key set: every declared keyword becomes a
       # trailing positional parameter, in declaration order, defaulted when absent.
-      def resolve_keywords(arguments, keywords, env:, self_class:, span:)
+      def resolve_keywords(arguments, keywords, environment:, span:)
         positional, keyword_nodes = arguments.partition do |argument|
           @bareruby_ast.node_type(argument) != :keyword_argument
         end
@@ -914,10 +876,10 @@ module BareRubyProt
           [name, value]
         end
 
-        tasts = positional.map { |argument| infer_node(argument, env:, self_class:) }
+        tasts = positional.map { |argument| infer_node(argument, environment:) }
         keywords.each do |name, default|
           value = supplied[name]
-          tasts << (value ? infer_node(value, env:, self_class:) : @tast.create_integer(default, TypeUnion.literal(default), span))
+          tasts << (value ? infer_node(value, environment:) : @tast.create_integer(default, TypeUnion.literal(default), span))
         end
         tasts
       end
@@ -932,17 +894,17 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, arguments, nil, signature[:return_type], span)
       end
 
-      def infer_gpio_interrupt_call(receiver_tast, arguments, block, env:, self_class:, span:)
-        events = resolve_keywords(arguments, { edge: 0 }, env:, self_class:, span:).first
+      def infer_gpio_interrupt_call(receiver_tast, arguments, block, environment:, span:)
+        events = resolve_keywords(arguments, { edge: 0 }, environment:, span:).first
         parameters, body = @bareruby_ast.children_of(block)
-        typed_body = infer_body(body, env: {}, self_class:)
+        typed_body = infer_body(body, environment: environment.without_locals)
         typed_block = @tast.create_block(parameters, typed_body, :Nil, span_of(block))
         @tast.create_interrupt(receiver_tast, events, typed_block, :Nil, span)
       end
 
-      def infer_module_function_call(module_name, name, arguments, env:, self_class:, span:)
+      def infer_module_function_call(module_name, name, arguments, environment:, span:)
         signature = BindingFunction.of_module(module_name, name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
         callee = @tast.create_callee(
           :binding_function, module_name, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
@@ -950,9 +912,9 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, signature[:return_type], span)
       end
 
-      def infer_binding_function_call(name, arguments, env:, self_class:, span:)
+      def infer_binding_function_call(name, arguments, environment:, span:)
         signature = BindingFunction.bare(name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
         callee = @tast.create_callee(
           :binding_function, nil, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
@@ -995,8 +957,8 @@ module BareRubyProt
           COMPARISON_OPERATORS.include?(name) || name == :!
       end
 
-      def infer_operator_call(name, receiver_tast, receiver_type, arguments, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+      def infer_operator_call(name, receiver_tast, receiver_type, arguments, environment:, span:)
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
         if Fixed.type?(receiver_type) || argument_tasts.any? { |a| Fixed.type?(@tast.value_type(a)) }
           return infer_fixed_operator_call(name, receiver_tast, argument_tasts, span)
         end
@@ -1013,27 +975,27 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, result_type, span)
       end
 
-      def infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
+      def infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, environment:, span:)
+        argument_tasts = arguments.map { |argument| infer_node(argument, environment:) }
         element_type = name == :upto ? TypeUnion.widest(receiver_type, @tast.value_type(argument_tasts.first)) : receiver_type
-        block_tast = block && infer_iterator_block(block, element_type, env:, self_class:)
+        block_tast = block && infer_iterator_block(block, element_type, environment:)
         callee = @tast.create_callee(:builtin_iterator, nil, name, nil, argument_types(argument_tasts), :Nil)
         @tast.create_call(receiver_tast, callee, argument_tasts, block_tast, :Nil, span)
       end
 
-      def infer_loop_call(block, env:, self_class:, span:)
-        block_tast = block && infer_iterator_block(block, nil, env:, self_class:)
+      def infer_loop_call(block, environment:, span:)
+        block_tast = block && infer_iterator_block(block, nil, environment:)
         callee = @tast.create_callee(:builtin_iterator, nil, :loop, nil, [], :Nil)
         @tast.create_call(nil, callee, [], block_tast, :Nil, span)
       end
 
       # puts is expanded at compile time: an interpolation becomes a format string plus
       # its values, with no intermediate buffer.
-      def infer_puts_call(arguments, env:, self_class:, span:)
+      def infer_puts_call(arguments, environment:, span:)
         argument = arguments.first
-        return infer_printf_call(:bareruby_printf, nil, argument, env:, self_class:, span:) if formatted?(argument)
+        return infer_printf_call(:bareruby_printf, nil, argument, environment:, span:) if formatted?(argument)
 
-        argument_tasts = arguments.map { |a| text_of(a, env:, self_class:) }
+        argument_tasts = arguments.map { |a| text_of(a, environment:) }
         callee = @tast.create_callee(
           :builtin_puts, nil, :puts, puts_function(argument_tasts), argument_types(argument_tasts), :Nil
         )
@@ -1042,8 +1004,8 @@ module BareRubyProt
 
       def formatted?(node) = !node.nil? && @bareruby_ast.interpolation?(node)
 
-      def infer_printf_call(function, receiver_tast, node, env:, self_class:, span:)
-        format = format_of(node, env:, self_class:)
+      def infer_printf_call(function, receiver_tast, node, environment:, span:)
+        format = format_of(node, environment:)
         arguments = [@tast.create_string("#{format.text}\n", :String, span_of(node))] + format.values
         kind = receiver_tast ? :binding_printf : :builtin_printf
         callee = @tast.create_callee(kind, nil, :printf, function, argument_types(arguments), :Nil)
@@ -1053,27 +1015,27 @@ module BareRubyProt
       # An interpolation outside a puts argument becomes a fixed-capacity buffer plus a
       # compile-time bound on what can land in it. An arena string is the way out of that
       # estimate: a.string("...") measures the rendering while running instead.
-      def infer_format(node, env:, self_class:)
-        format = format_of(node, env:, self_class:)
+      def infer_format(node, environment:)
+        format = format_of(node, environment:)
         @tast.create_format(
           format.capacity, @tast.create_string(format.text, :String, span_of(node)),
           format.values, :String, span_of(node)
         )
       end
 
-      def format_of(node, env:, self_class:)
-        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
+      def format_of(node, environment:)
+        parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, environment:) }
         PrintfFormat.new(parts, @tast)
       end
 
-      def infer_iterator_block(block_node, element_type, env:, self_class:)
+      def infer_iterator_block(block_node, element_type, environment:)
         parameters, body = @bareruby_ast.children_of(block_node)
-        block_env = env.dup
+        block_environment = environment.branched
         bindings = parameters.map do |parameter|
           @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
         end
-        bindings.each { |binding| block_env[binding[:name]] = [binding, element_type] }
-        typed_body = infer_body(body, env: block_env, self_class:)
+        bindings.each { |binding| block_environment.bind(binding[:name], binding, element_type) }
+        typed_body = infer_body(body, environment: block_environment)
         typed_parameters = bindings.zip(parameters).map do |binding, parameter|
           @tast.create_parameter(binding, element_type, span_of(parameter))
         end
