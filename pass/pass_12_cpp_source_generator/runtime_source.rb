@@ -386,5 +386,14 @@ module BareRubyProt
           va_end(arguments);
       }
     CPP
+
+    FILES = {
+      "bareruby_runtime.h" => HEADER,
+      "bareruby_runtime_fixed.cpp" => FIXED,
+      "bareruby_runtime_arena.cpp" => ARENA,
+      "bareruby_runtime_string.cpp" => STRING,
+      "bareruby_runtime_throw.cpp" => THROW,
+      "bareruby_runtime_stdio.cpp" => STDIO
+    }.freeze
   end
 end

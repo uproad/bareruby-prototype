@@ -84,5 +84,18 @@ module BareRubyProt
           bareruby_onboard_led_write(self, 0);
       }
     CPP
+
+    # The on-board LED is the one peripheral whose implementation two boards of the same
+    # chip disagree about, so it is split by the target's answer rather than by the kind
+    # of machine. A build takes exactly one of the three.
+    IMPLEMENTATIONS = {
+      host: ["bareruby_binding_onboard_led_host.cpp", HOST],
+      pin: ["bareruby_binding_onboard_led_pin.cpp", PIN],
+      wireless: ["bareruby_binding_onboard_led_wireless.cpp", WIRELESS]
+    }.freeze
+
+    def self.files(led) = { file_name(led) => IMPLEMENTATIONS.fetch(led)[1] }
+
+    def self.file_name(led) = IMPLEMENTATIONS.fetch(led)[0]
   end
 end

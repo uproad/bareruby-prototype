@@ -290,5 +290,12 @@ module BareRubyProt
           return result;
       }
     CPP
+
+    FILES = {
+      "bareruby_binding_host.cpp" => PERIPHERAL,
+      "bareruby_binding_uart_receive_host.cpp" => UART_RECEIVE,
+      "bareruby_binding_i2c_host.cpp" => I2C,
+      "bareruby_binding_i2c_read_host.cpp" => I2C_READ
+    }.freeze
   end
 end

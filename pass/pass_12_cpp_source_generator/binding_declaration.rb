@@ -108,5 +108,7 @@ module BareRubyProt
 
       #endif
     CPP
+
+    FILES = { "bareruby_binding.h" => HEADER }.freeze
   end
 end

@@ -303,5 +303,15 @@ module BareRubyProt
           return result;
       }
     CPP
+
+    # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
+    # through pico-sdk, which spells them the same way whichever chip is underneath.
+    # Only the board name handed to the SDK tells the two apart.
+    FILES = {
+      "bareruby_binding_pico.cpp" => PERIPHERAL,
+      "bareruby_binding_uart_receive_pico.cpp" => UART_RECEIVE,
+      "bareruby_binding_i2c_pico.cpp" => I2C,
+      "bareruby_binding_i2c_read_pico.cpp" => I2C_READ
+    }.freeze
   end
 end

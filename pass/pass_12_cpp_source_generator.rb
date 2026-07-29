@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
-require_relative "pass_12_cpp_source_generator/source_set"
+require_relative "pass_12_cpp_source_generator/runtime_source"
+require_relative "pass_12_cpp_source_generator/binding_declaration"
+require_relative "pass_12_cpp_source_generator/host_binding_source"
+require_relative "pass_12_cpp_source_generator/onboard_led_source"
+require_relative "pass_12_cpp_source_generator/pico_binding_source"
 
 module BareRubyProt
   module Pass
@@ -18,17 +22,21 @@ module BareRubyProt
         @debug = debug
         @exceptions = exceptions
         @stdout_notice = false
-        @source_set = SourceSet.new(targets:, onboard_led: lights_onboard_led?)
       end
 
       def run
-        @result = @source_set.files
+        @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
+        @result.merge!(HostBindingSource::FILES) if @targets.any?(&:hosted?)
+        @result.merge!(PicoBindingSource::FILES) unless @targets.all?(&:hosted?)
+        if lights_onboard_led?
+          @targets.each { |target| @result.merge!(OnboardLedSource.files(target.led)) }
+        end
         @targets.each { |target| @result.merge!(target_sources(target)) }
 
         self
       end
 
-      def onboard_led_source_of(target) = @source_set.onboard_led_file_name(target)
+      def onboard_led_source_of(target) = OnboardLedSource.file_name(target.led)
 
       # A program that never lights the LED links none of this, which matters most on a
       # wireless board: reaching that LED means uploading the radio's firmware.
