@@ -2,6 +2,7 @@
 
 require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
+require_relative "pass_09_lir_generator/i2c_payload"
 require_relative "pass_09_lir_generator/function_scope"
 
 module BareRubyProt
@@ -765,7 +766,7 @@ module BareRubyProt
         end
 
         output_statements, output_bytes, output_length =
-          lower_i2c_outputs(arena_expression, outputs)
+          payload.flattened(reference_to(arena_expression), outputs) { |output| lower_expression(output) }
         binding_arguments = [reference_to(receiver_expression)]
         if callee[:name] == :read
           binding_arguments += [
@@ -783,78 +784,7 @@ module BareRubyProt
         )]
       end
 
-      def lower_i2c_outputs(arena_expression, outputs)
-        return [[], @lir.create_const_string(""), @lir.create_const_int(0, :int32)] if outputs.empty?
-
-        name = @function_scope.next_temporary
-        buffer = @lir.create_local(name, @value_layout.arena_string_type)
-        create = @lir.create_call(
-          :bareruby_string_new,
-          [reference_to(arena_expression), @lir.create_const_string("")],
-          @value_layout.arena_string_type
-        )
-        statements = [@lir.create_declare(name, @value_layout.arena_string_type, create)]
-        outputs.each { |output| statements.concat(lower_i2c_output(buffer, output)) }
-
-        bytes = @lir.create_call(:bareruby_string_bytes, [buffer], :string_ptr)
-        length = @lir.create_call(:bareruby_string_length, [buffer], :int32)
-        [statements, bytes, length]
-      end
-
-      def lower_i2c_output(buffer, output)
-        type = @tast.value_type(output)
-        statements, expression = lower_expression(output)
-
-        if type.is_a?(Symbol) && type.to_s.start_with?("Int")
-          append = @lir.create_call(:bareruby_string_append_byte, [buffer, expression], @value_layout.arena_string_type)
-          return statements + [@lir.create_expression(append)]
-        end
-
-        if type == :String
-          function = :bareruby_string_append
-          arguments = [buffer, expression]
-          if @tast.node_type(output) == :string
-            function = :bareruby_string_append_bytes
-            arguments << @lir.create_const_int(@tast.children_of(output)[0].bytesize, :int32)
-          end
-          append = @lir.create_call(function, arguments, @value_layout.arena_string_type)
-          return statements + [@lir.create_expression(append)]
-        end
-
-        if @value_layout.arena_string?(type)
-          bytes = @lir.create_call(:bareruby_string_bytes, [expression], :string_ptr)
-          length = @lir.create_call(:bareruby_string_length, [expression], :int32)
-          append = @lir.create_call(
-            :bareruby_string_append_bytes, [buffer, bytes, length], @value_layout.arena_string_type
-          )
-          return statements + [@lir.create_expression(append)]
-        end
-
-        lower_i2c_array_output(buffer, type, statements, expression)
-      end
-
-      def lower_i2c_array_output(buffer, type, statements, expression)
-        counter = @function_scope.next_temporary
-        local = @lir.create_local(counter, :int32)
-        limit = if @value_layout.array?(type)
-                  @lir.create_const_int(@value_layout.capacity_of(type), :int32)
-                else
-                  @value_layout.length_of(expression)
-                end
-        element = @lir.create_index(@value_layout.items_of(expression), local, @value_layout.type_of(@value_layout.element_of(type)))
-        append = @lir.create_call(
-          :bareruby_string_append_byte, [buffer, element], @value_layout.arena_string_type
-        )
-        loop = @lir.create_for(
-          @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
-          @lir.create_binary("<", local, limit, :bool),
-          @lir.create_assign(
-            local, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32)
-          ),
-          [@lir.create_expression(append)]
-        )
-        statements + [loop]
-      end
+      def payload = I2cPayload.new(@lir, @tast, @value_layout, @function_scope)
 
       def lower_arguments(arguments)
         statements = []
