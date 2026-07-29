@@ -2,6 +2,7 @@
 
 require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
+require_relative "pass_09_lir_generator/function_scope"
 
 module BareRubyProt
   module Pass
@@ -14,17 +15,12 @@ module BareRubyProt
       }.freeze
       ARENA_STRUCT = :bareruby_arena_t
       ARENA_SCOPE_STRUCT = :bareruby_arena_scope
-      FunctionState = Struct.new(
-        :declared, :pointer_locals, :temp_index, :arena_index, :self_type, :return_type, :void_return,
-        keyword_init: true
-      )
-
       attr_reader :result
 
       def initialize(typed_ast)
         @tast = typed_ast
         @lir = LIR.new
-        @layout = ValueLayout.new(@lir)
+        @value_layout = ValueLayout.new(@lir)
       end
 
       def run
@@ -37,14 +33,14 @@ module BareRubyProt
 
           name, ivars, methods = @tast.children_of(statement)
           @storage_ivars = owning_ivars(methods)
-          fields = ivars.map { |ivar| @lir.create_field(@layout.field_name(ivar[:name]), ivar_type(ivar)) }
+          fields = ivars.map { |ivar| @lir.create_field(@value_layout.field_name(ivar[:name]), ivar_type(ivar)) }
           structs << @lir.create_struct(name, fields)
           methods.each { |method| functions << lower_method(method) }
         end
 
         functions << lower_main
         functions.concat(@interrupt_functions)
-        @result = @lir.replace_module(@layout.structs + structs, functions)
+        @result = @lir.replace_module(@value_layout.structs + structs, functions)
 
         self
       end
@@ -54,11 +50,11 @@ module BareRubyProt
       def lower_method(node)
         identity, parameters, body = @tast.children_of(node)
         with_function(identity[:owner], identity[:return_type]) do
-          lir_parameters = [{ name: :self, type: function_state.self_type }]
+          lir_parameters = [{ name: :self, type: @function_scope.self_type }]
           parameters.each do |parameter|
             binding, type = @tast.children_of(parameter)
-            function_state.declared << binding[:name]
-            function_state.pointer_locals << binding[:name] if @layout.shared?(type)
+            @function_scope.declare(binding[:name])
+            @function_scope.declare_pointer(binding[:name]) if @value_layout.shared?(type)
             lir_parameters << { name: binding[:name], type: binding_type(binding, type) }
           end
 
@@ -66,7 +62,7 @@ module BareRubyProt
           @lir.create_function(
             function_name(identity[:owner], identity[:name]),
             lir_parameters,
-            @layout.value_type_of(identity[:return_type]),
+            @value_layout.value_type_of(identity[:return_type]),
             statements
           )
         end
@@ -81,18 +77,15 @@ module BareRubyProt
       end
 
       def with_function(self_class, return_type)
-        previous_state = @function_state
-        @function_state = FunctionState.new(
-          declared: [], pointer_locals: [], temp_index: 0, arena_index: 0,
+        previous = @function_scope
+        @function_scope = FunctionScope.new(
           self_type: self_class && @lir.pointer_type(@lir.struct_type(self_class)),
-          return_type:, void_return: @layout.type_of(return_type) == :void
+          return_type:, void_return: @value_layout.type_of(return_type) == :void
         )
         yield
       ensure
-        @function_state = previous_state
+        @function_scope = previous
       end
-
-      def function_state = @function_state
 
       def lower_interrupt(node)
         receiver, events, block, = @tast.children_of(node)
@@ -122,11 +115,11 @@ module BareRubyProt
         bindings = {}
         collect_nilable_bindings(body, bindings)
         bindings.values.filter_map do |binding|
-          next if function_state.declared.include?(binding[:name])
+          next if @function_scope.declared?(binding[:name])
 
-          function_state.declared << binding[:name]
+          @function_scope.declare(binding[:name])
           type = binding[:type]
-          @lir.create_declare(binding[:name], @layout.type_of(type), @layout.absent(type))
+          @lir.create_declare(binding[:name], @value_layout.type_of(type), @value_layout.absent(type))
         end
       end
 
@@ -137,7 +130,7 @@ module BareRubyProt
 
         if @tast.node_type(value) == :assignment
           binding = @tast.children_of(value)[0]
-          bindings[binding[:name]] = binding if binding[:kind] == :local && @layout.nilable?(binding[:type])
+          bindings[binding[:name]] = binding if binding[:kind] == :local && @value_layout.nilable?(binding[:type])
         end
         collect_nilable_bindings(value[:children], bindings)
       end
@@ -170,18 +163,18 @@ module BareRubyProt
         return [@lir.create_return(nil)] if value.nil?
         # An implicit return wrapped around a construct that always leaves on its own.
         return lower_statement(value) if @tast.value_type(value) == :NoReturn
-        return lower_statement(value) + [@lir.create_return(nil)] if function_state.void_return
+        return lower_statement(value) + [@lir.create_return(nil)] if @function_scope.void_return?
 
         statements, expression = lower_expression(value)
-        statements + [@lir.create_return(coerce_value(value, expression, function_state.return_type))]
+        statements + [@lir.create_return(coerce_value(value, expression, @function_scope.return_type))]
       end
 
       def lower_for_range(node)
         binding, type, start_value, limit_value, inclusive, body = @tast.children_of(node)
-        element_type = @layout.type_of(type)
+        element_type = @value_layout.type_of(type)
         start_statements, start_expression = lower_expression(start_value)
         limit_statements, limit_expression = lower_expression(limit_value)
-        limit_name = next_temp
+        limit_name = @function_scope.next_temporary
 
         init = @lir.create_declare(binding[:name], element_type, start_expression)
         counter = @lir.create_local(binding[:name], element_type)
@@ -208,10 +201,10 @@ module BareRubyProt
       # leaves it, which is the exception safety the design requires.
       def lower_arena(node)
         binding, size, body = @tast.children_of(node)
-        index = next_arena_index
+        index = @function_scope.next_arena
         struct = @lir.struct_type(ARENA_STRUCT)
         place = @lir.create_local(binding[:name], struct)
-        function_state.declared << binding[:name]
+        @function_scope.declare(binding[:name])
         scope_struct = @lir.struct_type(ARENA_SCOPE_STRUCT)
 
         opening = [@lir.create_declare(binding[:name], struct, nil)] + arena_setup(place, size, index) +
@@ -226,31 +219,26 @@ module BareRubyProt
       # the block becomes, so what was declared inside is forgotten on the way out and the
       # next block is free to use the same names.
       def lower_block_body(body)
-        declared = function_state.declared.dup
-        pointers = function_state.pointer_locals.dup
-        statements = predeclare_nilable_locals(body) + lower_body(body)
-        function_state.declared = declared
-        function_state.pointer_locals = pointers
-        statements
+        @function_scope.nested { predeclare_nilable_locals(body) + lower_body(body) }
       end
 
       # A long-lived arena outlives no scope, so it takes no guard: reset is the only
       # thing that releases it.
       def lower_arena_new(node)
         size, type = @tast.children_of(node)
-        struct = @layout.type_of(type)
-        name = next_temp
+        struct = @value_layout.type_of(type)
+        name = @function_scope.next_temporary
         place = @lir.create_local(name, struct)
-        [[@lir.create_declare(name, struct, nil)] + arena_setup(place, size, next_arena_index), place]
+        [[@lir.create_declare(name, struct, nil)] + arena_setup(place, size, @function_scope.next_arena), place]
       end
 
       # A creation expression is where the region comes from, so the binding it is
       # assigned to holds the arena itself rather than a pointer to one.
       def lower_arena_assignment(binding, value, type)
-        struct = @layout.type_of(type)
+        struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
         [storage_declaration(binding, struct) +
-          arena_setup(place, @tast.children_of(value)[0], next_arena_index), place]
+          arena_setup(place, @tast.children_of(value)[0], @function_scope.next_arena), place]
       end
 
       def arena_setup(place, size, index)
@@ -269,20 +257,20 @@ module BareRubyProt
       # allocating from it and the expression it came from may not be evaluated twice.
       def lower_arena_alloc(node)
         receiver, length, type = @tast.children_of(node)
-        struct = @layout.type_of(type)
-        element = @layout.type_of(@layout.element_of(type))
+        struct = @value_layout.type_of(type)
+        element = @value_layout.type_of(@value_layout.element_of(type))
         receiver_statements, receiver_expression = lower_expression(receiver)
         length_statements, length_expression = lower_expression(length)
-        length_name = next_temp
-        name = next_temp
+        length_name = @function_scope.next_temporary
+        name = @function_scope.next_temporary
         length_local = @lir.create_local(length_name, :int32)
         place = @lir.create_local(name, struct)
 
         statements = receiver_statements + length_statements +
                      [@lir.create_declare(length_name, :int32, length_expression),
                       @lir.create_declare(name, struct, nil),
-                      @lir.create_assign(@layout.items_of(place), allocation_of(receiver_expression, length_local, element)),
-                      @lir.create_assign(@layout.length_of(place), length_local)]
+                      @lir.create_assign(@value_layout.items_of(place), allocation_of(receiver_expression, length_local, element)),
+                      @lir.create_assign(@value_layout.length_of(place), length_local)]
         [statements, place]
       end
 
@@ -298,7 +286,7 @@ module BareRubyProt
 
       def lower_arena_length(node)
         statements, expression = lower_expression(@tast.children_of(node)[0])
-        [statements, @layout.length_of(expression)]
+        [statements, @value_layout.length_of(expression)]
       end
 
       def lower_condition(node)
@@ -306,7 +294,7 @@ module BareRubyProt
         type = @tast.value_type(node)
         return [statements, expression] if type == :Bool
         return [statements, @lir.create_const_bool(false)] if type == :Nil
-        return [statements, @layout.truth_of(expression, type)] if @layout.nilable?(type)
+        return [statements, @value_layout.truth_of(expression, type)] if @value_layout.nilable?(type)
 
         [statements, @lir.create_const_bool(true)]
       end
@@ -341,7 +329,7 @@ module BareRubyProt
         case @tast.node_type(node)
         when :integer
           value, type = @tast.children_of(node)
-          [[], @lir.create_const_int(value, @layout.type_of(type))]
+          [[], @lir.create_const_int(value, @value_layout.type_of(type))]
         when :nil
           [[], nil]
         when :reference
@@ -378,22 +366,22 @@ module BareRubyProt
       def lower_logical(node)
         operator, left, right, type = @tast.children_of(node)
         return lower_expression(right) if operator == :or && @tast.value_type(left) == :Nil
-        return lower_nilable_logical(operator, left, right, type) if @layout.nilable?(@tast.value_type(left))
+        return lower_nilable_logical(operator, left, right, type) if @value_layout.nilable?(@tast.value_type(left))
 
         left_statements, left_expression = lower_expression(left)
         right_statements, right_expression = lower_expression(right)
         [left_statements + right_statements,
-         @lir.create_binary(operator == :and ? "&&" : "||", left_expression, right_expression, @layout.type_of(type))]
+         @lir.create_binary(operator == :and ? "&&" : "||", left_expression, right_expression, @value_layout.type_of(type))]
       end
 
       def lower_nilable_logical(operator, left, right, type)
         left_statements, left_expression = lower_expression(left)
         left_type = @tast.value_type(left)
-        left_name = next_temp
-        left_local_type = @layout.value_type_of(left_type)
+        left_name = @function_scope.next_temporary
+        left_local_type = @value_layout.value_type_of(left_type)
         left_local = @lir.create_local(left_name, left_local_type)
-        result_name = next_temp
-        result_type = @layout.value_type_of(type)
+        result_name = @function_scope.next_temporary
+        result_type = @value_layout.value_type_of(type)
         result = @lir.create_local(result_name, result_type)
         statements = left_statements + [
           @lir.create_declare(left_name, left_local_type, left_expression),
@@ -401,21 +389,21 @@ module BareRubyProt
         ]
 
         if operator == :or
-          present = @lir.create_assign(result, @layout.value_of(left_local, left_type))
+          present = @lir.create_assign(result, @value_layout.value_of(left_local, left_type))
           absent = lower_expression_into(right, result, type)
         else
           present = lower_expression_into(right, result, type)
-          absent = [@lir.create_assign(result, @layout.absent(type))]
+          absent = [@lir.create_assign(result, @value_layout.absent(type))]
         end
-        statements << @lir.create_if(@layout.truth_of(left_local, left_type), [present].flatten, absent)
+        statements << @lir.create_if(@value_layout.truth_of(left_local, left_type), [present].flatten, absent)
         [statements, result]
       end
 
       # An if used as a value becomes a declaration plus branches that assign into it.
       def lower_if_expression(node)
         condition, then_body, else_body, type = @tast.children_of(node)
-        result_type = @layout.value_type_of(type)
-        result_name = next_temp
+        result_type = @value_layout.value_type_of(type)
+        result_name = @function_scope.next_temporary
         condition_statements, condition_expression = lower_condition(condition)
 
         statements = condition_statements + [@lir.create_declare(result_name, result_type, nil)]
@@ -423,14 +411,14 @@ module BareRubyProt
           condition_expression,
           lower_body_into(then_body, result_name, type),
           else_body ? lower_body_into(else_body, result_name, type) :
-            [@lir.create_assign(@lir.create_local(result_name, result_type), @layout.absent(type))]
+            [@lir.create_assign(@lir.create_local(result_name, result_type), @value_layout.absent(type))]
         )
         [statements, @lir.create_local(result_name, result_type)]
       end
 
       def lower_body_into(statements, result_name, type)
-        result_type = @layout.value_type_of(type)
-        return [@lir.create_assign(@lir.create_local(result_name, result_type), @layout.absent(type))] if statements.empty?
+        result_type = @value_layout.value_type_of(type)
+        return [@lir.create_assign(@lir.create_local(result_name, result_type), @value_layout.absent(type))] if statements.empty?
 
         leading = statements[0...-1].flat_map { |statement| lower_statement(statement) }
         value_statements, value_expression = lower_expression(statements.last)
@@ -452,7 +440,7 @@ module BareRubyProt
         statements, format_expression = lower_expression(format)
         argument_statements, argument_expressions = lower_arguments(values)
         place = @lir.create_local(binding[:name], :string_ptr)
-        function_state.declared << binding[:name]
+        @function_scope.declare(binding[:name])
 
         call = @lir.create_call(
           :bareruby_format,
@@ -468,7 +456,7 @@ module BareRubyProt
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
         [receiver_statements + index_statements,
-         @lir.create_index(@layout.items_of(receiver_expression), index_expression, @layout.type_of(type))]
+         @lir.create_index(@value_layout.items_of(receiver_expression), index_expression, @value_layout.type_of(type))]
       end
 
       def lower_index_assign(node)
@@ -476,7 +464,7 @@ module BareRubyProt
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
         value_statements, value_expression = lower_expression(value)
-        place = @lir.create_index(@layout.items_of(receiver_expression), index_expression, @layout.type_of(type))
+        place = @lir.create_index(@value_layout.items_of(receiver_expression), index_expression, @value_layout.type_of(type))
 
         [receiver_statements + index_statements + value_statements +
           [@lir.create_assign(place, value_expression)], place]
@@ -486,19 +474,19 @@ module BareRubyProt
         binding, value, type = @tast.children_of(node)
         return lower_format_assignment(binding, value) if @tast.node_type(value) == :format
         storage_type = binding[:type] || type
-        unless @layout.nilable?(storage_type)
+        unless @value_layout.nilable?(storage_type)
           return lower_array_assignment(binding, value, type) if array_creation?(value)
           return lower_arena_assignment(binding, value, type) if arena_creation?(value)
           return lower_object_assignment(binding, value, type) if object_creation?(value)
         end
 
         statements, value_expression = lower_expression(value)
-        function_state.pointer_locals << binding[:name] if @layout.shared?(type) && binding[:kind] == :local
+        @function_scope.declare_pointer(binding[:name]) if @value_layout.shared?(type) && binding[:kind] == :local
         value_expression = coerce_value(value, value_expression, storage_type)
         place = place_of(binding, binding_type(binding, storage_type))
 
-        if binding[:kind] == :local && !function_state.declared.include?(binding[:name])
-          function_state.declared << binding[:name]
+        if binding[:kind] == :local && !@function_scope.declared?(binding[:name])
+          @function_scope.declare(binding[:name])
           written = statements + [
             @lir.create_declare(binding[:name], binding_type(binding, storage_type), value_expression)
           ]
@@ -510,23 +498,23 @@ module BareRubyProt
 
       def lower_reference(node)
         binding, type = @tast.children_of(node)
-        storage_type = @layout.nilable?(binding[:type]) ? binding[:type] : type
+        storage_type = @value_layout.nilable?(binding[:type]) ? binding[:type] : type
         place = place_of(binding, binding_type(binding, storage_type))
         [[], read_nilable_place(place, storage_type, type)]
       end
 
       def read_nilable_place(place, storage_type, flow_type)
-        return place unless @layout.nilable?(storage_type) && !@layout.nilable?(flow_type)
+        return place unless @value_layout.nilable?(storage_type) && !@value_layout.nilable?(flow_type)
 
-        @layout.value_of(place, storage_type)
+        @value_layout.value_of(place, storage_type)
       end
 
       def coerce_value(node, expression, target_type)
         source_type = @tast.value_type(node)
-        return @layout.absent(target_type) if @layout.nilable?(target_type) && source_type == :Nil
-        if @layout.nilable?(target_type) && !@layout.nilable?(source_type)
+        return @value_layout.absent(target_type) if @value_layout.nilable?(target_type) && source_type == :Nil
+        if @value_layout.nilable?(target_type) && !@value_layout.nilable?(source_type)
           return @lir.create_brace_init(
-            [@lir.create_const_bool(true), shared_rvalue(node, expression)], @layout.type_of(target_type)
+            [@lir.create_const_bool(true), shared_rvalue(node, expression)], @value_layout.type_of(target_type)
           )
         end
 
@@ -572,21 +560,21 @@ module BareRubyProt
       end
 
       def binding_type(binding, type)
-        return @layout.type_of(type) unless @layout.shared?(type)
+        return @value_layout.type_of(type) unless @value_layout.shared?(type)
 
-        pointer_binding?(binding) ? @lir.pointer_type(@layout.type_of(type)) : @layout.type_of(type)
+        pointer_binding?(binding) ? @lir.pointer_type(@value_layout.type_of(type)) : @value_layout.type_of(type)
       end
 
       def pointer_binding?(binding)
         return !@storage_ivars.include?(binding[:name]) if binding[:kind] == :instance
 
-        function_state.pointer_locals.include?(binding[:name])
+        @function_scope.pointer?(binding[:name])
       end
 
       # A shared value in value position is its address, so storage has to be taken the
       # address of and a pointer is already one.
       def shared_rvalue(node, expression)
-        return expression unless @layout.shared?(@tast.value_type(node))
+        return expression unless @value_layout.shared?(@tast.value_type(node))
 
         reference_to(expression)
       end
@@ -602,7 +590,7 @@ module BareRubyProt
       # A creation expression is where storage comes from, so the binding it is assigned to
       # holds the array itself rather than a pointer to one.
       def lower_array_assignment(binding, value, type)
-        struct = @layout.type_of(type)
+        struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
         [storage_declaration(binding, struct) + fill_of(place, value, type), place]
       end
@@ -612,7 +600,7 @@ module BareRubyProt
       # then have to be copied there.
       def lower_object_assignment(binding, value, type)
         _receiver, callee, arguments, = @tast.children_of(value)
-        struct = @layout.type_of(type)
+        struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
         [object_storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
       end
@@ -620,16 +608,16 @@ module BareRubyProt
       # A local that owns storage is declared here rather than initialised from somewhere
       # else; an instance variable that owns storage is a field and is declared with the struct.
       def storage_declaration(binding, struct)
-        return [] unless binding[:kind] == :local && !function_state.declared.include?(binding[:name])
+        return [] unless binding[:kind] == :local && !@function_scope.declared?(binding[:name])
 
-        function_state.declared << binding[:name]
+        @function_scope.declare(binding[:name])
         [@lir.create_declare(binding[:name], struct, nil)]
       end
 
       def object_storage_declaration(binding, struct)
-        return [] unless binding[:kind] == :local && !function_state.declared.include?(binding[:name])
+        return [] unless binding[:kind] == :local && !@function_scope.declared?(binding[:name])
 
-        function_state.declared << binding[:name]
+        @function_scope.declare(binding[:name])
         [@lir.create_declare(binding[:name], struct, @lir.create_brace_init([], struct))]
       end
 
@@ -637,8 +625,8 @@ module BareRubyProt
       # storage to fill, so it gets a temporary of its own.
       def lower_array_temporary(node)
         type = @tast.value_type(node)
-        struct = @layout.type_of(type)
-        place = @lir.create_local(next_temp, struct)
+        struct = @value_layout.type_of(type)
+        place = @lir.create_local(@function_scope.next_temporary, struct)
         [[@lir.create_declare(@lir.children_of(place)[0], struct, nil)] + fill_of(place, node, type), place]
       end
 
@@ -655,7 +643,7 @@ module BareRubyProt
       # storage.
       def fill_from_copy(place, value)
         receiver, type = @tast.children_of(value)
-        struct = @layout.type_of(type)
+        struct = @value_layout.type_of(type)
         statements, expression = lower_expression(receiver)
         source = pointer_expression?(expression) ? @lir.create_unary("*", expression, struct) : expression
         statements + [@lir.create_assign(place, source)]
@@ -666,7 +654,7 @@ module BareRubyProt
         elements.each_with_index.flat_map do |element, position|
           element_statements, element_expression = lower_expression(element)
           slot = @lir.create_index(
-            @layout.items_of(place), @lir.create_const_int(position, :int32), @lir.value_type(element_expression)
+            @value_layout.items_of(place), @lir.create_const_int(position, :int32), @lir.value_type(element_expression)
           )
           element_statements + [@lir.create_assign(slot, element_expression)]
         end
@@ -679,19 +667,19 @@ module BareRubyProt
         fill_value, = @tast.children_of(value)
         return [] if fill_value.nil?
 
-        element_type = @layout.type_of(@layout.element_of(type))
+        element_type = @value_layout.type_of(@value_layout.element_of(type))
         statements, expression = lower_expression(fill_value)
-        source = next_temp
-        counter = next_temp
+        source = @function_scope.next_temporary
+        counter = @function_scope.next_temporary
         local = @lir.create_local(counter, :int32)
 
         statements + [@lir.create_declare(source, element_type, expression),
                       @lir.create_for(
                         @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
-                        @lir.create_binary("<", local, @lir.create_const_int(@layout.capacity_of(type), :int32), :bool),
+                        @lir.create_binary("<", local, @lir.create_const_int(@value_layout.capacity_of(type), :int32), :bool),
                         @lir.create_assign(local, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32)),
                         [@lir.create_assign(
-                          @lir.create_index(@layout.items_of(place), local, element_type),
+                          @lir.create_index(@value_layout.items_of(place), local, element_type),
                           @lir.create_local(source, element_type)
                         )]
                       )]
@@ -712,29 +700,31 @@ module BareRubyProt
 
       def lower_nil_predicate(receiver)
         statements, expression = lower_expression(receiver)
-        [statements, @lir.create_unary("!", @layout.tag_of(expression), :bool)]
+        [statements, @lir.create_unary("!", @value_layout.tag_of(expression), :bool)]
       end
 
       def lower_operator(receiver, callee, arguments, type)
         receiver_statements, receiver_expression = lower_expression(receiver)
         operator = OPERATOR_TEXT.fetch(callee[:name])
-        return [receiver_statements, @lir.create_unary(operator, receiver_expression, @layout.type_of(type))] if arguments.empty?
+        if arguments.empty?
+          return [receiver_statements, @lir.create_unary(operator, receiver_expression, @value_layout.type_of(type))]
+        end
 
         argument_statements, argument_expressions = lower_arguments(arguments)
         [receiver_statements + argument_statements,
-         @lir.create_binary(operator, receiver_expression, argument_expressions.first, @layout.type_of(type))]
+         @lir.create_binary(operator, receiver_expression, argument_expressions.first, @value_layout.type_of(type))]
       end
 
       def lower_function_call(callee, arguments)
         statements, expressions = lower_arguments(arguments)
-        [statements, @lir.create_call(callee[:function], expressions, @layout.value_type_of(callee[:return_type]))]
+        [statements, @lir.create_call(callee[:function], expressions, @value_layout.value_type_of(callee[:return_type]))]
       end
 
       # An object written anywhere other than the right of an assignment still needs storage
       # to be constructed into, so it gets a temporary of its own.
       def lower_constructor(callee, arguments, type)
-        struct = @layout.type_of(type)
-        instance_name = next_temp
+        struct = @value_layout.type_of(type)
+        instance_name = @function_scope.next_temporary
         place = @lir.create_local(instance_name, struct)
 
         initialized = @lir.create_brace_init([], struct)
@@ -750,12 +740,12 @@ module BareRubyProt
 
       def lower_method_call(receiver, callee, arguments)
         receiver_statements, receiver_expression = receiver ? lower_expression(receiver) : [[], nil]
-        self_argument = receiver_expression ? reference_to(receiver_expression) : @lir.create_self_pointer(function_state.self_type)
+        self_argument = receiver_expression ? reference_to(receiver_expression) : @lir.create_self_pointer(@function_scope.self_type)
         argument_statements, argument_expressions = lower_arguments(arguments)
 
         [receiver_statements + argument_statements,
          @lir.create_call(callee[:function], [self_argument] + argument_expressions,
-                          @layout.value_type_of(callee[:return_type]))]
+                          @value_layout.value_type_of(callee[:return_type]))]
       end
 
       # I2C's heterogeneous outputs become one arena string first, so the binding sees
@@ -789,21 +779,21 @@ module BareRubyProt
         statements = receiver_statements + arena_statements + address_statements +
                      length_statements + output_statements
         [statements, @lir.create_call(
-          callee[:function], binding_arguments, @layout.value_type_of(callee[:return_type])
+          callee[:function], binding_arguments, @value_layout.value_type_of(callee[:return_type])
         )]
       end
 
       def lower_i2c_outputs(arena_expression, outputs)
         return [[], @lir.create_const_string(""), @lir.create_const_int(0, :int32)] if outputs.empty?
 
-        name = next_temp
-        buffer = @lir.create_local(name, @layout.arena_string_type)
+        name = @function_scope.next_temporary
+        buffer = @lir.create_local(name, @value_layout.arena_string_type)
         create = @lir.create_call(
           :bareruby_string_new,
           [reference_to(arena_expression), @lir.create_const_string("")],
-          @layout.arena_string_type
+          @value_layout.arena_string_type
         )
-        statements = [@lir.create_declare(name, @layout.arena_string_type, create)]
+        statements = [@lir.create_declare(name, @value_layout.arena_string_type, create)]
         outputs.each { |output| statements.concat(lower_i2c_output(buffer, output)) }
 
         bytes = @lir.create_call(:bareruby_string_bytes, [buffer], :string_ptr)
@@ -816,7 +806,7 @@ module BareRubyProt
         statements, expression = lower_expression(output)
 
         if type.is_a?(Symbol) && type.to_s.start_with?("Int")
-          append = @lir.create_call(:bareruby_string_append_byte, [buffer, expression], @layout.arena_string_type)
+          append = @lir.create_call(:bareruby_string_append_byte, [buffer, expression], @value_layout.arena_string_type)
           return statements + [@lir.create_expression(append)]
         end
 
@@ -827,15 +817,15 @@ module BareRubyProt
             function = :bareruby_string_append_bytes
             arguments << @lir.create_const_int(@tast.children_of(output)[0].bytesize, :int32)
           end
-          append = @lir.create_call(function, arguments, @layout.arena_string_type)
+          append = @lir.create_call(function, arguments, @value_layout.arena_string_type)
           return statements + [@lir.create_expression(append)]
         end
 
-        if @layout.arena_string?(type)
+        if @value_layout.arena_string?(type)
           bytes = @lir.create_call(:bareruby_string_bytes, [expression], :string_ptr)
           length = @lir.create_call(:bareruby_string_length, [expression], :int32)
           append = @lir.create_call(
-            :bareruby_string_append_bytes, [buffer, bytes, length], @layout.arena_string_type
+            :bareruby_string_append_bytes, [buffer, bytes, length], @value_layout.arena_string_type
           )
           return statements + [@lir.create_expression(append)]
         end
@@ -844,16 +834,16 @@ module BareRubyProt
       end
 
       def lower_i2c_array_output(buffer, type, statements, expression)
-        counter = next_temp
+        counter = @function_scope.next_temporary
         local = @lir.create_local(counter, :int32)
-        limit = if @layout.array?(type)
-                  @lir.create_const_int(@layout.capacity_of(type), :int32)
+        limit = if @value_layout.array?(type)
+                  @lir.create_const_int(@value_layout.capacity_of(type), :int32)
                 else
-                  @layout.length_of(expression)
+                  @value_layout.length_of(expression)
                 end
-        element = @lir.create_index(@layout.items_of(expression), local, @layout.type_of(@layout.element_of(type)))
+        element = @lir.create_index(@value_layout.items_of(expression), local, @value_layout.type_of(@value_layout.element_of(type)))
         append = @lir.create_call(
-          :bareruby_string_append_byte, [buffer, element], @layout.arena_string_type
+          :bareruby_string_append_byte, [buffer, element], @value_layout.arena_string_type
         )
         loop = @lir.create_for(
           @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
@@ -880,22 +870,14 @@ module BareRubyProt
         if binding[:kind] == :local
           @lir.create_local(binding[:name], type)
         else
-          @lir.create_field_access(@lir.create_self_pointer(function_state.self_type), @layout.field_name(binding[:name]), type)
+          self_pointer = @lir.create_self_pointer(@function_scope.self_type)
+          @lir.create_field_access(self_pointer, @value_layout.field_name(binding[:name]), type)
         end
       end
 
       # Must agree with the name the type inferrer put in the callee.
       def function_name(owner, name)
         :"#{owner}_#{name.to_s.sub(/\?\z/, '_p').sub(/!\z/, '_bang').sub(/=\z/, '_set')}"
-      end
-
-      def next_temp
-        function_state.temp_index += 1
-        :"temporary_#{function_state.temp_index}"
-      end
-
-      def next_arena_index
-        function_state.arena_index += 1
       end
     end
   end
