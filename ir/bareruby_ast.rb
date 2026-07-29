@@ -107,6 +107,10 @@ module BareRubyProt
 
     def node_type(node) = node[:type]
 
+    def class_definition?(node) = node_type(node) == :class_definition
+
+    def module_definition?(node) = node_type(node) == :module_definition
+
     def children_of(node) = node[:children]
 
     def span_of(node) = node[:span]
