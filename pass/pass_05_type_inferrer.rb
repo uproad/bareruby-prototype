@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../ir/typed_ast"
+require_relative "pass_05_type_inferrer/open_arenas"
 
 module BareRubyProt
   module Pass
@@ -178,7 +179,7 @@ module BareRubyProt
         @modules = {}
         @class_bodies = {}
         @current_method = nil
-        @arena_scopes = []
+        @open_arenas = OpenArenas.new
       end
 
       def run
@@ -904,9 +905,9 @@ module BareRubyProt
         binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
         block_env = env.merge(binding[:name] => [binding, arena_type])
 
-        @arena_scopes.push(names: env.keys, binding:)
-        typed_body = infer_body(body, env: block_env, self_class:)
-        @arena_scopes.pop
+        typed_body = @open_arenas.open(binding, outer_names: env.keys) do
+          infer_body(body, env: block_env, self_class:)
+        end
 
         @tast.create_arena(binding, size, typed_body, span)
       end
@@ -1044,7 +1045,7 @@ module BareRubyProt
         type = @tast.value_type(value_tast)
         return unless arena_array_type?(type) || arena_string_type?(type) ||
                       (arena_type?(type) && @tast.node_type(value_tast) != :arena_new)
-        return unless kind == :instance || @arena_scopes.any? { |scope| scope[:names].include?(name) }
+        return unless kind == :instance || @open_arenas.outlived_by?(name)
 
         raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
       end
@@ -1126,10 +1127,7 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
       end
 
-      def current_arena(span)
-        scope = @arena_scopes.last
-        @tast.create_reference(scope[:binding], arena_type, span)
-      end
+      def current_arena(span) = @tast.create_reference(@open_arenas.innermost, arena_type, span)
 
       def infer_new_call(class_name, arguments, env:, self_class:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, env:, self_class:) }
