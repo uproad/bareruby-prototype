@@ -27,6 +27,17 @@ module BareRubyProt
 
     def self.type?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
 
+    # A variable-length string reaches everything that takes a static string — puts, a
+    # UART, a format value, another string — through the bytes the region holds.
+    def self.bytes_of(typed_ast, node)
+      return node unless type?(typed_ast.value_type(node))
+
+      callee = typed_ast.create_callee(
+        :builtin_function, nil, :bytes, BYTES_FUNCTION, [typed_ast.value_type(node)], :String
+      )
+      typed_ast.create_call(nil, callee, [node], nil, :String, typed_ast.span_of(node))
+    end
+
     def self.operator_function(name)
       OPERATOR_FUNCTIONS.fetch(name) do
         raise "a variable-length string answers <<, +, ==, size, dup and to_s, not #{name}"

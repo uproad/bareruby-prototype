@@ -111,6 +111,8 @@ module BareRubyProt
 
     def module_definition?(node) = node_type(node) == :module_definition
 
+    def interpolation?(node) = node_type(node) == :interpolation
+
     def children_of(node) = node[:children]
 
     def span_of(node) = node[:span]

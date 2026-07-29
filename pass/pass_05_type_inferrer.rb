@@ -2,6 +2,7 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
+require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
 require_relative "pass_05_type_inferrer/arena_array"
@@ -438,7 +439,7 @@ module BareRubyProt
       # raise degrades to panic when the program has no begin at all, and throws
       # otherwise. Only the string form is accepted; the other forms are not settled.
       def infer_raise_call(arguments, env:, self_class:, span:)
-        argument_tasts = arguments.map { |argument| string_value_of(infer_node(argument, env:, self_class:)) }
+        argument_tasts = arguments.map { |argument| text_of(argument, env:, self_class:) }
         function = @rescues_present ? :bareruby_throw : :bareruby_panic
         callee = @tast.create_callee(:builtin_function, nil, :raise, function, %i[String], :NoReturn)
         @tast.create_call(nil, callee, argument_tasts, nil, :NoReturn, span)
@@ -863,8 +864,8 @@ module BareRubyProt
       end
 
       def format_arguments(receiver_tast, source, env:, self_class:, span:)
-        format, values = format_of(source, env:, self_class:)
-        [receiver_tast, @tast.create_string(format, :String, span)] + values
+        format = format_of(source, env:, self_class:)
+        [receiver_tast, @tast.create_string(format.text, :String, span)] + format.values
       end
 
       def negate(node, span)
@@ -879,16 +880,10 @@ module BareRubyProt
         @tast.create_call(nil, callee, arguments, nil, return_type, span)
       end
 
-      def text_of(node, env:, self_class:) = string_value_of(infer_node(node, env:, self_class:))
+      def text_of(node, env:, self_class:) = ArenaString.bytes_of(@tast, infer_node(node, env:, self_class:))
 
       # A variable-length string reaches everything that takes a static string — puts, a
       # UART, a format value, another string — through the bytes the region holds.
-      def string_value_of(node)
-        return node unless ArenaString.type?(@tast.value_type(node))
-
-        string_call(:bytes, ArenaString::BYTES_FUNCTION, [node], :String, @tast.span_of(node))
-      end
-
       def infer_arena_reset_call(receiver_tast, span)
         callee = @tast.create_callee(:binding_method, :Arena, :reset, Arena::RESET_FUNCTION, [], :Nil)
         @tast.create_call(receiver_tast, callee, [], nil, :Nil, span)
@@ -1093,7 +1088,7 @@ module BareRubyProt
           :binding_method, class_name, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
         )
-        arguments = argument_tasts.map { |argument| string_value_of(argument) }
+        arguments = argument_tasts.map { |argument| ArenaString.bytes_of(@tast, argument) }
         @tast.create_call(receiver_tast, callee, arguments, nil, signature[:return_type], span)
       end
 
@@ -1228,88 +1223,30 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, :Nil, span)
       end
 
-      def formatted?(node)
-        return false if node.nil?
-
-        @bareruby_ast.node_type(node) == :interpolation
-      end
+      def formatted?(node) = !node.nil? && @bareruby_ast.interpolation?(node)
 
       def infer_printf_call(function, receiver_tast, node, env:, self_class:, span:)
-        format, values = format_of(node, env:, self_class:)
-        arguments = [@tast.create_string("#{format}\n", :String, span_of(node))] + values
+        format = format_of(node, env:, self_class:)
+        arguments = [@tast.create_string("#{format.text}\n", :String, span_of(node))] + format.values
         kind = receiver_tast ? :binding_printf : :builtin_printf
         callee = @tast.create_callee(kind, nil, :printf, function, argument_types(arguments), :Nil)
         @tast.create_call(receiver_tast, callee, arguments, nil, :Nil, span)
       end
 
-      # Widest rendering of each type, used to size the temporary buffer an interpolation
-      # assigns into. A String of unknown capacity has no honest bound here; a real
-      # implementation would carry the capacity in the type, so this is the one number in
-      # the estimate that is a placeholder rather than a derivation.
-      MAX_LENGTHS = { Int32: 11, Int64: 20, Bool: 5, Fixed: 12, String: 64 }.freeze
-
       # An interpolation outside a puts argument becomes a fixed-capacity buffer plus a
       # compile-time bound on what can land in it. An arena string is the way out of that
       # estimate: a.string("...") measures the rendering while running instead.
       def infer_format(node, env:, self_class:)
-        format, values, parts = format_of(node, env:, self_class:)
-        capacity = parts.sum { |part| part_length(part) } + 1
-
+        format = format_of(node, env:, self_class:)
         @tast.create_format(
-          capacity, @tast.create_string(format, :String, span_of(node)), values, :String, span_of(node)
+          format.capacity, @tast.create_string(format.text, :String, span_of(node)),
+          format.values, :String, span_of(node)
         )
       end
 
-      def part_length(part)
-        return @tast.children_of(part)[0].bytesize if @tast.node_type(part) == :string
-
-        MAX_LENGTHS.fetch(@tast.value_type(part), 32)
-      end
-
-      # One interpolation, read once: the static parts become the format and the rest
-      # become its values, whichever of the four forms is asking.
       def format_of(node, env:, self_class:)
         parts = @bareruby_ast.children_of(node)[0].map { |part| infer_node(part, env:, self_class:) }
-        format = +""
-        values = []
-
-        parts.each do |part|
-          if @tast.node_type(part) == :string
-            format << escape_format(@tast.children_of(part)[0])
-          else
-            format << conversion_of(@tast.value_type(part))
-            values << to_s_of(part)
-          end
-        end
-
-        [format, values, parts]
-      end
-
-      def escape_format(text) = text.gsub("%", "%%")
-
-      def conversion_of(type)
-        return "%s" if ArenaString.type?(type)
-
-        case type
-        when :Int64 then "%lld"
-        when :String, :Bool, :Fixed then "%s"
-        else "%d"
-        end
-      end
-
-      # Bool and Fixed have no printf conversion of their own, so to_s is a real call.
-      TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s }.freeze
-
-      def to_s_of(part)
-        return string_value_of(part) if ArenaString.type?(@tast.value_type(part))
-
-        function = TO_S_FUNCTIONS[@tast.value_type(part)]
-        return part unless function
-
-        callee = @tast.create_callee(
-          :builtin_function, nil, :to_s, function, [@tast.value_type(part)], :String
-        )
-        @tast.create_call(nil, callee, [part], nil, :String, @tast.span_of(part))
+        PrintfFormat.new(parts, @tast)
       end
 
       def infer_iterator_block(block_node, element_type, env:, self_class:)
