@@ -40,17 +40,29 @@ module BareRubyProt
 
       # A program that never lights the LED links none of this, which matters most on a
       # wireless board: reaching that LED means uploading the radio's firmware.
-      def lights_onboard_led?
-        @lir.functions.any? { |function| calls_onboard_led?(@lir.children_of(function)[3]) }
+      def lights_onboard_led? = @lir.calls_prefixed?("bareruby_onboard_led_")
+
+      # Only a program that raises needs the throw translation unit linked.
+      def throws? = @lir.calls?(:bareruby_throw)
+
+      # A program with no arena never links the allocator, so a program that keeps to the
+      # first two layers of the memory model pays nothing for the third.
+      def allocates? = @lir.contains?(:declare_arena_storage)
+
+      # A program that keeps to static and fixed-capacity strings never links the string
+      # runtime either, which costs stdio's vsnprintf on top of the region it allocates
+      # from. Receiving over UART or off the I2C bus answers a variable-length string, so
+      # those reach it without naming it.
+      def builds_strings?
+        @lir.calls_prefixed?("bareruby_string_") ||
+          @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets, :bareruby_i2c_read)
       end
 
-      def calls_onboard_led?(value)
-        return value.any? { |element| calls_onboard_led?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :call && value[:children][0].to_s.start_with?("bareruby_onboard_led_")
+      def receives_uart? = @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets)
 
-        calls_onboard_led?(value[:children])
-      end
+      def uses_i2c? = @lir.calls_prefixed?("bareruby_i2c_")
+
+      def reads_i2c? = @lir.calls?(:bareruby_i2c_read)
 
       # Each target owns a directory named after itself, holding the entry point, the
       # record of how it is built, and — for a board — the build system that does it.
@@ -92,89 +104,6 @@ module BareRubyProt
           artifact = bareruby_program
           build_command = g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program #{hosted_sources.join(' ')}
         MANIFEST
-      end
-
-      # Only a program that raises needs the throw translation unit linked.
-      def throws?
-        @lir.functions.any? { |function| calls_throw?(@lir.children_of(function)[3]) }
-      end
-
-      def calls_throw?(value)
-        return value.any? { |element| calls_throw?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :call && value[:children][0] == :bareruby_throw
-
-        calls_throw?(value[:children])
-      end
-
-      # A program with no arena never links the allocator, so a program that keeps to the
-      # first two layers of the memory model pays nothing for the third.
-      def allocates?
-        @lir.functions.any? { |function| declares_arena?(@lir.children_of(function)[3]) }
-      end
-
-      def declares_arena?(value)
-        return value.any? { |element| declares_arena?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :declare_arena_storage
-
-        declares_arena?(value[:children])
-      end
-
-      # A program that keeps to static and fixed-capacity strings never links the string
-      # runtime either, which costs stdio's vsnprintf on top of the region it allocates from.
-      def builds_strings?
-        @lir.functions.any? { |function| calls_string?(@lir.children_of(function)[3]) }
-      end
-
-      def calls_string?(value)
-        return value.any? { |element| calls_string?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        if value[:type] == :call
-          function = value[:children][0]
-          return true if function.to_s.start_with?("bareruby_string_") ||
-                         %i[bareruby_uart_read bareruby_uart_gets bareruby_i2c_read].include?(function)
-        end
-
-        calls_string?(value[:children])
-      end
-
-      def receives_uart?
-        @lir.functions.any? { |function| calls_uart_receive?(@lir.children_of(function)[3]) }
-      end
-
-      def calls_uart_receive?(value)
-        return value.any? { |element| calls_uart_receive?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :call &&
-                       %i[bareruby_uart_read bareruby_uart_gets].include?(value[:children][0])
-
-        calls_uart_receive?(value[:children])
-      end
-
-      def uses_i2c?
-        @lir.functions.any? { |function| calls_i2c?(@lir.children_of(function)[3]) }
-      end
-
-      def calls_i2c?(value)
-        return value.any? { |element| calls_i2c?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :call &&
-                       value[:children][0].to_s.start_with?("bareruby_i2c_")
-
-        calls_i2c?(value[:children])
-      end
-
-      def reads_i2c?
-        @lir.functions.any? { |function| calls_i2c_read?(@lir.children_of(function)[3]) }
-      end
-
-      def calls_i2c_read?(value)
-        return value.any? { |element| calls_i2c_read?(element) } if value.is_a?(Array)
-        return false unless value.is_a?(Hash)
-        return true if value[:type] == :call && value[:children][0] == :bareruby_i2c_read
-
-        calls_i2c_read?(value[:children])
       end
 
       def pico_sources(target)

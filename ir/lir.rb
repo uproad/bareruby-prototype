@@ -131,6 +131,22 @@ module BareRubyProt
       false
     end
 
+    # What a program reaches for is asked of the IR rather than walked from outside it.
+    # A build has three kinds of question — does this program call this function, does it
+    # call anything from this family, does it contain this kind of node — and the shape a
+    # node is stored in stays in here whichever is asked.
+    def calls?(*names)
+      any_node? { |node| node_type(node) == :call && names.include?(children_of(node)[0]) }
+    end
+
+    def calls_prefixed?(prefix)
+      any_node? { |node| node_type(node) == :call && children_of(node)[0].to_s.start_with?(prefix) }
+    end
+
+    def contains?(type)
+      any_node? { |node| node_type(node) == type }
+    end
+
     def inspect_text
       lines = structs.flat_map { |struct| inspect_struct(struct) }
       lines += functions.flat_map { |function| inspect_function(function) }
@@ -264,6 +280,13 @@ module BareRubyProt
         target = functions_by_name[children_of(node)[0]]
         collect_reachable_functions(target, functions_by_name, seen, reachable) if target
       end
+    end
+
+    def any_node?
+      functions.each do |function|
+        each_node(function_body(function)) { |node| return true if yield(node) }
+      end
+      false
     end
 
     def each_node(value, &block)
