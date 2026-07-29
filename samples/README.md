@@ -34,7 +34,7 @@ it is given no argument.
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
-| `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel |
+| `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel. Its detectors set their bounds through a helper `initialize` calls |
 | `require.rb` | require expansion, with `require_lib.rb` and `require_helper.rb` requiring each other |
 | `object.rb` | An object passed to a method, aliased, held by another object and handed back. Matches real Ruby |
 | `implicit_return.rb` | Methods ending on a call, a `puts`, an `if` and a `while`, and one whose last expression is its value. Matches real Ruby |
