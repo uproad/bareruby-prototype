@@ -336,10 +336,14 @@ the three on-board LED implementations. Each of those files also names its own
 translation units: the name a piece of C++ is written under belongs with that C++ and
 nowhere else. Beside them sits how the second stage builds each kind of machine — one g++
 invocation for the host, pico-sdk through cmake for a board — so a toolchain is described
-in one place rather than woven through the pass. What is left of the pass reads the
-program: it asks each source for its files, keeps the ones this program reaches for, and
-generates `main.cpp` from the low-level IR. All of it was one file until the C++ grew to
-two thirds of it, which is a poor place to read any of it from.
+in one place rather than woven through the pass. `main.cpp`, the one C++ file that is
+written rather than carried, is rendered from the low-level IR beside them; the machine
+it is built for supplies the entry point and says whether output has anywhere to go.
+
+What is left of the pass is the assembly: it asks the low-level IR what the program
+reaches for, asks each source for its files, and hands each target the ones it needs. All
+of it was one file until the C++ grew to two thirds of it, which is a poor place to read
+any of it from.
 
 ## Second stage: hosted
 
