@@ -4,11 +4,19 @@ module BareRubyProt
   # How the second stage builds a program for the machine doing the compiling: one g++
   # invocation, and the record of it that says what that invocation was.
   class HostBuild
+    # The compiling machine has a terminal, so output always reaches somewhere, and the
+    # program ends rather than idling: falling off the end of it is the run finishing.
+    ENTRY = "int main(void) {\n    bareruby_main();\n    return 0;\n}\n"
+
     def initialize(sources:)
       @sources = sources.join(" ")
     end
 
     def files = { "manifest.txt" => manifest }
+
+    def stdout? = true
+
+    def entry = ENTRY
 
     def manifest
       <<~MANIFEST
