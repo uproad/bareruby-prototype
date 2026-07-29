@@ -4,6 +4,7 @@ require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
 require_relative "pass_09_lir_generator/i2c_payload"
 require_relative "pass_09_lir_generator/arena_storage"
+require_relative "pass_09_lir_generator/binding_storage"
 require_relative "pass_09_lir_generator/function_scope"
 
 module BareRubyProt
@@ -32,12 +33,15 @@ module BareRubyProt
           next unless class_definition?(statement)
 
           name, ivars, methods = @tast.children_of(statement)
-          @storage_ivars = owning_ivars(methods)
-          fields = ivars.map { |ivar| @lir.create_field(@value_layout.field_name(ivar[:name]), ivar_type(ivar)) }
+          @binding_storage = BindingStorage.new(@lir, @tast, @value_layout, methods)
+          fields = ivars.map do |ivar|
+            @lir.create_field(@value_layout.field_name(ivar[:name]), @binding_storage.ivar_type(ivar))
+          end
           structs << @lir.create_struct(name, fields)
           methods.each { |method| functions << lower_method(method) }
         end
 
+        @binding_storage = BindingStorage.new(@lir, @tast, @value_layout, [])
         functions << lower_main
         functions.concat(@interrupt_functions)
         @result = @lir.replace_module(@value_layout.structs + structs, functions)
@@ -55,7 +59,7 @@ module BareRubyProt
             binding, type = @tast.children_of(parameter)
             @function_scope.declare(binding[:name])
             @function_scope.declare_pointer(binding[:name]) if @value_layout.shared?(type)
-            lir_parameters << { name: binding[:name], type: binding_type(binding, type) }
+            lir_parameters << { name: binding[:name], type: @binding_storage.type_of(binding, type) }
           end
 
           statements = predeclare_nilable_locals(body) + body.flat_map { |statement| lower_statement(statement) }
@@ -82,9 +86,11 @@ module BareRubyProt
           self_type: self_class && @lir.pointer_type(@lir.struct_type(self_class)),
           return_type:, void_return: @value_layout.type_of(return_type) == :void
         )
+        @binding_storage.scope = @function_scope
         yield
       ensure
         @function_scope = previous
+        @binding_storage.scope = previous
       end
 
       def lower_interrupt(node)
@@ -226,7 +232,7 @@ module BareRubyProt
       def lower_arena_assignment(binding, value, type)
         struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
-        [storage_declaration(binding, struct) +
+        [@binding_storage.declaration(binding, struct) +
           arena_storage.reserved_for(place, @tast.children_of(value)[0]), place]
       end
 
@@ -445,20 +451,20 @@ module BareRubyProt
         return lower_format_assignment(binding, value) if @tast.node_type(value) == :format
         storage_type = binding[:type] || type
         unless @value_layout.nilable?(storage_type)
-          return lower_array_assignment(binding, value, type) if array_creation?(value)
-          return lower_arena_assignment(binding, value, type) if arena_creation?(value)
-          return lower_object_assignment(binding, value, type) if object_creation?(value)
+          return lower_array_assignment(binding, value, type) if @binding_storage.array_creation?(value)
+          return lower_arena_assignment(binding, value, type) if @binding_storage.arena_creation?(value)
+          return lower_object_assignment(binding, value, type) if @binding_storage.object_creation?(value)
         end
 
         statements, value_expression = lower_expression(value)
         @function_scope.declare_pointer(binding[:name]) if @value_layout.shared?(type) && binding[:kind] == :local
         value_expression = coerce_value(value, value_expression, storage_type)
-        place = place_of(binding, binding_type(binding, storage_type))
+        place = place_of(binding, @binding_storage.type_of(binding, storage_type))
 
         if binding[:kind] == :local && !@function_scope.declared?(binding[:name])
           @function_scope.declare(binding[:name])
           written = statements + [
-            @lir.create_declare(binding[:name], binding_type(binding, storage_type), value_expression)
+            @lir.create_declare(binding[:name], @binding_storage.type_of(binding, storage_type), value_expression)
           ]
         else
           written = statements + [@lir.create_assign(place, value_expression)]
@@ -469,7 +475,7 @@ module BareRubyProt
       def lower_reference(node)
         binding, type = @tast.children_of(node)
         storage_type = @value_layout.nilable?(binding[:type]) ? binding[:type] : type
-        place = place_of(binding, binding_type(binding, storage_type))
+        place = place_of(binding, @binding_storage.type_of(binding, storage_type))
         [[], read_nilable_place(place, storage_type, type)]
       end
 
@@ -484,11 +490,11 @@ module BareRubyProt
         return @value_layout.absent(target_type) if @value_layout.nilable?(target_type) && source_type == :Nil
         if @value_layout.nilable?(target_type) && !@value_layout.nilable?(source_type)
           return @lir.create_brace_init(
-            [@lir.create_const_bool(true), shared_rvalue(node, expression)], @value_layout.type_of(target_type)
+            [@lir.create_const_bool(true), @binding_storage.rvalue(node, expression)], @value_layout.type_of(target_type)
           )
         end
 
-        shared_rvalue(node, expression)
+        @binding_storage.rvalue(node, expression)
       end
 
       # Every object is shared, which is what Ruby does. Assignment names the same object
@@ -499,61 +505,12 @@ module BareRubyProt
       # the call dropped it. An arena has a second reason — what it hands out is recorded in
       # the arena itself, so a method that allocated from a copy would leave the caller's
       # arena believing the room is still free.
-      def array_creation?(node) = %i[array array_fill array_dup].include?(@tast.node_type(node))
-
-      def arena_creation?(node) = @tast.node_type(node) == :arena_new
-
-      def object_creation?(node)
-        @tast.node_type(node) == :call && %i[new binding_new].include?(@tast.children_of(node)[1][:kind])
-      end
-
-      def creation?(node) = array_creation?(node) || arena_creation?(node) || object_creation?(node)
-
-      def owning_ivars(methods)
-        names = []
-        each_assignment(methods) do |binding, value|
-          names << binding[:name] if binding[:kind] == :instance && creation?(value)
-        end
-        names
-      end
-
-      def each_assignment(value, &block)
-        return value.each { |element| each_assignment(element, &block) } if value.is_a?(Array)
-        return unless value.is_a?(Hash) && value.key?(:children)
-
-        yield(value[:children][0], value[:children][1]) if value[:type] == :assignment
-        each_assignment(value[:children], &block)
-      end
-
-      def ivar_type(ivar)
-        binding_type({ kind: :instance, name: ivar[:name] }, ivar[:type])
-      end
-
-      def binding_type(binding, type)
-        return @value_layout.type_of(type) unless @value_layout.shared?(type)
-
-        pointer_binding?(binding) ? @lir.pointer_type(@value_layout.type_of(type)) : @value_layout.type_of(type)
-      end
-
-      def pointer_binding?(binding)
-        return !@storage_ivars.include?(binding[:name]) if binding[:kind] == :instance
-
-        @function_scope.pointer?(binding[:name])
-      end
-
-      # A shared value in value position is its address.
-      def shared_rvalue(node, expression)
-        return expression unless @value_layout.shared?(@tast.value_type(node))
-
-        @lir.reference_to(expression)
-      end
-
       # A creation expression is where storage comes from, so the binding it is assigned to
       # holds the array itself rather than a pointer to one.
       def lower_array_assignment(binding, value, type)
         struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
-        [storage_declaration(binding, struct) + fill_of(place, value, type), place]
+        [@binding_storage.declaration(binding, struct) + fill_of(place, value, type), place]
       end
 
       # The same for an object: the binding a constructor is assigned to holds the instance,
@@ -563,23 +520,7 @@ module BareRubyProt
         _receiver, callee, arguments, = @tast.children_of(value)
         struct = @value_layout.type_of(type)
         place = place_of(binding, struct)
-        [object_storage_declaration(binding, struct) + construction_of(place, callee, arguments), place]
-      end
-
-      # A local that owns storage is declared here rather than initialised from somewhere
-      # else; an instance variable that owns storage is a field and is declared with the struct.
-      def storage_declaration(binding, struct)
-        return [] unless binding[:kind] == :local && !@function_scope.declared?(binding[:name])
-
-        @function_scope.declare(binding[:name])
-        [@lir.create_declare(binding[:name], struct, nil)]
-      end
-
-      def object_storage_declaration(binding, struct)
-        return [] unless binding[:kind] == :local && !@function_scope.declared?(binding[:name])
-
-        @function_scope.declare(binding[:name])
-        [@lir.create_declare(binding[:name], struct, @lir.create_brace_init([], struct))]
+        [@binding_storage.object_declaration(binding, struct) + construction_of(place, callee, arguments), place]
       end
 
       # An array written anywhere other than the right of an assignment still needs
@@ -753,7 +694,7 @@ module BareRubyProt
         expressions = arguments.map do |argument|
           argument_statements, expression = lower_expression(argument)
           statements.concat(argument_statements)
-          shared_rvalue(argument, expression)
+          @binding_storage.rvalue(argument, expression)
         end
         [statements, expressions]
       end
