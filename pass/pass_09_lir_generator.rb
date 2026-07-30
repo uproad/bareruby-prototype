@@ -206,10 +206,9 @@ module BareRubyProt
       # runs on the way out of the scope whether the block ends normally or an exception
       # leaves it, which is the exception safety the design requires.
       def lower_arena(node)
-        binding, size, body = @tast.children_of(node)
-        @function_scope.declare(binding[:name])
-        opening, = arena_storage.opened(binding[:name], size)
-        [@lir.create_scope(opening + lower_block_body(body))]
+        size, body = @tast.children_of(node)
+        buffer, guard = arena_storage.opened(size)
+        [@lir.create_scope([buffer, guard] + lower_block_body(body))]
       end
 
       # A local the block introduces does not exist after it, in Ruby or in the C++ scope
@@ -219,50 +218,94 @@ module BareRubyProt
         @function_scope.nested { predeclare_nilable_locals(body) + lower_body(body) }
       end
 
-      def lower_arena_new(node)
-        size, type = @tast.children_of(node)
-        struct = @value_layout.type_of(type)
-        name = @function_scope.next_temporary
-        place = @lir.create_local(name, struct)
-        [[@lir.create_declare(name, struct, nil)] + arena_storage.reserved_for(place, size), place]
-      end
-
-      # A creation expression is where the region comes from, so the binding it is
-      # assigned to holds the arena itself rather than a pointer to one.
-      def lower_arena_assignment(binding, value, type)
-        struct = @value_layout.type_of(type)
-        place = place_of(binding, struct)
-        [@binding_storage.declaration(binding, struct) +
-          arena_storage.reserved_for(place, @tast.children_of(value)[0]), place]
-      end
-
-      # The length is bound to a local first, because the handle stores it as well as
-      # allocating from it and the expression it came from may not be evaluated twice.
+      # The runtime hands back a handle it owns, so there is nothing here to assemble. An
+      # initial value is written afterwards; without one the elements are already the
+      # default, because a fresh block from the region is zeroed.
       def lower_arena_alloc(node)
-        receiver, length, type = @tast.children_of(node)
-        struct = @value_layout.type_of(type)
+        length, initial, type = @tast.children_of(node)
         element = @value_layout.type_of(@value_layout.element_of(type))
-        receiver_statements, receiver_expression = lower_expression(receiver)
         length_statements, length_expression = lower_expression(length)
-        length_name = @function_scope.next_temporary
         name = @function_scope.next_temporary
-        length_local = @lir.create_local(length_name, :int32)
-        place = @lir.create_local(name, struct)
+        place = @lir.create_local(name, @value_layout.type_of(type))
 
-        statements = receiver_statements + length_statements +
-                     [@lir.create_declare(length_name, :int32, length_expression),
-                      @lir.create_declare(name, struct, nil),
-                      @lir.create_assign(
-                        @value_layout.items_of(place),
-                        arena_storage.allocation(@lir.reference_to(receiver_expression), length_local, element)
-                      ),
-                      @lir.create_assign(@value_layout.length_of(place), length_local)]
+        statements = length_statements +
+                     [@lir.create_declare(name, @value_layout.type_of(type),
+                                          arena_storage.allocation(length_expression, element))]
+        statements += filling(place, element, initial) if initial
         [statements, place]
+      end
+
+      # Filling walks the length the handle now carries rather than a capacity, which is
+      # the one thing this array knows only at run time.
+      def filling(place, element, initial)
+        statements, expression = lower_expression(initial)
+        source = @function_scope.next_temporary
+        counter = @function_scope.next_temporary
+        local = @lir.create_local(counter, :int32)
+
+        statements + [@lir.create_declare(source, element, expression),
+                      @lir.create_for(
+                        @lir.create_declare(counter, :int32, @lir.create_const_int(0, :int32)),
+                        @lir.create_binary("<", local, @value_layout.length_of(place), :bool),
+                        @lir.create_assign(local, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32)),
+                        [@lir.create_assign(
+                          @lir.create_index(@value_layout.arena_items_of(place, element), local, element),
+                          @lir.create_local(source, element)
+                        )]
+                      )]
       end
 
       def lower_arena_length(node)
         statements, expression = lower_expression(@tast.children_of(node)[0])
         [statements, @value_layout.length_of(expression)]
+      end
+
+      def lower_arena_current(_node) = [[], arena_storage.current]
+
+      def lower_arena_dup(node)
+        receiver, type = @tast.children_of(node)
+        element = @value_layout.type_of(@value_layout.element_of(type))
+        statements, expression = lower_expression(receiver)
+        [statements, arena_storage.duplication(expression, element)]
+      end
+
+      # Writing may grow the array, and growing moves the elements, so the pointer the
+      # write uses is the one the runtime hands back rather than one read beforehand.
+      def lower_arena_index_assign(node)
+        receiver, index, value, type = @tast.children_of(node)
+        element = @value_layout.type_of(type)
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        index_statements, index_expression = lower_expression(index)
+        value_statements, value_expression = lower_expression(value)
+        name = @function_scope.next_temporary
+        local = @lir.create_local(name, :int32)
+        statements = receiver_statements + index_statements + value_statements +
+                     [@lir.create_declare(name, :int32, index_expression)]
+        target = @lir.create_index(
+          arena_storage.extension(
+            receiver_expression, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32), element
+          ), local, element
+        )
+        [statements + [@lir.create_assign(target, value_expression)], value_expression]
+      end
+
+      # Appending writes at the length the array has now, which the runtime reads for
+      # itself: the index is bound first because extending changes it.
+      def lower_arena_push(node)
+        receiver, value, type = @tast.children_of(node)
+        element = @value_layout.type_of(@value_layout.element_of(type))
+        receiver_statements, receiver_expression = lower_expression(receiver)
+        value_statements, value_expression = lower_expression(value)
+        name = @function_scope.next_temporary
+        local = @lir.create_local(name, :int32)
+        statements = receiver_statements + value_statements +
+                     [@lir.create_declare(name, :int32, @value_layout.length_of(receiver_expression))]
+        target = @lir.create_index(
+          arena_storage.extension(
+            receiver_expression, @lir.create_binary("+", local, @lir.create_const_int(1, :int32), :int32), element
+          ), local, element
+        )
+        [statements + [@lir.create_assign(target, value_expression)], receiver_expression]
       end
 
       def lower_condition(node)
@@ -324,12 +367,18 @@ module BareRubyProt
           lower_index_assign(node)
         when :array, :array_fill, :array_dup
           lower_array_temporary(node)
-        when :arena_new
-          lower_arena_new(node)
         when :arena_alloc
           lower_arena_alloc(node)
         when :arena_length
           lower_arena_length(node)
+        when :arena_current
+          lower_arena_current(node)
+        when :arena_dup
+          lower_arena_dup(node)
+        when :arena_push
+          lower_arena_push(node)
+        when :arena_index_assign
+          lower_arena_index_assign(node)
         when :call
           lower_call(node)
         when :logical
@@ -427,12 +476,20 @@ module BareRubyProt
           [@lir.create_expression(call)], place]
       end
 
+      # Reading stays pointer arithmetic in both arrays. The growing one keeps its elements
+      # as bytes because the runtime does not know what they are, so the read casts them
+      # back — the arithmetic is the same, the type is restored on the way in.
       def lower_index(node)
         receiver, index, type = @tast.children_of(node)
+        element = @value_layout.type_of(type)
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
-        [receiver_statements + index_statements,
-         @lir.create_index(@value_layout.items_of(receiver_expression), index_expression, @value_layout.type_of(type))]
+        items = if @value_layout.arena_array?(@tast.value_type(receiver))
+                  @value_layout.arena_items_of(receiver_expression, element)
+                else
+                  @value_layout.items_of(receiver_expression)
+                end
+        [receiver_statements + index_statements, @lir.create_index(items, index_expression, element)]
       end
 
       def lower_index_assign(node)
@@ -452,7 +509,6 @@ module BareRubyProt
         storage_type = binding[:type] || type
         unless @value_layout.nilable?(storage_type)
           return lower_array_assignment(binding, value, type) if @binding_storage.array_creation?(value)
-          return lower_arena_assignment(binding, value, type) if @binding_storage.arena_creation?(value)
           return lower_object_assignment(binding, value, type) if @binding_storage.object_creation?(value)
         end
 
@@ -687,7 +743,7 @@ module BareRubyProt
 
       def payload = I2cPayload.new(@lir, @tast, @value_layout, @function_scope)
 
-      def arena_storage = ArenaStorage.new(@lir, @function_scope)
+      def arena_storage = ArenaStorage.new(@lir, @function_scope, @value_layout)
 
       def lower_arguments(arguments)
         statements = []

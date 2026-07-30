@@ -274,7 +274,7 @@ module BareRubyProt
         when :nil then @tast.create_nil(span_of(node))
         when :float then infer_float(node)
         when :boolean then infer_boolean(node)
-        when :string then infer_string(node)
+        when :string then infer_string(node, type_environment:)
         when :symbol then infer_symbol(node)
         when :super then infer_super(node, type_environment:)
         when :begin then infer_begin(node, type_environment:)
@@ -354,10 +354,18 @@ module BareRubyProt
       # The element type is the least upper bound of the elements, so a literal that mixes
       # types with no common widening is an error here rather than something the backend
       # has to represent.
+      # An empty literal inside a region is the growing array. It has no other use — a
+      # fixed-capacity array of nothing holds nothing — so the form is free to mean the
+      # one thing a program writes it for.
       def infer_array(node, type_environment:)
-        elements = @bareruby_ast.children_of(node)[0].map do |element|
-          infer_node(element, type_environment:)
+        elements = @bareruby_ast.children_of(node)[0]
+        if elements.empty?
+          raise "[] is the growing array and needs a region; write ::Array.new outside one" if @arena.nil?
+
+          return infer_arena_array_new_call([], type_environment:, span: span_of(node))
         end
+
+        elements = elements.map { |element| infer_node(element, type_environment:) }
         types = argument_types(elements)
         unless types.uniq.one? || types.all? { |element| TypeUnion::WIDTHS.include?(element) }
           raise "array literal mixes #{types.uniq.join(' and ')}, which have no common type"
@@ -391,8 +399,13 @@ module BareRubyProt
           @bareruby_ast.children_of(node)[0] == :local
       end
 
-      def infer_string(node)
-        @tast.create_string(@bareruby_ast.children_of(node)[0], :String, span_of(node))
+      # As with the empty array literal: an empty string inside a region is the one a
+      # program means to grow. A literal with contents stays what it is, in Flash.
+      def infer_string(node, type_environment:)
+        text = @bareruby_ast.children_of(node)[0]
+        return @tast.create_string(text, :String, span_of(node)) unless text.empty? && @arena
+
+        infer_arena_string_call(nil, type_environment:, span: span_of(node))
       end
 
       # A missing else is the Nil branch. Branch-local environments preserve the
@@ -540,12 +553,12 @@ module BareRubyProt
           infer_module_function_call(
             @bareruby_ast.children_of(receiver)[1], name, arguments, type_environment:, span:
           )
+        elsif constant_path_receiver?(receiver) && name == :new
+          infer_constant_path_new_call(receiver, arguments, type_environment:, span:)
         elsif constant_receiver?(receiver) && name == :new
           class_name = @bareruby_ast.children_of(receiver)[1]
           if class_name == :Array
             infer_array_new_call(arguments, type_environment:, span:)
-          elsif class_name == :Arena
-            infer_arena_new_call(arguments, type_environment:, span:)
           elsif Peripheral.known?(class_name)
             infer_binding_new_call(class_name, arguments, type_environment:, span:)
           else
@@ -563,8 +576,6 @@ module BareRubyProt
             infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, type_environment:, span:)
           elsif ArenaString.type?(receiver_type)
             infer_arena_string_method_call(name, receiver_tast, arguments, type_environment:, span:)
-          elsif Arena.type?(receiver_type)
-            infer_arena_method_call(name, receiver_tast, arguments, type_environment:, span:)
           elsif Fixed.conversion?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
           elsif operator?(name)
@@ -616,51 +627,37 @@ module BareRubyProt
         @tast.create_index_assign(receiver_tast, index, value, receiver_type[:element], span)
       end
 
-      # The region is created when the block is entered and released when it is left, so
-      # its size is what the whole block may allocate and has to be settled while
-      # compiling: the storage is reserved statically, not taken from a heap.
+      # `arena(N)` asks for N bytes here. Which role the block plays is not settled while
+      # compiling — a block written in a method is outermost or nested depending on who
+      # calls that method — so the size is carried through and the guard decides on the way
+      # in. Written without a size the block asks for nothing and is a release point only.
       def infer_arena_call(arguments, block, type_environment:, span:)
-        size = constant_capacity(keyword_value(arguments, :size), type_environment:)
+        size = arguments.empty? ? 0 : constant_capacity(arguments[0], type_environment:)
         raise "arena: the size must be known at compile time" if size.nil?
 
-        parameters, body = @bareruby_ast.children_of(block)
-        binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameters.first)[0])
-        block_type_environment = type_environment.with(binding[:name], binding, Arena.type(@tast))
+        _parameters, body = @bareruby_ast.children_of(block)
+        # A name the block introduces does not exist after it, as in Ruby, so the body gets
+        # an environment of its own. Without that the next block would see it as a name
+        # that outlives a region and refuse what the region hands out.
+        block_type_environment = type_environment.branched
 
-        typed_body = inside_arena(Arena.new(binding, enclosing: @arena, outer_names: type_environment.names)) do
+        typed_body = inside_arena(Arena.new(enclosing: @arena, outer_names: type_environment.names)) do
           infer_body(body, type_environment: block_type_environment)
         end
 
-        @tast.create_arena(binding, size, typed_body, span)
-      end
-
-      def infer_arena_new_call(arguments, type_environment:, span:)
-        size = constant_capacity(keyword_value(arguments, :size), type_environment:)
-        raise "Arena.new: the size must be known at compile time" if size.nil?
-
-        @tast.create_arena_new(size, Arena.type(@tast), span)
-      end
-
-      def keyword_value(arguments, name)
-        argument = arguments.find do |candidate|
-          @bareruby_ast.node_type(candidate) == :keyword_argument &&
-            @bareruby_ast.children_of(candidate)[0] == name
-        end
-        argument && @bareruby_ast.children_of(argument)[1]
+        @tast.create_arena(size, typed_body, span)
       end
 
       # The length is a run-time value: reserving room for it is the whole reason the
       # arena exists. The element type is left open and the first assignment settles it,
-      # as Array.new(n) does.
-      def infer_arena_method_call(name, receiver_tast, arguments, type_environment:, span:)
-        return infer_arena_reset_call(receiver_tast, span) if name == :reset
-        if name == :string
-          return infer_arena_string_call(receiver_tast, arguments.first, type_environment:, span:)
-        end
-        raise "an arena answers array, string and reset, not #{name}" unless name == :array
-
-        length = infer_node(arguments[0], type_environment:)
-        @tast.create_arena_alloc(receiver_tast, length, ArenaArray.type(@tast), span)
+      # as Array.new(n) does, and the elements start at the default of whatever that turns
+      # out to be.
+      def infer_arena_array_new_call(arguments, type_environment:, span:)
+        length = arguments.empty? ? @tast.create_integer(0, TypeUnion.literal(0), span) :
+                 infer_node(arguments[0], type_environment:)
+        initial = arguments.length < 2 ? nil : infer_node(arguments[1], type_environment:)
+        element = initial && @tast.value_type(initial)
+        @tast.create_arena_alloc(length, initial, ArenaArray.type(@tast, element), span)
       end
 
       # The string a program can grow. Its handle lives in the region along with its bytes,
@@ -669,14 +666,16 @@ module BareRubyProt
       # The initial contents may be a static string, another variable-length string, or an
       # interpolation, which is the one form whose length is measured while running rather
       # than estimated while compiling.
-      def infer_arena_string_call(receiver_tast, source, type_environment:, span:)
+      def infer_arena_string_call(source, type_environment:, span:)
         if formatted?(source)
-          arguments = format_arguments(receiver_tast, source, type_environment:, span:)
+          arguments = format_arguments(current_arena(span), source, type_environment:, span:)
           return string_call(:string, ArenaString::FORMAT_FUNCTION, arguments, ArenaString.type(@tast), span)
         end
 
         initial = source ? text_of(source, type_environment:) : @tast.create_string("", :String, span)
-        string_call(:string, ArenaString::NEW_FUNCTION, [receiver_tast, initial], ArenaString.type(@tast), span)
+        string_call(
+          :string, ArenaString::NEW_FUNCTION, [current_arena(span), initial], ArenaString.type(@tast), span
+        )
       end
 
       # Growing, joining and comparing all reach the runtime, which owns the representation:
@@ -722,20 +721,20 @@ module BareRubyProt
 
       def text_of(node, type_environment:) = ArenaString.bytes_of(@tast, infer_node(node, type_environment:))
 
-      # A variable-length string reaches everything that takes a static string — puts, a
-      # UART, a format value, another string — through the bytes the region holds.
-      def infer_arena_reset_call(receiver_tast, span)
-        callee = @tast.create_callee(:binding_method, :Arena, :reset, Arena::RESET_FUNCTION, [], :Nil)
-        @tast.create_call(receiver_tast, callee, [], nil, :Nil, span)
-      end
-
       # size is a field rather than a folded constant, because an arena array is the one
-      # array whose length the compiler does not know.
+      # array whose length the compiler does not know. Writing past the end grows it, so
+      # the write goes through the runtime while the read stays pointer arithmetic.
       def infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, type_environment:, span:)
         return @tast.create_arena_length(receiver_tast, :Int32, span) if SIZE_NAMES.include?(name)
+        return @tast.create_arena_dup(receiver_tast, receiver_type, span) if name == :dup
+        return infer_arena_push(receiver_tast, receiver_type, arguments[0], type_environment:, span:) if name == :<<
 
         index = infer_node(arguments[0], type_environment:)
-        return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], type_environment:, span:) if name == :[]=
+        if name == :[]=
+          value = infer_node(arguments[1], type_environment:)
+          receiver_type[:element] ||= @tast.value_type(value)
+          return @tast.create_arena_index_assign(receiver_tast, index, value, receiver_type[:element], span)
+        end
 
         element_type = receiver_type[:element]
         raise "the element type of this arena array is not known yet" if element_type.nil?
@@ -743,23 +742,48 @@ module BareRubyProt
         @tast.create_index(receiver_tast, index, element_type, span)
       end
 
+      # Appending is writing at the length the array has right now, which the runtime reads
+      # for itself: the index the caller would have to compute is the one it already knows.
+      def infer_arena_push(receiver_tast, receiver_type, value_node, type_environment:, span:)
+        value = infer_node(value_node, type_environment:)
+        receiver_type[:element] ||= @tast.value_type(value)
+        @tast.create_arena_push(receiver_tast, value, receiver_type, span)
+      end
+
       # The simple check the design asks for while a full lifetime analysis is still out
-      # of scope: neither an allocation nor the arena it came from may be stored where the
-      # release cannot reach it. An instance variable outlives every block, and so does a
-      # local the block did not introduce. Creating a long-lived arena there is the one
-      # thing that is not an escape, because it is where that arena begins.
+      # of scope: what a region hands out may not be stored where the release cannot reach
+      # it. An instance variable outlives every block, and so does a local the block did
+      # not introduce. Returning one is not an escape — the caller's region is still there.
+      # With `arena` a form rather than a value there is no region to store, only what it
+      # handed out, so the check has one case instead of three.
       def reject_arena_escape(kind, name, value_tast)
         type = @tast.value_type(value_tast)
-        return unless ArenaArray.type?(type) || ArenaString.type?(type) ||
-                      (Arena.type?(type) && @tast.node_type(value_tast) != :arena_new)
+        return unless ArenaArray.type?(type) || ArenaString.type?(type)
         return unless kind == :instance || @arena&.outlived_by?(name)
 
-        raise "an arena and what it holds cannot be stored in #{name}, which outlives them"
+        raise "what an arena holds cannot be stored in #{name}, which outlives it"
       end
 
       def constant_receiver?(receiver)
         @bareruby_ast.node_type(receiver) == :reference &&
           @bareruby_ast.children_of(receiver)[0] == :constant
+      end
+
+      def constant_path_receiver?(receiver) = @bareruby_ast.node_type(receiver) == :constant_path
+
+      # `Arena::Array` and `Arena::String` are the two the first two layers cannot hold, and
+      # a leading `::` is how a program reaches the fixed-capacity array from inside a
+      # region, where a bare literal would mean the growing one.
+      def infer_constant_path_new_call(receiver, arguments, type_environment:, span:)
+        owner, name = @bareruby_ast.children_of(receiver)
+        if Arena.member?(owner, name)
+          return infer_arena_array_new_call(arguments, type_environment:, span:) if name == Arena::ARRAY_NAME
+
+          return infer_arena_string_call(arguments.first, type_environment:, span:)
+        end
+        raise "#{owner}::#{name}.new is not a form this compiler knows" unless owner.nil? && name == :Array
+
+        infer_array_new_call(arguments, type_environment:, span:)
       end
 
       def infer_self_method_call(name, arguments, type_environment:, span:)
@@ -834,7 +858,10 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
       end
 
-      def current_arena(span) = @tast.create_reference(@arena.binding, Arena.type(@tast), span)
+      # Whichever region is current. A binding that needs somewhere to put what it receives
+      # asks for this rather than for a name the program wrote, because the program writes
+      # none.
+      def current_arena(span) = @tast.create_arena_current(span)
 
       def inside_arena(arena)
         enclosing = @arena

@@ -1,27 +1,28 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  # A region: the third layer of the memory model. Its storage is reserved while
-  # compiling, allocation from it bumps a pointer, and a block's region is released on the
-  # way out of that block — so what it hands out may be held only by names the block
-  # itself introduced. That is why a region has to remember what was already there when it
-  # was entered. Blocks nest, and each region knows the one it is inside.
+  # A region: the third layer of the memory model. `arena` is a form rather than an object,
+  # so there is nothing to name, pass or store — what a block hands out comes from whichever
+  # region is current, and a method allocates without being told which. Storage is reserved
+  # while compiling, allocation from it bumps a pointer, and leaving a block hands back
+  # everything that block took. That is why a region has to remember what was already there
+  # when it was entered. Blocks nest, and each region knows the one it is inside.
   #
-  # An instance is a block whose body is being inferred right now. The long-lived form,
-  # `Arena.new(size:)`, is an expression rather than a block and enters nothing.
+  # An instance is a block whose body is being inferred right now.
   class Arena
-    STRUCT = :bareruby_arena_t
-    RESET_FUNCTION = :bareruby_arena_reset
-    METHODS = %i[array string reset].freeze
+    NAME = :Arena
+    ARRAY_NAME = :Array
+    STRING_NAME = :String
 
-    def self.type(typed_ast) = typed_ast.create_instance_type(:Arena, STRUCT)
+    # `Arena::Array` and `Arena::String` are the two values the first two layers cannot
+    # hold. Nothing else lives under the name.
+    def self.member?(owner, name)
+      owner == NAME && [ARRAY_NAME, STRING_NAME].include?(name)
+    end
 
-    def self.type?(type) = type.is_a?(Hash) && type[:class_name] == :Arena
+    attr_reader :enclosing
 
-    attr_reader :binding, :enclosing
-
-    def initialize(binding, enclosing:, outer_names:)
-      @binding = binding
+    def initialize(enclosing:, outer_names:)
       @enclosing = enclosing
       @outer_names = outer_names
     end

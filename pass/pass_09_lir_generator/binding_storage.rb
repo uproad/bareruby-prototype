@@ -19,11 +19,9 @@ module BareRubyProt
       @owning_ivars = owning_ivars(methods)
     end
 
-    def creation?(node) = array_creation?(node) || arena_creation?(node) || object_creation?(node)
+    def creation?(node) = array_creation?(node) || object_creation?(node)
 
     def array_creation?(node) = %i[array array_fill array_dup].include?(@tast.node_type(node))
-
-    def arena_creation?(node) = @tast.node_type(node) == :arena_new
 
     def object_creation?(node)
       @tast.node_type(node) == :call && %i[new binding_new].include?(@tast.children_of(node)[1][:kind])

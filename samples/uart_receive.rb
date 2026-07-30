@@ -1,6 +1,6 @@
 uart = UART.new(0, baud: 115200, parity: UART::NONE)
 
-arena(size: 256) do |a|
+arena(256) do
   header = uart.read(4)
   line = uart.gets
 

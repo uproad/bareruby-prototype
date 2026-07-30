@@ -172,7 +172,9 @@ module BareRubyProt
         "&#{@lir.children_of(node)[0]}"
       when :cast
         value, type = @lir.children_of(node)
-        "(#{type_text(type)})#{expression_text(value)}"
+        # Parenthesised because a cast binds looser than the indexing and the member
+        # access that follow it.
+        "((#{type_text(type)})#{expression_text(value)})"
       when :size_of
         "(int32_t)sizeof(#{type_text(@lir.children_of(node)[0])})"
       when :brace_init

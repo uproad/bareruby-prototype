@@ -27,12 +27,12 @@ class Tokenizer
   def scanned
     @scanned
   end
-end
 
-def report(values)
-  line = Arena::String.new("size=#{values.size}")
-  line << " scanned"
-  line
+  def report(values)
+    line = Arena::String.new("size=#{values.size}")
+    line << " scanned"
+    line
+  end
 end
 
 tokenizer = Tokenizer.new
@@ -75,7 +75,7 @@ arena(4096) do
   note << "#{tokenizer.scanned}"
   puts note
 
-  puts report(values)
+  puts tokenizer.report(values)
 
   fixed = ::Array.new(3, 0)
   fixed[2] = 5
