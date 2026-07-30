@@ -19,12 +19,17 @@ module BareRubyProt
 
     attr_reader :name, :instance_variables
 
-    def initialize(name, constants:, instance_variables:, methods:)
+    def initialize(name, constants:, instance_variables:, methods:, variants:)
       @name = name
       @constants = constants
       @instance_variables = instance_variables
       @methods = methods
+      @variants = variants
     end
+
+    def variant(name) = @variants[name]
+
+    def implemented? = !@variants.empty?
 
     def struct = :"#{FUNCTION_PREFIX}#{underscored}#{STRUCT_SUFFIX}"
 

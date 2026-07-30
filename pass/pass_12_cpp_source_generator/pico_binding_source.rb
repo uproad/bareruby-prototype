@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../../standard_library"
+require_relative "native_declaration"
+
 module BareRubyProt
   module PicoBindingSource
-    PERIPHERAL = <<~CPP
+    PERIPHERAL_PREAMBLE = <<~CPP
       #include "bareruby_binding.h"
 
       #include <stdarg.h>
@@ -19,55 +22,9 @@ module BareRubyProt
       void bareruby_startup(void) {
           stdio_init_all();
       }
+    CPP
 
-      static bareruby_interrupt_handler_t bareruby_gpio_interrupt_handler;
-
-      static void bareruby_gpio_interrupt_callback(uint gpio, uint32_t events) {
-          (void)gpio;
-          (void)events;
-          bareruby_gpio_interrupt_handler();
-      }
-
-      void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
-          self->pin = pin;
-          self->params = params;
-          gpio_init((uint)pin);
-          gpio_set_dir((uint)pin, (params & 2) ? GPIO_OUT : GPIO_IN);
-          if (params & 4) {
-              gpio_set_input_enabled((uint)pin, false);
-          }
-          if (params & 8) {
-              gpio_pull_up((uint)pin);
-          } else if (params & 16) {
-              gpio_pull_down((uint)pin);
-          } else {
-              gpio_disable_pulls((uint)pin);
-          }
-      }
-
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
-          gpio_put((uint)self->pin, value != 0);
-      }
-
-      int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
-          return gpio_get((uint)self->pin) ? 1 : 0;
-      }
-
-      bool bareruby_gpio_high(bareruby_gpio_t *self) {
-          return gpio_get((uint)self->pin);
-      }
-
-      bool bareruby_gpio_low(bareruby_gpio_t *self) {
-          return !gpio_get((uint)self->pin);
-      }
-
-      void bareruby_gpio_on_interrupt(
-          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
-          bareruby_gpio_interrupt_handler = handler;
-          gpio_set_irq_enabled_with_callback(
-              (uint)self->pin, (uint32_t)events, true, bareruby_gpio_interrupt_callback);
-      }
-
+    PERIPHERAL_REMAINDER = <<~CPP
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
           self->pin = pin;
           self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
@@ -312,12 +269,31 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_pico.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_pico.cpp"
 
-    FILES = {
-      PERIPHERAL_FILE => PERIPHERAL,
-      UART_RECEIVE_FILE => UART_RECEIVE,
-      I2C_FILE => I2C,
-      I2C_READ_FILE => I2C_READ
-    }.freeze
+    VARIANT = :freestanding
+
+    # The peripherals whose implementations this file carries, in the order it carries
+    # them. The C++ is the declaring class's, and the order is this file's.
+    NATIVE_CLASSES = %i[GPIO].freeze
+
+    # The preamble names what the whole file needs and starts the program off; each class
+    # then contributes what it needs above its own methods and the methods themselves.
+    def self.peripheral
+      parts = NATIVE_CLASSES.flat_map do |name|
+        NativeDeclaration.new(StandardLibrary[name]).definitions(variant_of(name))
+      end
+      ([PERIPHERAL_PREAMBLE] + parts + [PERIPHERAL_REMAINDER]).join("\n")
+    end
+
+    def self.variant_of(name) = StandardLibrary[name].variant(VARIANT)
+
+    def self.files
+      {
+        PERIPHERAL_FILE => peripheral,
+        UART_RECEIVE_FILE => UART_RECEIVE,
+        I2C_FILE => I2C,
+        I2C_READ_FILE => I2C_READ
+      }
+    end
 
     # The two binding implementations answer the same questions with the same names on
     # either side, so a build picks one of these modules and asks it the same things.

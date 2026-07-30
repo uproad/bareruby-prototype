@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "../../standard_library"
+require_relative "native_declaration"
+
 module BareRubyProt
   module HostBindingSource
-    PERIPHERAL = <<~CPP
+    PERIPHERAL_PREAMBLE = <<~CPP
       #include "bareruby_binding.h"
 
       #include <stdarg.h>
@@ -13,38 +16,9 @@ module BareRubyProt
       void bareruby_startup(void) {
           fprintf(stderr, "startup()\\n");
       }
+    CPP
 
-      void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
-          self->pin = pin;
-          self->params = params;
-          fprintf(stderr, "gpio_init(pin=%d, params=%d)\\n", (int)pin, (int)params);
-      }
-
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
-          fprintf(stderr, "gpio_write(pin=%d, value=%d)\\n", (int)self->pin, (int)value);
-      }
-
-      int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_read(pin=%d) -> 0\\n", (int)self->pin);
-          return 0;
-      }
-
-      bool bareruby_gpio_high(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_high(pin=%d) -> false\\n", (int)self->pin);
-          return false;
-      }
-
-      bool bareruby_gpio_low(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_low(pin=%d) -> true\\n", (int)self->pin);
-          return true;
-      }
-
-      void bareruby_gpio_on_interrupt(
-          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
-          fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
-          handler();
-      }
-
+    PERIPHERAL_REMAINDER = <<~CPP
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
           self->pin = pin;
           self->slice = pin / 2;
@@ -296,12 +270,31 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_host.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_host.cpp"
 
-    FILES = {
-      PERIPHERAL_FILE => PERIPHERAL,
-      UART_RECEIVE_FILE => UART_RECEIVE,
-      I2C_FILE => I2C,
-      I2C_READ_FILE => I2C_READ
-    }.freeze
+    VARIANT = :hosted
+
+    # The peripherals whose implementations this file carries, in the order it carries
+    # them. The C++ is the declaring class's, and the order is this file's.
+    NATIVE_CLASSES = %i[GPIO].freeze
+
+    # The preamble names what the whole file needs and starts the program off; each class
+    # then contributes what it needs above its own methods and the methods themselves.
+    def self.peripheral
+      parts = NATIVE_CLASSES.flat_map do |name|
+        NativeDeclaration.new(StandardLibrary[name]).definitions(variant_of(name))
+      end
+      ([PERIPHERAL_PREAMBLE] + parts + [PERIPHERAL_REMAINDER]).join("\n")
+    end
+
+    def self.variant_of(name) = StandardLibrary[name].variant(VARIANT)
+
+    def self.files
+      {
+        PERIPHERAL_FILE => peripheral,
+        UART_RECEIVE_FILE => UART_RECEIVE,
+        I2C_FILE => I2C,
+        I2C_READ_FILE => I2C_READ
+      }
+    end
 
     ALWAYS = [PERIPHERAL_FILE].freeze
   end

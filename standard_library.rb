@@ -3,6 +3,7 @@
 require "prism"
 
 require_relative "standard_library/native_method"
+require_relative "standard_library/native_variant"
 require_relative "standard_library/standard_class"
 
 module BareRubyProt
@@ -23,6 +24,9 @@ module BareRubyProt
 
     IVAR_DECLARATION = :native_ivar
     SIGNATURE_DECLARATION = :sig
+    VARIANT_DECLARATION = :native_variant
+    PRELUDE_DECLARATION = :prelude
+    BODY_DECLARATION = :body
     RETURN_KEY = :returns
     BLOCK_KEY = :block
     FUNCTION_KEY = :function
@@ -51,26 +55,45 @@ module BareRubyProt
       constants = {}
       instance_variables = {}
       methods = {}
+      variants = {}
       pending = []
 
       members.each do |member|
         case member
         when Prism::ConstantWriteNode then constants[member.name] = member.value.value
-        when Prism::CallNode then read_declaration(member, instance_variables, pending)
+        when Prism::CallNode then read_declaration(member, instance_variables, variants, pending)
         when Prism::DefNode
           methods[member.name] = read_method(member, pending) unless pending.empty?
           pending = []
         end
       end
 
-      StandardClass.new(name, constants:, instance_variables:, methods:)
+      StandardClass.new(name, constants:, instance_variables:, methods:, variants:)
     end
 
-    def read_declaration(node, instance_variables, pending)
+    def read_declaration(node, instance_variables, variants, pending)
       case node.name
       when IVAR_DECLARATION then instance_variables.merge!(keywords_of(node))
       when SIGNATURE_DECLARATION then pending << keywords_of(node)
+      when VARIANT_DECLARATION
+        variant = read_variant(node)
+        variants[variant.name] = variant
       end
+    end
+
+    # A variant's block holds one prelude at most and one body per method it implements.
+    def read_variant(node)
+      name = node.arguments.arguments.first.unescaped.to_sym
+      prelude = nil
+      bodies = {}
+      node.block.body.body.each do |member|
+        arguments = member.arguments.arguments
+        case member.name
+        when PRELUDE_DECLARATION then prelude = text_of(arguments.first)
+        when BODY_DECLARATION then bodies[arguments.first.unescaped.to_sym] = text_of(arguments.last)
+        end
+      end
+      NativeVariant.new(name, prelude:, bodies:)
     end
 
     # The types come from the sig by name and the order comes from the def, so a parameter
@@ -109,6 +132,14 @@ module BareRubyProt
       node.arguments.arguments.first.elements.to_h do |element|
         [element.key.unescaped.to_sym, value_of(element.value)]
       end
+    end
+
+    # A squiggly heredoc arrives in parts, because the indentation is taken off each of
+    # them, so its text is what the parts spell together.
+    def text_of(node)
+      return node.unescaped unless node.is_a?(Prism::InterpolatedStringNode)
+
+      node.parts.map(&:unescaped).join
     end
 
     def value_of(node)

@@ -42,7 +42,28 @@ module BareRubyProt
     # and `puts` share the variadic one an interpolation goes to.
     def functions = prototypes.uniq { |function, _| function }.map { |_, text| text }
 
+    # What one implementation of this class compiles to: whatever it needs above its
+    # methods, then a definition for each. The signature is the same one the header
+    # declares, so a definition and its prototype cannot drift apart.
+    def definitions(variant)
+      parts = variant.prelude ? [variant.prelude] : []
+      parts + prototypes.uniq { |function, _| function }.filter_map do |function, prototype|
+        method = method_of(function)
+        next unless variant.body?(method)
+
+        "#{prototype.delete_suffix(';')} {\n#{indented(variant.body(method))}}\n"
+      end
+    end
+
     private
+
+    def indented(body) = body.lines.map { |line| line.strip.empty? ? line : "#{INDENT}#{line}" }.join
+
+    def method_of(function)
+      @standard_class.native_methods.find do |method|
+        @standard_class.overloads_of(method).any? { |overload| overload.fetch(:function) == function }
+      end
+    end
 
     def field(name, type) = format(PARAMETER_TYPES.fetch(type).first, name)
 

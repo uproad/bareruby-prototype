@@ -25,8 +25,8 @@ module BareRubyProt
 
       def run
         @result = RuntimeSource::FILES.merge(BindingDeclaration.files)
-        @result.merge!(HostBindingSource::FILES) if @targets.any?(&:hosted?)
-        @result.merge!(PicoBindingSource::FILES) unless @targets.all?(&:hosted?)
+        @result.merge!(HostBindingSource.files) if @targets.any?(&:hosted?)
+        @result.merge!(PicoBindingSource.files) unless @targets.all?(&:hosted?)
         if lights_onboard_led?
           @targets.each { |target| @result.merge!(OnboardLedSource.files(target.led)) }
         end
