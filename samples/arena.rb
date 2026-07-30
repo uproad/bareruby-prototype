@@ -92,8 +92,17 @@ rescue
   puts "released"                    # => released, the region went back on the way out
 end
 
-# Running out of a region is thrown rather than stopped on, so a program can answer it and
-# carry on. There are three ways to reach it and all three land here.
+# Running out of a region raises Arena::FullError rather than stopping, so a program can
+# answer it and carry on. It is a StandardError, which is why a bare rescue is enough to
+# catch it: the region running dry means this piece of work asked for too much, not that
+# the machine is out of memory.
+#
+# This compiler has no exception classes yet, so a bare rescue is the only form there is
+# and rescue Arena::FullError cannot be written. What the three blocks below show is the
+# behaviour — thrown and catchable rather than stopping — not the class.
+#
+# With --no-exceptions there is nothing to catch it and it falls back to stopping, the rule
+# a bare raise already follows. There are three ways to run a region out; all three land here.
 begin
   arena(64) do
     values = Arena::Array.new(1000, 0)
