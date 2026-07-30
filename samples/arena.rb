@@ -1,19 +1,20 @@
-class Series
+class Tokenizer
   def initialize
-    @pool = Arena.new(size: 64)
+    @scanned = 0
   end
 
-  def squares(a, count)
-    values = a.array(count)
+  def scan(length)
+    values = Arena::Array.new(length)
     i = 0
-    while i < count
+    while i < length
       values[i] = i * i
       i = i + 1
     end
+    @scanned = @scanned + 1
     values
   end
 
-  def largest(values)
+  def widest(values)
     best = values[0]
     i = 1
     while i < values.size
@@ -23,42 +24,67 @@ class Series
     best
   end
 
-  def kept(count)
-    @pool.reset
-    squares(@pool, count)
+  def scanned
+    @scanned
   end
 end
 
-width = 3
-height = 2
-series = Series.new
+def report(values)
+  line = Arena::String.new("size=#{values.size}")
+  line << " scanned"
+  line
+end
 
-arena(size: 256) do |a|
-  values = series.squares(a, width * height)
+tokenizer = Tokenizer.new
+
+arena(4096) do
+  grown = []
+  grown[20] = 7
+  puts grown.size
+  puts grown[5]
+  grown << 99
+  puts grown.size
+
+  width = 3
+  height = 2
+  values = tokenizer.scan(width * height)
   puts values.size
-  puts series.largest(values)
+  puts tokenizer.widest(values)
+
+  filled = Arena::Array.new(4, 0)
+  filled[1] = 9
+  puts filled[1]
 
   shared = values
   shared[0] = 100
-  puts series.largest(shared)
+  puts tokenizer.widest(shared)
 
-  arena(size: 64) do |b|
-    doubles = b.array(3)
-    doubles[0] = values[2] * 2
-    doubles[1] = values[3] * 2
-    doubles[2] = values[4] * 2
-    puts series.largest(doubles)
+  k = 0
+  while k < 1000
+    arena do
+      scratch = Arena::Array.new(8, 0)
+      scratch[0] = k
+    end
+    k = k + 1
   end
 
-  ratios = a.array(2)
-  ratios[0] = 0.5
-  ratios[1] = ratios[0] * 3
-  puts ratios[1]
+  puts tokenizer.widest(values)
+
+  note = ""
+  note << "count="
+  note << "#{tokenizer.scanned}"
+  puts note
+
+  puts report(values)
+
+  fixed = ::Array.new(3, 0)
+  fixed[2] = 5
+  puts fixed[2]
 end
 
 begin
-  arena(size: 64) do |a|
-    values = a.array(2)
+  arena(64) do
+    values = []
     values[0] = 1
     raise "leaving early"
   end
@@ -66,5 +92,14 @@ rescue
   puts "released"
 end
 
-puts series.largest(series.kept(4))
-puts series.largest(series.kept(7))
+arena(4096) do
+  values = tokenizer.scan(4)
+  puts tokenizer.widest(values)
+end
+
+arena(8192) do
+  arena(4096) do
+    a = Arena::Array.new(1024, 0)
+    puts a.size
+  end
+end
