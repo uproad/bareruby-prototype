@@ -92,6 +92,41 @@ rescue
   puts "released"                    # => released, the region went back on the way out
 end
 
+# Running out of a region is thrown rather than stopped on, so a program can answer it and
+# carry on. There are three ways to reach it and all three land here.
+begin
+  arena(64) do
+    values = Arena::Array.new(1000, 0)
+    puts values.size
+  end
+rescue
+  puts "asked for more than the region holds"   # => asked for more than the region holds
+end
+
+begin
+  arena(64) do
+    arena(4096) do                   # the inner block declares what it needs, and asking
+      puts 1                         # on the way in says so before anything is allocated
+    end
+  end
+rescue
+  puts "nested block wanted more than was left" # => nested block wanted more than was left
+end
+
+begin
+  arena(64) do
+    grown = []
+    i = 0
+    while i < 100
+      grown << i                     # growing takes a bigger block each time it doubles
+      i = i + 1
+    end
+    puts grown.size
+  end
+rescue
+  puts "grew past the end of the region"        # => grew past the end of the region
+end
+
 arena(4096) do
   values = tokenizer.scan(4)
   puts tokenizer.widest(values)      # => 9, this block starts where the first one did
