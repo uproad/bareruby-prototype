@@ -358,12 +358,28 @@ every commit while they were:
 ### Where the shipped C++ comes from
 
 Most of the C++ that lands in `build/` is carried by this repository rather than written
-line by line by the compiler. It belongs to the last pass and to nothing else, so it sits
-beside it in `pass/pass_12_cpp_source_generator/`, one file per area — the runtime proper,
-the binding declarations, the hosted implementations, the pico-sdk implementations, and
-the three on-board LED implementations. Each of those files also names its own
-translation units: the name a piece of C++ is written under belongs with that C++ and
-nowhere else. Beside them sits how the second stage builds each kind of machine — one g++
+line by line by the compiler, and where a piece of it is carried says whose it is.
+
+A class the language offers is declared in one file under [`stdlib/`](stdlib/): the
+constants it publishes, the state an instance carries, the signature of every method, the
+C++ behind each one for every kind of machine, and whatever that C++ needs above the
+methods. Nothing about such a class is written down anywhere else. The C names are not
+written down at all — they are derived from the Ruby ones, so `high?` reaches
+`bareruby_gpio_high` and no file spells that name twice. A method that other methods can
+express is plain Ruby in the same file rather than C++ repeated per machine.
+
+The compiler reads those files rather than running them. Running them would put the
+compiler's answer at the mercy of whatever the file did, and it would turn a plain Ruby
+method body into a method of the compiler instead of source for the passes. They ship
+beside the compiler, with no search path and no way to add to them, so what a program
+compiles to depends on the program alone.
+
+What is left in `pass/pass_12_cpp_source_generator/` is the C++ that belongs to no class:
+the runtime proper, the startup and the waits, and — for the classes not yet moved — their
+implementations, one file per area. Each of those files names its own translation units and
+says which classes' implementations it carries. Which C++ lands in which translation unit
+is the build's question rather than a class's, so only Ruby method names cross that
+boundary. Beside them sits how the second stage builds each kind of machine — one g++
 invocation for the host, pico-sdk through cmake for a board — so a toolchain is described
 in one place rather than woven through the pass. `main.cpp`, the one C++ file that is
 written rather than carried, is rendered from the low-level IR beside them; the machine
