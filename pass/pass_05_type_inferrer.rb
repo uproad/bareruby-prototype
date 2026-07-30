@@ -2,7 +2,7 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
-require_relative "pass_05_type_inferrer/peripheral"
+require_relative "../standard_library"
 require_relative "pass_05_type_inferrer/binding_function"
 require_relative "pass_05_type_inferrer/type_union"
 require_relative "pass_05_type_inferrer/type_environment"
@@ -474,7 +474,7 @@ module BareRubyProt
 
       def infer_constant_path(node)
         owner, name = @bareruby_ast.children_of(node)
-        value = Peripheral[owner].constant(name)
+        value = StandardLibrary[owner].constant(name)
         @tast.create_integer(value, TypeUnion.literal(value), span_of(node))
       end
 
@@ -559,7 +559,7 @@ module BareRubyProt
           class_name = @bareruby_ast.children_of(receiver)[1]
           if class_name == :Array
             infer_array_new_call(arguments, type_environment:, span:)
-          elsif Peripheral.known?(class_name)
+          elsif StandardLibrary.known?(class_name)
             infer_binding_new_call(class_name, arguments, type_environment:, span:)
           else
             infer_new_call(class_name, arguments, type_environment:, span:)
@@ -798,7 +798,7 @@ module BareRubyProt
 
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, type_environment:, span:)
         class_name = receiver_type[:class_name]
-        if Peripheral.known?(class_name)
+        if StandardLibrary.known?(class_name)
           if class_name == :UART && %i[read gets].include?(name)
             return infer_uart_receive_call(
               receiver_tast, name, arguments, type_environment:, span:
@@ -808,7 +808,7 @@ module BareRubyProt
             return infer_i2c_call(receiver_tast, name, arguments, type_environment:, span:)
           end
 
-          signature = Peripheral[class_name].method_signature(name)
+          signature = StandardLibrary[class_name].method_signature(name)
           printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)
             return infer_printf_call(
@@ -834,7 +834,7 @@ module BareRubyProt
       # implementation argument only: the Ruby call keeps the standard UART read/gets
       # shape while the generated binding receives somewhere to put the bytes.
       def infer_uart_receive_call(receiver_tast, name, arguments, type_environment:, span:)
-        signature = Peripheral[:UART].method_signature(name)
+        signature = StandardLibrary[:UART].method_signature(name)
         arena = current_arena(span)
         argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, type_environment:) }
         callee = @tast.create_callee(
@@ -847,7 +847,7 @@ module BareRubyProt
       # I2C uses the current region both for a read result and for the temporary byte
       # sequence that makes heterogeneous write arguments one bus transaction.
       def infer_i2c_call(receiver_tast, name, arguments, type_environment:, span:)
-        signature = Peripheral[:I2C].method_signature(name)
+        signature = StandardLibrary[:I2C].method_signature(name)
         argument_tasts = [current_arena(span)] +
                          arguments.map { |argument| infer_node(argument, type_environment:) }
         return_type = name == :read ? ArenaString.type(@tast) : :Int32
@@ -883,11 +883,11 @@ module BareRubyProt
       end
 
       def infer_binding_new_call(class_name, arguments, type_environment:, span:)
-        peripheral = Peripheral[class_name]
-        argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, type_environment:, span:)
-        instance_type = peripheral.instance_type(@tast)
+        standard_class = StandardLibrary[class_name]
+        argument_tasts = resolve_keywords(arguments, standard_class.constructor_keywords, type_environment:, span:)
+        instance_type = standard_class.instance_type(@tast)
         callee = @tast.create_callee(
-          :binding_new, class_name, :new, peripheral.constructor_function,
+          :binding_new, class_name, :new, standard_class.constructor_function,
           argument_types(argument_tasts), instance_type
         )
         @tast.create_call(nil, callee, argument_tasts, nil, instance_type, span)
@@ -913,7 +913,7 @@ module BareRubyProt
       end
 
       def infer_binding_method_call(receiver_tast, class_name, name, argument_tasts, span)
-        signature = Peripheral[class_name].method_signature(name)
+        signature = StandardLibrary[class_name].method_signature(name)
         callee = @tast.create_callee(
           :binding_method, class_name, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
