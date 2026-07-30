@@ -38,6 +38,13 @@ module BareRubyProt
           int32_t capacity;
       } bareruby_arena_array_t;
 
+      /* What a block becomes: neither arguments nor a return, so its address is all a
+         binding needs. It lives here rather than with the bindings because it is the C
+         shape of a block, which is the language's rather than any one peripheral's — and
+         the function a block turns into is emitted beside the program that wrote it, so
+         that translation unit has to see this type too. */
+      typedef void (*bareruby_interrupt_handler_t)(void);
+
       #ifdef __cplusplus
       extern "C" {
       #endif

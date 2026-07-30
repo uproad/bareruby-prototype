@@ -12,12 +12,14 @@ module BareRubyProt
   class NativeMethod
     INTERPOLATION = :Interpolation
 
-    attr_reader :name, :keywords, :block_context
+    attr_reader :name, :keywords, :keyword_types, :block_context, :overloads, :parameter_names
 
-    def initialize(name, overloads:, keywords:, block_context:)
+    def initialize(name, overloads:, parameter_names:, keywords:, keyword_types:, block_context:)
       @name = name
       @overloads = overloads
+      @parameter_names = parameter_names
       @keywords = keywords
+      @keyword_types = keyword_types
       @block_context = block_context
     end
 

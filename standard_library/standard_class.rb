@@ -17,7 +17,7 @@ module BareRubyProt
     CONSTRUCTOR_NAME = :initialize
     CONSTRUCTOR_SUFFIX = "init"
 
-    attr_reader :name
+    attr_reader :name, :instance_variables
 
     def initialize(name, constants:, instance_variables:, methods:)
       @name = name
@@ -38,13 +38,33 @@ module BareRubyProt
 
     def method?(name) = @methods.key?(name)
 
+    # Declaration order, because it is the order the file reads in and nothing else would
+    # be any more meaningful.
+    def native_methods = @methods.keys
+
+    def parameter_names(name) = @methods.fetch(name).parameter_names
+
+    # A keyword becomes a trailing positional parameter of the C function, in declaration
+    # order, which is what lets the caller default one without the binding knowing it did.
+    def keyword_parameters(name) = @methods.fetch(name).keyword_types.to_a
+
+    # Every function one method reaches, with the name each answers to settled. A method
+    # reaches more than one when the type of an argument decides which.
+    def overloads_of(name)
+      method = @methods.fetch(name)
+      method.overloads.map do |overload|
+        overload.merge(function: overload[:function] || function_name(name))
+      end
+    end
+
     # The name a method answers to in C is derived unless the declaration says otherwise.
     # It says otherwise when two Ruby methods are one function, which no rule can produce.
     def method_signature(name)
       method = @methods.fetch(name)
       { function: method.function || function_name(name),
         printf_function: method.formatted? ? method.formatted_function : nil,
-        parameter_types: method.parameter_types, return_type: method.return_type }
+        parameter_types: method.parameter_types, return_type: method.return_type,
+        block: method.block_context }
     end
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, struct)

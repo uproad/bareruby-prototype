@@ -15,8 +15,11 @@ class UART
   # Two sigs, one def. An interpolation is a type like any other, and the version that
   # takes one is variadic in C — so writing text and writing a rendering are the same
   # method in Ruby and two functions underneath, chosen by what the argument is.
+  # The variadic version answers nothing: what it wrote is not counted, so writing a
+  # rendering hands back nil where writing text hands back the byte count. The two methods
+  # share that one function, which is why both name it.
   sig value: :String, returns: :Int32
-  sig value: :Interpolation, function: :bareruby_uart_printf, returns: :Int32
+  sig value: :Interpolation, function: :bareruby_uart_printf, returns: :Nil
   def write(value); end
 
   sig value: :String, returns: :Nil

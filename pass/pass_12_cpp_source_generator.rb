@@ -2,6 +2,7 @@
 
 require_relative "pass_12_cpp_source_generator/runtime_source"
 require_relative "pass_12_cpp_source_generator/binding_declaration"
+require_relative "pass_12_cpp_source_generator/native_declaration"
 require_relative "pass_12_cpp_source_generator/host_binding_source"
 require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/pico_binding_source"
@@ -23,7 +24,7 @@ module BareRubyProt
       end
 
       def run
-        @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
+        @result = RuntimeSource::FILES.merge(BindingDeclaration.files)
         @result.merge!(HostBindingSource::FILES) if @targets.any?(&:hosted?)
         @result.merge!(PicoBindingSource::FILES) unless @targets.all?(&:hosted?)
         if lights_onboard_led?

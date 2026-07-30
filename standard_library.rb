@@ -82,8 +82,10 @@ module BareRubyProt
         { parameter_types: names.map { |parameter| signature.fetch(parameter) },
           return_type: signature[RETURN_KEY], function: signature[FUNCTION_KEY] }
       end
+      keywords = keyword_defaults(parameters)
       NativeMethod.new(
-        node.name, overloads:, keywords: keyword_defaults(parameters),
+        node.name, overloads:, parameter_names: names, keywords:,
+                   keyword_types: keywords.keys.to_h { |key| [key, signatures.first.fetch(key)] },
                    block_context: signatures.first[BLOCK_KEY]
       )
     end
