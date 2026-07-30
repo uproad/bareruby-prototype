@@ -39,20 +39,40 @@ Covered so far:
   compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
   indexing is pointer arithmetic and is not range checked. No new pass.
 - **M3 — the arena**, the third layer of the memory model (`samples/arena.rb`):
-  `arena(size:) { |a| … }` blocks, nested, `Arena.new(size:)` with `reset` for the
-  long-lived form, and `a.array(n)`, an array whose length is a run-time value — the
-  case the first two layers cannot serve. Allocation bumps one pointer, running out
-  panics rather than growing, and each region is a static buffer belonging to the site
-  that declared it: asking for 1024 bytes more moves `bss` by exactly 1024. Release is
-  that pointer going back, done by a guard whose destructor runs on the way out of the
-  scope, so an exception leaving the block releases the region as well. An arena is
-  handed to the code doing the work, as the design writes it, and travels by reference:
-  what it hands out is recorded in the arena, so a copy would let two callers hand out
-  the same room. An allocation may not be stored in an instance variable or in a local
-  the block did not introduce. No new pass.
+  `arena(N) { … }` is a **form rather than an object**. There is no `Arena.new`, no block
+  parameter and no `reset`: an arena cannot be named, passed or stored, so a program can
+  only ever be inside one. `arena(N)` asks for N bytes *here* — finding no region it takes
+  the buffer its own site reserved and becomes the current one, finding a region it becomes
+  a release point and checks on the way in that N bytes are left. Which role a block plays
+  is settled when it is entered rather than while compiling, because a block written in a
+  method is outermost or nested depending on who calls that method. Written without a size,
+  `arena { … }` asks for nothing and is a release point only. Allocation bumps one pointer
+  and each region is a static buffer belonging to the site that declared it: asking for 1024
+  bytes more moves `bss` by exactly 1024. Leaving a block hands back everything it took, done
+  by a guard whose destructor runs on the way out, so an exception leaving the block releases
+  as well. **Which region an allocation comes from is one implicit pointer** — a method
+  allocates and hands the result back without being told where from, which is why the arena
+  needs no parameter and no lifetime analysis over an object graph. Running out throws rather
+  than stopping, so a program can answer it; with `--no-exceptions` it falls back to stopping,
+  the rule a bare `raise` already follows. An allocation may not be stored in an instance
+  variable or in a local the block did not introduce. No new pass.
+- **M3 — the growing array** (`samples/arena.rb`): `Arena::Array.new(n)` and
+  `Arena::Array.new(n, init)`, whose length is a run-time value — the case the first two
+  layers cannot serve — plus `[]`, `[]=`, `size`, `length`, `<<` and `dup`. The empty literal
+  `[]` is sugar for it inside a region, and `::Array` is how a program reaches the
+  fixed-capacity one from in there. **Writing past the end grows it**, which is why it cannot
+  be a handle held by value: growing takes a bigger block from the region and moves both the
+  pointer and the length, and a copy of a handle would keep naming the block the array has
+  left behind — whether an append were seen would depend on how much room happened to be
+  left. So, like the string, the handle lives in the region and a binding is its address.
+  Elements a program has not written read as the default of their type, and a gap left by
+  writing past the end reads the same as a fresh array does: every element type an array can
+  hold has a default of all zero bits, so one clear serves them all. Indexing stays pointer
+  arithmetic and is not range checked. No new pass.
 - **M3 — the variable-length string** (`samples/string.rb`), the other value the first two
-  layers cannot hold: `a.string`, `a.string("text")`, `a.string(other_string)` and
-  `a.string("count: #{n}")` create one, and it answers `<<`, `+`, `size`, `length`, `dup`,
+  layers cannot hold: `Arena::String.new`, `.new("text")`, `.new(other_string)` and
+  `.new("count: #{n}")` create one — and the empty literal `""` is sugar for it inside a
+  region — and it answers `<<`, `+`, `size`, `length`, `dup`,
   `==`, `!=` and `to_s`. It grows: appending past the block it holds takes a bigger one from
   the region and copies into it, and the block left behind stays until the region is
   released, because an arena has no free. Both its bytes and its handle come from the
@@ -268,20 +288,25 @@ of text. That is why the throw lives in its own translation unit and is linked o
 programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
 
 An arena is the other thing here that is worth what it costs rather than free. The same
-six statements written twice — once against `Array.new(3, 0)`, once against `a.array(3)`
+six statements written twice — once against `Array.new(3, 0)`, once against `Arena::Array.new(3)`
 inside an arena block — come to 8364 B of text with the fixed-capacity array and 37036 B
-with the arena, both under `--no-exceptions`. The 28 KB between them is the panic path:
-exhaustion calls `bareruby_panic`, and `fprintf` plus `exit` bring stdio with them. With
+with the arena, both under `--no-exceptions`. The 28 KB between them is the exhaustion path:
+running out reaches `bareruby_panic`, and `fprintf` plus `exit` bring stdio with them. With
 exceptions enabled the same pair is 12884 B and 90604 B, and the further 50 KB is the
 guard — a scope holding an object with a destructor gives its function a cleanup landing
 pad, which references `__gxx_personality_v0` and drags in the same C++ ABI a `raise`
 does. Releasing the region when an exception leaves the block is what that buys.
 
+Those arena and string figures were taken against the earlier design, where an arena was an
+object a program named and passed. **They have not been re-measured since it became a form.**
+What moved is where the handle lives and how the block is entered, not what the region costs,
+so the comparison they draw should still hold — but nothing here has confirmed that.
+
 A variable-length string adds almost nothing to what the region already costs: six
 statements that create one, append to it twice and print it come to 37244 B of text under
 `--no-exceptions`, against the 37036 B the arena array's six cost above. The allocator and
 its panic path are what both are paying for. The interpolation form is the part worth
-counting — `a.string("readings: #{count}")` makes `vsnprintf` reachable and takes the same
+counting — `Arena::String.new("readings: #{count}")` makes `vsnprintf` reachable and takes the same
 program to 43908 B, where that interpolation assigned to a fixed-capacity local costs
 17784 B and no region at all. (Those six figures come from throwaway programs that were
 never committed, and are the one set here still carrying its pico-sdk 1.5.1 measurement —
