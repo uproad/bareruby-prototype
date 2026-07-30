@@ -1,66 +1,70 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  # What a region is made of once the types are gone: a buffer reserved while compiling, a
-  # handle pointing at it, and — for a block's region — a guard whose destructor puts the
-  # pointer back on the way out, which is what makes an exception leaving the block
-  # release the region as well. Allocation is that pointer moving forward.
+  # What a region is made of once the types are gone: a buffer reserved while compiling and
+  # a guard that both takes it and gives it back. The guard is the whole of a block — which
+  # role it plays is settled on the way in, because a block written inside a method is
+  # outermost or nested depending on who calls that method. Its destructor runs on the way
+  # out, which is what makes an exception leaving the block release the region as well.
   #
-  # Each region is numbered so its buffer and its guard have names of their own, and a
-  # program that declares several never shares one.
+  # Each block is numbered so its buffer has a name of its own, and a program that writes
+  # several never shares one.
   class ArenaStorage
-    STRUCT = :bareruby_arena_t
-    SCOPE_STRUCT = :bareruby_arena_scope
+    GUARD_STRUCT = :bareruby_arena_block
+    NEW_FUNCTION = :bareruby_arena_array_new
+    EXTEND_FUNCTION = :bareruby_arena_array_extend
+    DUP_FUNCTION = :bareruby_arena_array_dup
+    CURRENT = :bareruby_current_arena
 
-    def initialize(low_ir, function_scope)
+    def initialize(low_ir, function_scope, value_layout)
       @lir = low_ir
       @function_scope = function_scope
+      @value_layout = value_layout
     end
 
-    def struct_type = @lir.struct_type(STRUCT)
-
-    # A block's region, opened: the handle, its buffer, and the guard that releases it.
-    def opened(name, size)
+    # A block, opened: the buffer its own site reserves and the guard that decides what to
+    # do with it. The size is passed along even when the block turns out to be nested,
+    # where it becomes the amount the block is asking the region it landed in for.
+    def opened(size)
       index = @function_scope.next_arena
-      struct = struct_type
-      place = @lir.create_local(name, struct)
-      statements = [@lir.create_declare(name, struct, nil)] + reserved(place, size, index) +
-                   [guard(place, index)]
-      [statements, place]
+      storage = :"arena_storage_#{index}"
+      guard = @lir.create_declare(
+        :"arena_block_#{index}", @lir.struct_type(GUARD_STRUCT),
+        @lir.create_call(
+          GUARD_STRUCT,
+          [@lir.create_local(storage, @lir.pointer_type(:uint8)), @lir.create_const_int(size, :int32)],
+          @lir.struct_type(GUARD_STRUCT)
+        )
+      )
+      [@lir.create_declare_arena_storage(storage, size), guard]
     end
 
-    # A region that outlives no scope takes no guard: reset is the only thing that
-    # releases it.
-    def reserved_for(place, size) = reserved(place, size, @function_scope.next_arena)
+    # Whichever region is current. A binding that needs somewhere to put what it receives
+    # names this rather than a local, because the program writes none.
+    def current = @lir.create_local(CURRENT, @lir.pointer_type(@lir.struct_type(:bareruby_arena_t)))
 
-    # Handing out is a bump of the pointer, and what comes back is bytes until it is told
-    # what it is holding.
-    def allocation(arena_reference, length_local, element_type)
-      bytes = @lir.create_binary("*", length_local, @lir.create_size_of(element_type, :int32), :int32)
-      call = @lir.create_call(:bareruby_arena_alloc, [arena_reference, bytes], @lir.pointer_type(:void))
-      @lir.create_cast(call, @lir.pointer_type(element_type))
+    def allocation(length, element)
+      @lir.create_call(NEW_FUNCTION, [length, @value_layout.element_size(element)], handle_type)
+    end
+
+    # Making room and reading back where the elements now are: growing moves them, so the
+    # pointer the write uses has to be the one that comes back rather than one read before.
+    def extension(receiver, length, element)
+      @lir.create_cast(
+        @lir.create_call(
+          EXTEND_FUNCTION, [receiver, length, @value_layout.element_size(element)],
+          @lir.pointer_type(:void)
+        ),
+        @lir.pointer_type(element)
+      )
+    end
+
+    def duplication(receiver, element)
+      @lir.create_call(DUP_FUNCTION, [receiver, @value_layout.element_size(element)], handle_type)
     end
 
     private
 
-    def reserved(place, size, index)
-      storage = :"arena_storage_#{index}"
-      initializer = @lir.create_call(
-        :bareruby_arena_init,
-        [@lir.reference_to(place),
-         @lir.create_local(storage, @lir.pointer_type(:uint8)),
-         @lir.create_const_int(size, :int32)],
-        :void
-      )
-      [@lir.create_declare_arena_storage(storage, size), @lir.create_expression(initializer)]
-    end
-
-    def guard(place, index)
-      scope_struct = @lir.struct_type(SCOPE_STRUCT)
-      @lir.create_declare(
-        :"arena_scope_#{index}", scope_struct,
-        @lir.create_brace_init([@lir.create_address_of(place)], scope_struct)
-      )
-    end
+    def handle_type = @lir.pointer_type(@lir.struct_type(ValueLayout::ARRAY_STRUCT))
   end
 end

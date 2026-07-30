@@ -72,13 +72,21 @@ module BareRubyProt
 
     def create_array_dup(receiver, type, span) = build(:array_dup, [receiver, type], span)
 
-    def create_arena(binding, size, body, span) = build(:arena, [binding, size, body], span)
+    def create_arena(size, body, span) = build(:arena, [size, body], span)
 
-    def create_arena_new(size, type, span) = build(:arena_new, [size, type], span)
+    def create_arena_current(span) = build(:arena_current, [], span)
 
-    def create_arena_alloc(receiver, length, type, span) = build(:arena_alloc, [receiver, length, type], span)
+    def create_arena_alloc(length, initial, type, span) = build(:arena_alloc, [length, initial, type], span)
 
     def create_arena_length(receiver, type, span) = build(:arena_length, [receiver, type], span)
+
+    def create_arena_dup(receiver, type, span) = build(:arena_dup, [receiver, type], span)
+
+    def create_arena_push(receiver, value, type, span) = build(:arena_push, [receiver, value, type], span)
+
+    def create_arena_index_assign(receiver, index, value, type, span)
+      build(:arena_index_assign, [receiver, index, value, type], span)
+    end
 
     def create_index(receiver, index, type, span) = build(:index, [receiver, index, type], span)
 
@@ -195,8 +203,8 @@ module BareRubyProt
         [gutter(node) + "#{indent}while_true"] +
           node[:children][0].flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       when :arena
-        binding, size, body = node[:children]
-        [gutter(node) + "#{indent}arena(#{binding[:name]}, size: #{size})"] +
+        size, body = node[:children]
+        [gutter(node) + "#{indent}arena(#{size})"] +
           body.flat_map { |statement| inspect_lines(statement, "#{indent}  ") }
       when :if
         condition, then_body, else_body, type = node[:children]
@@ -264,15 +272,25 @@ module BareRubyProt
       when :array_dup
         receiver, type = node[:children]
         "array_dup(#{inspect_inline(receiver)}, #{inspect_type(type)})"
-      when :arena_new
-        size, type = node[:children]
-        "arena_new(size: #{size}, #{inspect_type(type)})"
+      when :arena_current
+        "arena_current"
       when :arena_alloc
-        receiver, length, type = node[:children]
-        "arena_alloc(#{inspect_inline(receiver)}, #{inspect_inline(length)}, #{inspect_type(type)})"
+        length, initial, type = node[:children]
+        "arena_alloc(#{inspect_inline(length)}, #{initial ? inspect_inline(initial) : 'nil'}, " \
+          "#{inspect_type(type)})"
       when :arena_length
         receiver, type = node[:children]
         "arena_length(#{inspect_inline(receiver)}, #{inspect_type(type)})"
+      when :arena_dup
+        receiver, type = node[:children]
+        "arena_dup(#{inspect_inline(receiver)}, #{inspect_type(type)})"
+      when :arena_push
+        receiver, value, type = node[:children]
+        "arena_push(#{inspect_inline(receiver)}, #{inspect_inline(value)}, #{inspect_type(type)})"
+      when :arena_index_assign
+        receiver, index, value, type = node[:children]
+        "arena_index_assign(#{inspect_inline(receiver)}, #{inspect_inline(index)}, " \
+          "#{inspect_inline(value)}, #{inspect_type(type)})"
       when :index
         receiver, index, type = node[:children]
         "index(#{inspect_inline(receiver)}, #{inspect_inline(index)}, #{inspect_type(type)})"

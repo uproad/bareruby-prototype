@@ -1,17 +1,13 @@
 class Report
-  def initialize
-    @scratch = Arena.new(size: 512)
-  end
-
-  def entry(a, label, value)
-    text = a.string(label)
+  def entry(label, value)
+    text = Arena::String.new(label)
     text << ": "
     text << "#{value}"
     text
   end
 
-  def summary(a, count)
-    text = a.string("readings")
+  def summary(count)
+    text = Arena::String.new("readings")
     i = 0
     while i < count
       text << ", #{i * i}"
@@ -21,15 +17,14 @@ class Report
   end
 
   def kept(count)
-    @scratch.reset
-    summary(@scratch, count)
+    summary(count)
   end
 end
 
 report = Report.new
 
-arena(size: 1024) do |a|
-  temperature = report.entry(a, "temperature", 21)
+arena(1024) do
+  temperature = report.entry("temperature", 21)
   puts temperature
   puts temperature.size
 
@@ -43,19 +38,19 @@ arena(size: 1024) do |a|
   puts reported == "temperature: 21 C (reported)"
   puts reported != temperature.dup
 
-  message = a.string("count: #{3 * 4}")
+  message = Arena::String.new("count: #{3 * 4}")
   puts message
   puts message.length
 
-  arena(size: 256) do |b|
-    inner = b.string("inner")
+  arena(256) do
+    inner = Arena::String.new("inner")
     inner << " string"
     puts inner
-    carried = a.string(inner)
+    carried = Arena::String.new(inner)
     puts carried
   end
 
-  grown = a.string("")
+  grown = ""
   i = 0
   while i < 8
     grown << "0123456789"
@@ -64,5 +59,10 @@ arena(size: 1024) do |a|
   puts grown.size
 end
 
-puts report.kept(4)
-puts report.kept(6)
+arena(512) do
+  puts report.kept(4)
+end
+
+arena(512) do
+  puts report.kept(6)
+end

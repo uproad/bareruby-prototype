@@ -42,7 +42,9 @@ module BareRubyProt
         when Prism::ConstantReadNode
           @result.create_reference(:constant, node.name, span_of(node))
         when Prism::ConstantPathNode
-          @result.create_constant_path(node.parent.name, node.name, span_of(node))
+          # A leading :: has no parent, which is how a program reaches the fixed-capacity
+          # Array from inside a region where a bare Array literal means the growing one.
+          @result.create_constant_path(node.parent&.name, node.name, span_of(node))
         when Prism::FloatNode
           @result.create_float(node.value, span_of(node))
         when Prism::SymbolNode

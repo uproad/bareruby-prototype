@@ -43,6 +43,9 @@ module BareRubyProt
         when :arena then fold_arena(node)
         when :arena_alloc then fold_arena_alloc(node)
         when :arena_length then fold_arena_length(node)
+        when :arena_dup then fold_arena_dup(node)
+        when :arena_push then fold_arena_push(node)
+        when :arena_index_assign then fold_arena_index_assign(node)
         when :array then fold_array(node)
         when :array_fill then fold_array_fill(node)
         when :array_dup then fold_array_dup(node)
@@ -53,18 +56,35 @@ module BareRubyProt
       end
 
       def fold_arena(node)
-        binding, size, body = @tast.children_of(node)
-        @tast.create_arena(binding, size, fold_body(body), span_of(node))
+        size, body = @tast.children_of(node)
+        @tast.create_arena(size, fold_body(body), span_of(node))
       end
 
       def fold_arena_alloc(node)
-        receiver, length, type = @tast.children_of(node)
-        @tast.create_arena_alloc(fold_node(receiver), fold_node(length), type, span_of(node))
+        length, initial, type = @tast.children_of(node)
+        @tast.create_arena_alloc(fold_node(length), initial && fold_node(initial), type, span_of(node))
       end
 
       def fold_arena_length(node)
         receiver, type = @tast.children_of(node)
         @tast.create_arena_length(fold_node(receiver), type, span_of(node))
+      end
+
+      def fold_arena_dup(node)
+        receiver, type = @tast.children_of(node)
+        @tast.create_arena_dup(fold_node(receiver), type, span_of(node))
+      end
+
+      def fold_arena_push(node)
+        receiver, value, type = @tast.children_of(node)
+        @tast.create_arena_push(fold_node(receiver), fold_node(value), type, span_of(node))
+      end
+
+      def fold_arena_index_assign(node)
+        receiver, index, value, type = @tast.children_of(node)
+        @tast.create_arena_index_assign(
+          fold_node(receiver), fold_node(index), fold_node(value), type, span_of(node)
+        )
       end
 
       def fold_array(node)

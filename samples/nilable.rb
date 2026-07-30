@@ -7,9 +7,9 @@ class Source
     end
   end
 
-  def maybe_message(a, enabled)
+  def maybe_message(enabled)
     if enabled
-      a.string("ready")
+      Arena::String.new("ready")
     end
   end
 end
@@ -37,8 +37,8 @@ if enabled
 end
 puts(assigned_on_one_path || 7)
 
-arena(size: 128) do |a|
-  message = source.maybe_message(a, true)
+arena(128) do
+  message = source.maybe_message(true)
   if message
     puts(message)
   end

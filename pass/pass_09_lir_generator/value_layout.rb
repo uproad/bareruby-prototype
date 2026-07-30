@@ -7,6 +7,7 @@ module BareRubyProt
   # holds the ones it has already answered for and hands out the same one again.
   class ValueLayout
     STRING_STRUCT = :bareruby_string_t
+    ARRAY_STRUCT = :bareruby_arena_array_t
 
     def initialize(low_ir)
       @lir = low_ir
@@ -41,6 +42,8 @@ module BareRubyProt
     def nilable?(type) = type.is_a?(Hash) && type[:kind] == :nilable
 
     def arena_string?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
+
+    def arena_array?(type) = type.is_a?(Hash) && type[:kind] == :arena_array
 
     # What a fixed-capacity array holds and how much of it. An arena array knows its
     # element the same way but carries its length at run time, so it has no capacity to
@@ -79,6 +82,14 @@ module BareRubyProt
 
     def length_of(base) = @lir.create_field_access(base, :length, :int32)
 
+    # The runtime holds the elements as bytes because it does not know what they are.
+    # Indexing casts them back, which keeps a read the pointer arithmetic it was.
+    def arena_items_of(base, element)
+      @lir.create_cast(items_of(base), @lir.pointer_type(element))
+    end
+
+    def element_size(element) = @lir.create_size_of(element, :int32)
+
     def field_name(name) = name.to_s.delete_prefix("@").to_sym
 
     private
@@ -86,7 +97,7 @@ module BareRubyProt
     def struct_type_of(type)
       case type[:kind]
       when :array then array_struct_type(type)
-      when :arena_array then arena_array_struct_type(type)
+      when :arena_array then arena_array_type
       when :arena_string then arena_string_type
       when :nilable then nilable_struct_type(type)
       else @lir.struct_type(type[:struct] || type[:class_name])
@@ -127,23 +138,12 @@ module BareRubyProt
       @lir.struct_type(name)
     end
 
-    # An arena array is a pointer into the region plus the length that was asked for, so
-    # assigning one shares the allocation the way assigning an array does, and the
-    # capacity the compiler cannot know is carried at run time. That is why the handle
-    # itself is not a shared type: both of its fields are settled when the allocation is
-    # made and nothing afterwards changes them, so a copy of the handle still names the
-    # same elements, and the method that allocated it can hand it back — where a pointer
-    # to it would outlive the local it pointed at.
-    def arena_array_struct_type(type)
-      raise "the element type of this arena array was never determined" if type[:element].nil?
-
-      element = type_of(type[:element])
-      name = :"bareruby_arena_array_#{element}_t"
-      @array_structs[name] ||= @lir.create_struct(
-        name, [@lir.create_field(:items, @lir.pointer_type(element)), @lir.create_field(:length, :int32)]
-      )
-      @lir.struct_type(name)
-    end
+    # Like the variable-length string, an arena array is always the pointer the region
+    # handed out. It cannot be a handle held by value: writing past the end takes a bigger
+    # block and moves both the pointer and the length, and every binding has to see that.
+    # A copy of a handle would keep naming the block the array has left behind, and
+    # whether an append were observed would depend on how much room happened to be left.
+    def arena_array_type = @lir.pointer_type(@lir.struct_type(ARRAY_STRUCT))
 
     def zero_value(type)
       return @lir.create_const_bool(false) if type == :bool

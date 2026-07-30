@@ -26,13 +26,35 @@ module BareRubyProt
           int32_t capacity;
       } bareruby_string_t;
 
+      /* A growing array. Like the string, its handle lives in the region and a program
+         holds the address rather than the struct: writing past the end takes a bigger
+         block and moves `items`, and every binding has to see that. Unlike the string,
+         the generated code does read one field — indexing stays pointer arithmetic on
+         `items`, which is what keeps a read as cheap as a fixed-capacity array. */
+      typedef struct {
+          bareruby_arena_t *arena;
+          void *items;
+          int32_t length;
+          int32_t capacity;
+      } bareruby_arena_array_t;
+
       #ifdef __cplusplus
       extern "C" {
       #endif
 
+      /* The region a block hands out from. A program never names it: an `arena` block
+         sets it on the way in and puts it back on the way out, and every allocation
+         reads it. One word, so a method needs no arena parameter to allocate. */
+      extern bareruby_arena_t *bareruby_current_arena;
+
       void bareruby_arena_init(bareruby_arena_t *self, unsigned char *storage, int32_t capacity);
       void *bareruby_arena_alloc(bareruby_arena_t *self, int32_t bytes);
       void bareruby_arena_reset(bareruby_arena_t *self);
+      bareruby_arena_array_t *bareruby_arena_array_new(int32_t length, int32_t element_size);
+      void *bareruby_arena_array_extend(
+          bareruby_arena_array_t *self, int32_t length, int32_t element_size);
+      bareruby_arena_array_t *bareruby_arena_array_dup(
+          bareruby_arena_array_t *self, int32_t element_size);
       bareruby_string_t *bareruby_string_new(bareruby_arena_t *arena, const char *initial);
       bareruby_string_t *bareruby_string_format(bareruby_arena_t *arena, const char *format, ...);
       bareruby_string_t *bareruby_string_append(bareruby_string_t *self, const char *text);
@@ -64,13 +86,46 @@ module BareRubyProt
       #ifdef __cplusplus
       }
 
-      /* What releases an arena block's region. The destructor runs on the way out of
-         the scope, so an exception leaving the block releases the region exactly as
-         falling off its end does. A long-lived arena takes no guard: nothing but reset
-         releases it. */
-      struct bareruby_arena_scope {
-          bareruby_arena_t *arena;
-          ~bareruby_arena_scope() { bareruby_arena_reset(arena); }
+      /* What an `arena` block becomes. One guard serves both roles the block can play,
+         and which one it plays is settled on the way in rather than while compiling —
+         a block written inside a method is outermost or nested depending on who calls
+         that method, which no amount of reading the source settles.
+
+         Outermost: the block owns the region, takes the buffer its own site reserved,
+         and makes it the current one. Nested: the block owns nothing and only remembers
+         where the pointer stood, so leaving it hands back everything it took. Either way
+         the destructor runs on the way out whether the block ends normally or an
+         exception leaves it, which is the exception safety the design requires. */
+      struct bareruby_arena_block {
+          bareruby_arena_t *previous;
+          bareruby_arena_t region;
+          int32_t mark;
+          bool owns;
+
+          bareruby_arena_block(unsigned char *storage, int32_t capacity) {
+              previous = bareruby_current_arena;
+              owns = (previous == 0);
+              if (owns) {
+                  bareruby_arena_init(&region, storage, capacity);
+                  bareruby_current_arena = &region;
+                  mark = 0;
+              } else {
+                  mark = previous->used;
+                  /* A nested block declares what it needs, and asking early says so where
+                     the program can still act on it rather than part way through. */
+                  if (capacity > previous->capacity - mark) {
+                      bareruby_throw("arena is full");
+                  }
+              }
+          }
+
+          ~bareruby_arena_block() {
+              if (owns) {
+                  bareruby_current_arena = previous;
+              } else {
+                  previous->used = mark;
+              }
+          }
       };
       #endif
 
@@ -96,10 +151,12 @@ module BareRubyProt
           self->used = 0;
       }
 
+      bareruby_arena_t *bareruby_current_arena = 0;
+
       void *bareruby_arena_alloc(bareruby_arena_t *self, int32_t bytes) {
           int32_t start = (self->used + BARERUBY_ARENA_ALIGNMENT - 1) & ~(BARERUBY_ARENA_ALIGNMENT - 1);
           if (bytes < 0 || start > self->capacity - bytes) {
-              bareruby_panic("arena is full");
+              bareruby_throw("arena is full");
           }
           self->used = start + bytes;
           return self->base + start;
@@ -107,6 +164,75 @@ module BareRubyProt
 
       void bareruby_arena_reset(bareruby_arena_t *self) {
           self->used = 0;
+      }
+
+      /* Elements a program has not written are zero. Every element type the language puts
+         in an array — the integers, Fixed and Bool — has a default whose representation is
+         all zero bits, so one memset serves them all, and a gap left by writing past the
+         end reads the same as a fresh array does. */
+      static void bareruby_arena_array_clear(
+          bareruby_arena_array_t *self, int32_t from, int32_t to, int32_t element_size) {
+          unsigned char *bytes = (unsigned char *)self->items;
+          int32_t index = from * element_size;
+          int32_t limit = to * element_size;
+          while (index < limit) {
+              bytes[index] = 0;
+              index = index + 1;
+          }
+      }
+
+      bareruby_arena_array_t *bareruby_arena_array_new(int32_t length, int32_t element_size) {
+          bareruby_arena_array_t *self = (bareruby_arena_array_t *)bareruby_arena_alloc(
+              bareruby_current_arena, (int32_t)sizeof(bareruby_arena_array_t));
+          self->arena = bareruby_current_arena;
+          self->capacity = length;
+          self->length = length;
+          self->items = bareruby_arena_alloc(self->arena, length * element_size);
+          bareruby_arena_array_clear(self, 0, length, element_size);
+          return self;
+      }
+
+      /* Growing is a bigger block and a copy into it. The block left behind stays until
+         the region is released — an arena has no free — which is the price of a bump
+         pointer. Doubling keeps the number of copies logarithmic in the length. */
+      void *bareruby_arena_array_extend(
+          bareruby_arena_array_t *self, int32_t length, int32_t element_size) {
+          if (length > self->capacity) {
+              int32_t capacity = self->capacity < 4 ? 4 : self->capacity;
+              while (capacity < length) {
+                  capacity = capacity * 2;
+              }
+              unsigned char *items = (unsigned char *)bareruby_arena_alloc(
+                  self->arena, capacity * element_size);
+              unsigned char *previous = (unsigned char *)self->items;
+              int32_t index = 0;
+              int32_t copied = self->length * element_size;
+              while (index < copied) {
+                  items[index] = previous[index];
+                  index = index + 1;
+              }
+              self->items = items;
+              self->capacity = capacity;
+          }
+          if (length > self->length) {
+              bareruby_arena_array_clear(self, self->length, length, element_size);
+              self->length = length;
+          }
+          return self->items;
+      }
+
+      bareruby_arena_array_t *bareruby_arena_array_dup(
+          bareruby_arena_array_t *self, int32_t element_size) {
+          bareruby_arena_array_t *copy = bareruby_arena_array_new(self->length, element_size);
+          unsigned char *target = (unsigned char *)copy->items;
+          unsigned char *source = (unsigned char *)self->items;
+          int32_t index = 0;
+          int32_t bytes = self->length * element_size;
+          while (index < bytes) {
+              target[index] = source[index];
+              index = index + 1;
+          }
+          return copy;
       }
     CPP
 
@@ -295,8 +421,15 @@ module BareRubyProt
     THROW = <<~CPP
       #include "bareruby_runtime.h"
 
+      /* Running out of a region is a failure a program can answer, so it is thrown rather
+         than stopped on. With the mechanism compiled out there is nothing to catch it and
+         it falls back to stopping, which is the rule a bare raise already follows. */
       void bareruby_throw(const char *message) {
+      #if defined(__cpp_exceptions)
           throw message;
+      #else
+          bareruby_panic(message);
+      #endif
       }
     CPP
 

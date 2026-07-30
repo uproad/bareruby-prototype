@@ -31,6 +31,9 @@ module BareRubyProt
         when :arena then inline_arena(node)
         when :arena_alloc then inline_arena_alloc(node)
         when :arena_length then inline_arena_length(node)
+        when :arena_dup then inline_arena_dup(node)
+        when :arena_push then inline_arena_push(node)
+        when :arena_index_assign then inline_arena_index_assign(node)
         when :array then inline_array(node)
         when :array_fill then inline_array_fill(node)
         when :array_dup then inline_array_dup(node)
@@ -41,18 +44,35 @@ module BareRubyProt
       end
 
       def inline_arena(node)
-        binding, size, body = @tast.children_of(node)
-        @tast.create_arena(binding, size, inline_body(body), span_of(node))
+        size, body = @tast.children_of(node)
+        @tast.create_arena(size, inline_body(body), span_of(node))
       end
 
       def inline_arena_alloc(node)
-        receiver, length, type = @tast.children_of(node)
-        @tast.create_arena_alloc(inline_node(receiver), inline_node(length), type, span_of(node))
+        length, initial, type = @tast.children_of(node)
+        @tast.create_arena_alloc(inline_node(length), initial && inline_node(initial), type, span_of(node))
       end
 
       def inline_arena_length(node)
         receiver, type = @tast.children_of(node)
         @tast.create_arena_length(inline_node(receiver), type, span_of(node))
+      end
+
+      def inline_arena_dup(node)
+        receiver, type = @tast.children_of(node)
+        @tast.create_arena_dup(inline_node(receiver), type, span_of(node))
+      end
+
+      def inline_arena_push(node)
+        receiver, value, type = @tast.children_of(node)
+        @tast.create_arena_push(inline_node(receiver), inline_node(value), type, span_of(node))
+      end
+
+      def inline_arena_index_assign(node)
+        receiver, index, value, type = @tast.children_of(node)
+        @tast.create_arena_index_assign(
+          inline_node(receiver), inline_node(index), inline_node(value), type, span_of(node)
+        )
       end
 
       def inline_array(node)
