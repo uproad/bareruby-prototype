@@ -284,6 +284,109 @@ module BareRubyProt
       }
     CPP
 
+    I2C = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "i2c.h"
+      #include "main.h"
+
+      static I2C_HandleTypeDef *bareruby_i2c_port(const bareruby_i2c_t *self) {
+          if (self->id != 1) {
+              Error_Handler();
+          }
+          return &hi2c1;
+      }
+
+      static uint16_t bareruby_i2c_address(int32_t address) {
+          if (address < 0 || address > 0x7f) {
+              Error_Handler();
+          }
+          return (uint16_t)((uint32_t)address << 1);
+      }
+
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
+          self->id = id;
+          self->frequency = frequency;
+          if (frequency <= 0) {
+              Error_Handler();
+          }
+          I2C_HandleTypeDef *port = bareruby_i2c_port(self);
+          if (port->Init.ClockSpeed != (uint32_t)frequency) {
+              if (HAL_I2C_DeInit(port) != HAL_OK) {
+                  Error_Handler();
+              }
+              port->Init.ClockSpeed = (uint32_t)frequency;
+              if (HAL_I2C_Init(port) != HAL_OK) {
+                  Error_Handler();
+              }
+          }
+      }
+
+      int32_t bareruby_i2c_write(
+          bareruby_i2c_t *self, int32_t address, const char *bytes, int32_t length) {
+          if (length < 0 || length > UINT16_MAX) {
+              Error_Handler();
+          }
+          HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(
+              bareruby_i2c_port(self), bareruby_i2c_address(address), (uint8_t *)bytes,
+              (uint16_t)length, HAL_MAX_DELAY);
+          return status == HAL_OK ? length : -1;
+      }
+    CPP
+
+    I2C_READ = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "i2c.h"
+      #include "main.h"
+
+      static I2C_HandleTypeDef *bareruby_i2c_read_port(const bareruby_i2c_t *self) {
+          if (self->id != 1) {
+              Error_Handler();
+          }
+          return &hi2c1;
+      }
+
+      static uint16_t bareruby_i2c_read_address(int32_t address) {
+          if (address < 0 || address > 0x7f) {
+              Error_Handler();
+          }
+          return (uint16_t)((uint32_t)address << 1);
+      }
+
+      bareruby_string_t *bareruby_i2c_read(
+          bareruby_i2c_t *self, bareruby_arena_t *arena, int32_t address, int32_t length,
+          const char *outputs, int32_t output_length) {
+          if (length < 0 || length > UINT16_MAX || output_length < 0 || output_length > 2) {
+              Error_Handler();
+          }
+
+          uint8_t *bytes = (uint8_t *)bareruby_arena_alloc(arena, length);
+          I2C_HandleTypeDef *port = bareruby_i2c_read_port(self);
+          uint16_t device = bareruby_i2c_read_address(address);
+          HAL_StatusTypeDef status;
+          if (output_length == 0) {
+              status = HAL_I2C_Master_Receive(
+                  port, device, bytes, (uint16_t)length, HAL_MAX_DELAY);
+          } else {
+              uint16_t memory = (uint8_t)outputs[0];
+              uint16_t memory_size = I2C_MEMADD_SIZE_8BIT;
+              if (output_length == 2) {
+                  memory = (uint16_t)(((uint16_t)(uint8_t)outputs[0] << 8) | (uint8_t)outputs[1]);
+                  memory_size = I2C_MEMADD_SIZE_16BIT;
+              }
+              status = HAL_I2C_Mem_Read(
+                  port, device, memory, memory_size, bytes, (uint16_t)length, HAL_MAX_DELAY);
+          }
+          if (status != HAL_OK) {
+              Error_Handler();
+          }
+
+          bareruby_string_t *result = bareruby_string_new(arena, "");
+          return bareruby_string_append_bytes(result, (const char *)bytes, length);
+      }
+    CPP
+
     PERIPHERAL_FILE = "bareruby_binding_stm32.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_stm32.cpp"
     I2C_FILE = "bareruby_binding_i2c_stm32.cpp"
@@ -291,7 +394,9 @@ module BareRubyProt
 
     FILES = {
       PERIPHERAL_FILE => PERIPHERAL,
-      UART_RECEIVE_FILE => UART_RECEIVE
+      UART_RECEIVE_FILE => UART_RECEIVE,
+      I2C_FILE => I2C,
+      I2C_READ_FILE => I2C_READ
     }.freeze
     ALWAYS = [PERIPHERAL_FILE].freeze
   end
