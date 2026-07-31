@@ -5,8 +5,10 @@ require_relative "pass_12_cpp_source_generator/binding_declaration"
 require_relative "pass_12_cpp_source_generator/host_binding_source"
 require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/pico_binding_source"
+require_relative "pass_12_cpp_source_generator/stm32_binding_source"
 require_relative "pass_12_cpp_source_generator/host_build"
 require_relative "pass_12_cpp_source_generator/pico_build"
+require_relative "pass_12_cpp_source_generator/stm32_build"
 require_relative "pass_12_cpp_source_generator/cpp_renderer"
 
 module BareRubyProt
@@ -25,7 +27,8 @@ module BareRubyProt
       def run
         @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
         @result.merge!(HostBindingSource::FILES) if @targets.any?(&:hosted?)
-        @result.merge!(PicoBindingSource::FILES) unless @targets.all?(&:hosted?)
+        @result.merge!(PicoBindingSource::FILES) if @targets.any?(&:pico?)
+        @result.merge!(Stm32BindingSource::FILES) if @targets.any?(&:stm32?)
         if lights_onboard_led?
           @targets.each { |target| @result.merge!(OnboardLedSource.files(target.led)) }
         end
@@ -64,9 +67,11 @@ module BareRubyProt
       # record of how it is built, and — for a board — the build system that does it.
       def target_sources(target)
         build = build_of(target)
-        files = { "main.cpp" => program_text(build) }.merge(build.files)
+        files = { program_file(target) => program_text(build) }.merge(build.files)
         files.transform_keys { |name| "#{target.name}/#{name}" }
       end
+
+      def program_file(target) = target.stm32? ? "bareruby_program.cpp" : "main.cpp"
 
       def program_text(build)
         renderer = CppRenderer.new(@lir, stdout: build.stdout?, entry: build.entry)
@@ -77,17 +82,24 @@ module BareRubyProt
 
       def build_of(target)
         return HostBuild.new(sources: sources(target)) if target.hosted?
+        return Stm32Build.new(target, sources: sources(target), exceptions: @exceptions) if target.stm32?
 
         PicoBuild.new(target, sources: sources(target), onboard_led: lights_onboard_led?,
                               debug: @debug, exceptions: @exceptions)
       end
 
       # The entry point, then what a build of this kind always links, then the units this
-      # program reaches for. Both kinds of machine take the same shape and differ only in
-      # which binding answers, so one list serves both — and no file is named here, only
+      # program reaches for. Every machine takes the same shape and differs only in which
+      # binding answers, so one list serves all of them — and no file is named here, only
       # asked for.
       def sources(target)
-        binding_source = target.hosted? ? HostBindingSource : PicoBindingSource
+        binding_source = if target.hosted?
+                           HostBindingSource
+                         elsif target.stm32?
+                           Stm32BindingSource
+                         else
+                           PicoBindingSource
+                         end
         names = binding_source::ALWAYS + RuntimeSource::ALWAYS
         names << binding_source::UART_RECEIVE_FILE if receives_uart?
         names << binding_source::I2C_FILE if uses_i2c?
@@ -98,7 +110,7 @@ module BareRubyProt
         # Arena exhaustion is reported through bareruby_throw even when the Ruby program
         # contains no explicit raise.
         names << RuntimeSource::THROW_FILE if throws? || allocates?
-        ["main.cpp"] + names.map { |name| "../#{name}" }
+        [program_file(target)] + names.map { |name| "../#{name}" }
       end
     end
   end

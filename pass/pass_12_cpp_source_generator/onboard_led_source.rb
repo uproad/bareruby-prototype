@@ -2,7 +2,7 @@
 
 module BareRubyProt
   module OnboardLedSource
-    # Three implementations of one interface, and which one a build links is the only
+    # Four implementations of one interface, and which one a build links is the only
     # thing that changes. The program says `OnboardLED.new` on all of them.
     HOST = <<~CPP
       #include "bareruby_binding.h"
@@ -85,13 +85,39 @@ module BareRubyProt
       }
     CPP
 
+    STM32 = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "main.h"
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          self->state = 0;
+          HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+      }
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          HAL_GPIO_WritePin(
+              LD2_GPIO_Port, LD2_Pin, self->state != 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
     # The on-board LED is the one peripheral whose implementation two boards of the same
     # chip disagree about, so it is split by the target's answer rather than by the kind
-    # of machine. A build takes exactly one of the three.
+    # of machine. A build takes exactly one implementation.
     IMPLEMENTATIONS = {
       host: ["bareruby_binding_onboard_led_host.cpp", HOST],
       pin: ["bareruby_binding_onboard_led_pin.cpp", PIN],
-      wireless: ["bareruby_binding_onboard_led_wireless.cpp", WIRELESS]
+      wireless: ["bareruby_binding_onboard_led_wireless.cpp", WIRELESS],
+      stm32: ["bareruby_binding_onboard_led_stm32.cpp", STM32]
     }.freeze
 
     # Reaching the wireless LED means bringing the radio up, which is a driver and a
