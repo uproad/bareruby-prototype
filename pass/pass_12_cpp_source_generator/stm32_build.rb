@@ -18,13 +18,22 @@ module BareRubyProt
       @exceptions = exceptions
     end
 
-    def files = { "manifest.txt" => manifest }
+    def files = {
+      "manifest.txt" => manifest,
+      "source-list.txt" => source_list
+    }
 
     # USART2 is the board's configured stdout channel. Its _write bridge is supplied by
     # the STM32 binding, so global puts calls remain observable in this build.
     def stdout? = true
 
     def entry = ENTRY
+
+    # The CubeIDE bridge consumes this list instead of copying every generated unit.
+    # Keeping the selection made by pass 12 preserves the feature-based link boundary:
+    # an application that does not receive over UART or use I2C does not compile those
+    # bindings into its firmware.
+    def source_list = "#{@sources.join("\n")}\n"
 
     def manifest
       <<~MANIFEST
