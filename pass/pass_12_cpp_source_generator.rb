@@ -95,7 +95,9 @@ module BareRubyProt
         names << OnboardLedSource.file_name(target.led) if lights_onboard_led?
         names << RuntimeSource::ARENA_FILE if allocates?
         names << RuntimeSource::STRING_FILE if builds_strings?
-        names << RuntimeSource::THROW_FILE if throws?
+        # Arena exhaustion is reported through bareruby_throw even when the Ruby program
+        # contains no explicit raise.
+        names << RuntimeSource::THROW_FILE if throws? || allocates?
         ["main.cpp"] + names.map { |name| "../#{name}" }
       end
     end
