@@ -41,13 +41,13 @@ module BareRubyProt
         board = #{@target.board}
         platform = #{@target.platform}
         toolchain = STM32CubeIDE MCU ARM GCC
-        language_standard = gnu++20
-        compile_options = -std=gnu++20 -fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}
-        cube_project = platform/stm32/F446_Sample
+        language_standard = CubeIDE project setting
+        compile_options = CubeIDE project setting
+        cube_project = user-supplied CubeIDE project
         generated_sources = #{@sources.join(' ')}
         stdout_channel = USART2
         exceptions = #{@exceptions ? 'enabled' : 'disabled'}
-        artifact = Debug/F446_Sample.elf
+        artifact = CubeIDE configuration output
       MANIFEST
     end
   end
