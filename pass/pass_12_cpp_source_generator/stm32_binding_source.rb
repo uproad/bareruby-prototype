@@ -5,7 +5,12 @@ module BareRubyProt
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
       #include "main.h"
+      #include "usart.h"
 
       static GPIO_TypeDef *bareruby_gpio_port(int32_t pin) {
           switch (pin / 16) {
@@ -84,6 +89,103 @@ module BareRubyProt
           return bareruby_gpio_read(self) == 0;
       }
 
+      static UART_HandleTypeDef *bareruby_uart_port(const bareruby_uart_t *self) {
+          if (self->id != 0) {
+              Error_Handler();
+          }
+          return &huart2;
+      }
+
+      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+          self->id = id;
+          self->baud = baud;
+          self->parity = parity;
+          UART_HandleTypeDef *port = bareruby_uart_port(self);
+          uint32_t hal_parity = UART_PARITY_NONE;
+          if (parity == 1) {
+              hal_parity = UART_PARITY_EVEN;
+          } else if (parity == 2) {
+              hal_parity = UART_PARITY_ODD;
+          } else if (parity != 0) {
+              Error_Handler();
+          }
+
+          uint32_t word_length = hal_parity == UART_PARITY_NONE ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
+          if (port->Init.BaudRate != (uint32_t)baud || port->Init.Parity != hal_parity ||
+              port->Init.WordLength != word_length) {
+              if (HAL_UART_DeInit(port) != HAL_OK) {
+                  Error_Handler();
+              }
+              port->Init.BaudRate = (uint32_t)baud;
+              port->Init.WordLength = word_length;
+              port->Init.StopBits = UART_STOPBITS_1;
+              port->Init.Parity = hal_parity;
+              port->Init.Mode = UART_MODE_TX_RX;
+              port->Init.HwFlowCtl = UART_HWCONTROL_NONE;
+              port->Init.OverSampling = UART_OVERSAMPLING_16;
+              if (HAL_UART_Init(port) != HAL_OK) {
+                  Error_Handler();
+              }
+          }
+      }
+
+      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
+          int32_t length = (int32_t)strlen(value);
+          HAL_StatusTypeDef status = HAL_UART_Transmit(
+              bareruby_uart_port(self), (uint8_t *)value, (uint16_t)length, HAL_MAX_DELAY);
+          return status == HAL_OK ? length : -1;
+      }
+
+      void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
+          (void)bareruby_uart_write(self, value);
+          static uint8_t newline = '\\n';
+          (void)HAL_UART_Transmit(bareruby_uart_port(self), &newline, 1, HAL_MAX_DELAY);
+      }
+
+      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
+          char payload[256];
+          va_list arguments;
+          va_start(arguments, format);
+          int length = vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          if (length <= 0) {
+              return;
+          }
+          uint16_t transmitted = (uint16_t)(length < (int)sizeof(payload) ? length : (int)sizeof(payload) - 1);
+          (void)HAL_UART_Transmit(
+              bareruby_uart_port(self), (uint8_t *)payload, transmitted, HAL_MAX_DELAY);
+      }
+
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return __HAL_UART_GET_FLAG(bareruby_uart_port(self), UART_FLAG_RXNE) != RESET ? 1 : 0;
+      }
+
+      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
+          return bareruby_uart_bytes_available(self) != 0;
+      }
+
+      void bareruby_uart_flush(bareruby_uart_t *self) {
+          UART_HandleTypeDef *port = bareruby_uart_port(self);
+          while (__HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET) {
+          }
+      }
+
+      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+          UART_HandleTypeDef *port = bareruby_uart_port(self);
+          while (__HAL_UART_GET_FLAG(port, UART_FLAG_RXNE) != RESET) {
+              __HAL_UART_FLUSH_DRREGISTER(port);
+          }
+      }
+
+      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
+          bareruby_uart_flush(self);
+      }
+
+      extern "C" int __io_putchar(int ch) {
+          uint8_t byte = (uint8_t)ch;
+          return HAL_UART_Transmit(&huart2, &byte, 1, HAL_MAX_DELAY) == HAL_OK ? ch : EOF;
+      }
+
       static void bareruby_delay_us(uint32_t microseconds) {
           CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
           DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
@@ -141,12 +243,56 @@ module BareRubyProt
       }
     CPP
 
+    UART_RECEIVE = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "main.h"
+      #include "usart.h"
+
+      static UART_HandleTypeDef *bareruby_uart_receive_port(const bareruby_uart_t *self) {
+          if (self->id != 0) {
+              Error_Handler();
+          }
+          return &huart2;
+      }
+
+      bareruby_string_t *bareruby_uart_read(
+          bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length) {
+          bareruby_string_t *result = bareruby_string_new(arena, "");
+          for (int32_t index = 0; index < length; ++index) {
+              uint8_t byte;
+              if (HAL_UART_Receive(
+                      bareruby_uart_receive_port(self), &byte, 1, HAL_MAX_DELAY) != HAL_OK) {
+                  Error_Handler();
+              }
+              bareruby_string_append_byte(result, byte);
+          }
+          return result;
+      }
+
+      bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena) {
+          bareruby_string_t *result = bareruby_string_new(arena, "");
+          uint8_t byte;
+          do {
+              if (HAL_UART_Receive(
+                      bareruby_uart_receive_port(self), &byte, 1, HAL_MAX_DELAY) != HAL_OK) {
+                  Error_Handler();
+              }
+              bareruby_string_append_byte(result, byte);
+          } while (byte != '\\n');
+          return result;
+      }
+    CPP
+
     PERIPHERAL_FILE = "bareruby_binding_stm32.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_stm32.cpp"
     I2C_FILE = "bareruby_binding_i2c_stm32.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_stm32.cpp"
 
-    FILES = { PERIPHERAL_FILE => PERIPHERAL }.freeze
+    FILES = {
+      PERIPHERAL_FILE => PERIPHERAL,
+      UART_RECEIVE_FILE => UART_RECEIVE
+    }.freeze
     ALWAYS = [PERIPHERAL_FILE].freeze
   end
 end
