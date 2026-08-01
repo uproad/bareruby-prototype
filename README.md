@@ -1,9 +1,9 @@
 # bareruby-prototype
 
 BareRuby is a Ruby subset and an ahead-of-time compiler for microcontrollers. It
-translates Ruby to C++ in a "better C" style, which a standard toolchain
-(`arm-none-eabi-g++` with pico-sdk) turns into a native firmware image. There is no
-VM and no garbage collector; every type is resolved at compile time.
+translates Ruby to C++ in a "better C" style, which a standard ARM toolchain plus the
+target platform SDK or HAL turns into a native firmware image. There is no VM and no
+garbage collector; every type is resolved at compile time.
 
 **This repository is a throwaway feasibility prototype, not that compiler.** It exists to
 answer one question by running it: can the pipeline the design calls for actually be
@@ -132,15 +132,24 @@ Covered so far:
   no generalized interrupt API, and no production diagnostics. Built with pico-sdk
   2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
+- **STM32F4 platform** — a user-owned NUCLEO-F446RE CubeMX project outside this
+  repository owns clock, pin, startup, HAL initialization and link configuration. Pass
+  12 adds HAL-backed GPIO, timing, LD2, USART2 and I2C1 translation units, entered from a
+  CubeMX-preserved user section after every peripheral is initialized. `brd-stm32`
+  generates one application, synchronizes only the reached units, and drives
+  STM32CubeIDE's headless builder. A physical board has been programmed over SWD, with
+  LD2 and USART2 exercised; I2C links against STM32CubeF4 HAL 1.28.3 but remains
+  hardware-unverified.
 
 - **The on-board LED** (`samples/heartbeat.rb`) — `OnboardLED.new`, then `on`, `off` and
   `write`. It is deliberately **not** a `GPIO` with a known pin number, because on a
   board that has an LED it is frequently not a GPIO at all: a Pico W drives its through
   the wireless chip, and GP25, where the plain Pico's LED sits, is that chip's select
-  line instead. Sharing GPIO's interface would only have hidden that. Three
+  line instead. Sharing GPIO's interface would only have hidden that. Four
   implementations back one class — the traced host stub, `PICO_DEFAULT_LED_PIN` out of
-  pico-sdk's board header, and `cyw43_arch_gpio_put` — and which one a build links
-  follows from the target, so the same six lines of Ruby blink all four boards. A board
+  pico-sdk's board header, `cyw43_arch_gpio_put`, and the STM32 LD2 HAL wrapper — and
+  which one a build links follows from the target, so the same six lines of Ruby reach
+  every supported on-board LED. A board
   with no on-board LED is meant to accept all three calls and do nothing, so that the
   presence of an indicator never decides whether a program compiles; every target here
   has one, so nothing exercises that.
@@ -232,7 +241,7 @@ ruby compile.rb -d samples/blink.rb   # debug firmware
 
 ### Choosing targets
 
-A target is a machine the artifacts are produced for. There are three:
+A target is a machine the artifacts are produced for. There are six:
 
 | Target | Short | Machine | Chip |
 | --- | --- | --- | --- |
@@ -241,6 +250,7 @@ A target is a machine the artifacts are produced for. There are three:
 | `raspberry-pi-pico-w` | `picow` | Raspberry Pi Pico W | RP2040 |
 | `raspberry-pi-pico2` | `pico2` | Raspberry Pi Pico 2 | RP2350 |
 | `raspberry-pi-pico2-w` | `pico2w` | Raspberry Pi Pico 2 W | RP2350 |
+| `stm32-nucleo-f446re` | `f446` | NUCLEO-F446RE | STM32F446RE |
 
 The short names are for typing at a prompt; the full name is what the `build/` directory
 and the manifest are named after either way, so nothing downstream has two spellings to
@@ -253,6 +263,7 @@ machines as it lists:
 ruby compile.rb --target=host samples/blink.rb
 ruby compile.rb --target=raspberry-pi-pico --target=raspberry-pi-pico2 samples/blink.rb
 ruby compile.rb --target=pico --target=picow --target=pico2 --target=pico2w samples/heartbeat.rb
+ruby compile.rb --target=f446 --no-exceptions samples/heartbeat.rb
 ```
 
 Without `--target=` the targets come from `target.yml` at the repository root:
@@ -269,11 +280,13 @@ Naming even one target on the command line settles the question, so `target.yml`
 consulted at all in that case rather than merged into — a run produces exactly what it
 was asked for. With neither, the target is `host`.
 
-Only the selected targets are written. Their directories hold `main.cpp`, `manifest.txt`
-and, for a board, `CMakeLists.txt`; the runtime and the bindings sit above them in
-`build/` and are shared. Both boards use the same pico-sdk binding — the peripherals are
-reached through the SDK, which spells them the same way whichever chip is underneath —
-and differ only in the board name their `CMakeLists.txt` hands to it.
+Only the selected targets are written. Their directories hold the generated entry point
+and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, while the STM32 target
+receives the exact source list synchronized into its existing CubeIDE project. The runtime
+and the bindings sit above them in `build/` and are shared. The Pico boards use the same
+pico-sdk binding — the peripherals are reached through the SDK, which spells them the same
+way whichever chip is underneath — and differ only in the board name their
+`CMakeLists.txt` hands to it.
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
 the unwinder and its tables are left out. On a `raspberry-pi-pico` build of
@@ -373,6 +386,28 @@ What is left of the pass is the assembly: it asks the low-level IR what the prog
 reaches for, asks each source for its files, and hands each target the ones it needs. All
 of it was one file until the C++ grew to two thirds of it, which is a poor place to read
 any of it from.
+
+## Second stage: STM32CubeIDE
+
+The NUCLEO-F446RE target uses a user-owned CubeMX/CubeIDE project outside this
+repository. CubeMX owns clocks, pins, HAL initialization, startup and linker scripts;
+pass 12 supplies C++ through the HAL. The complete generation, synchronization, and
+headless build is one command:
+
+```sh
+./brd-stm32 samples/heartbeat.rb \
+  --cube-project=/path/to/F446_Sample --no-exceptions
+./brd-stm32 samples/i2c.rb \
+  --cube-project=/path/to/F446_Sample --configuration=Release --no-exceptions
+```
+
+The command finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the normal
+`/opt/st` installation tree. `STM32_CUBE_PROJECT=/path/to/F446_Sample` can replace the
+command-line project option. `STM32CUBEIDE=/path/to/headless-build.sh` overrides IDE
+discovery, and `--generate-only` stops after placing the selected pass-12 sources into
+the project. The platform's [README](platform/stm32/README.md) records project
+preparation, the ownership boundary, CubeMX regeneration, pin mapping, and supported
+bindings.
 
 ## Second stage: hosted
 
@@ -710,10 +745,19 @@ program names neither.
 | pico-sdk | 2.3.0 (both boards) |
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
+| STM32CubeIDE | 2.2.0 |
+| GNU Tools for STM32 | 14.3.1 |
+| STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
+| STM32CubeProgrammer | 2.23.0 |
+
+The STM32 translation units and complete ELF were built with STM32CubeIDE's GNU Tools
+for STM32 14.3.1. Headless build, SWD programming, LD2, and USART2 were verified on a
+physical NUCLEO-F446RE. I2C was linked against STM32CubeF4 HAL 1.28.3 but has not yet
+been exercised with an external device.
 
 The Pico hardware run was done under pico-sdk 1.5.1, which is what the repository used at
 the time; the Pico 2 W run and the two-board run were done under 2.3.0.
 
-Of the four board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
+Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
 real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
 because neither board is here.
