@@ -50,10 +50,15 @@ module BareRubyProt
     def conversion_of(type)
       return "%s" if ArenaString.type?(type)
 
+      # An integer crossing an ellipsis is not converted to a parameter's type, because
+      # there is no parameter, so what arrives is whatever width the machine gave it. A
+      # conversion therefore names a width rather than a language type: an Int32 is an
+      # int on a 64-bit machine and a long on a 16-bit one, and long is 32 bits on both.
+      # Pass 12 widens the value to match.
       case type
       when :Int64 then "%lld"
       when :String, :Bool, :Fixed then "%s"
-      else "%d"
+      else "%ld"
       end
     end
 
