@@ -315,6 +315,8 @@ module BareRubyProt
 
     def self.toolchain = HostToolchain
 
+    def self.flash = HostFlash
+
     def self.build = HostBuild
   end
 end

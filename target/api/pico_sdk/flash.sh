@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Flash a .uf2 onto one attached Raspberry Pi Pico board.
 #
-#     ./flash.sh [--board SERIAL] [path/to/firmware.uf2]
-#     ./flash.sh --list
+#     target/api/pico_sdk/flash.sh [--board SERIAL] [path/to/firmware.uf2]
+#     target/api/pico_sdk/flash.sh --list
 #
 # Several boards can stay attached at once. Which one receives the firmware follows
 # from the firmware itself: a .uf2 carries the family id of the chip it was built for,
@@ -20,7 +20,7 @@
 # to add. Without a line for the board the script re-executes itself under sudo.
 set -euo pipefail
 
-HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 
 # Where a board with no fstab line of its own gets mounted, under sudo.
 FALLBACK_MOUNT_POINT=/mnt/pico
@@ -133,7 +133,7 @@ if [ -n "$LIST" ]; then
     exit 0
 fi
 
-UF2="${UF2:-$HERE/build/pico-pico_sdk-thumbv6m-none-eabi/build/bareruby_program.uf2}"
+UF2="${UF2:-$HERE/build/pico-pico_sdk-thumbv6m-none-eabi/bareruby_program.uf2}"
 
 if [ ! -f "$UF2" ]; then
     echo "flash: no such file: $UF2" >&2
@@ -158,7 +158,7 @@ count=$(printf '%s' "$candidates" | grep -c . || true)
 
 if [ "$count" -eq 0 ]; then
     echo "flash: no attached board carries $CHIP." >&2
-    echo "       Run './flash.sh --list' to see what is attached. A board running a" >&2
+    echo "       Run 'target/api/pico_sdk/flash.sh --list' to see what is attached. A board running a" >&2
     echo "       default build shows nothing until BOOTSEL is held." >&2
     exit 1
 fi

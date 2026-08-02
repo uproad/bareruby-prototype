@@ -331,6 +331,8 @@ module BareRubyProt
 
     def self.toolchain = PicoSdkToolchain
 
+    def self.flash = PicoSdkFlash
+
     def self.build = PicoSdkBuild
   end
 end

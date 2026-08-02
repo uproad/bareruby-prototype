@@ -9,6 +9,9 @@ require_relative "deployment"
 require_relative "target/api/host/toolchain"
 require_relative "target/api/pico_sdk/toolchain"
 require_relative "target/api/stm32cube/toolchain"
+require_relative "target/api/host/flash"
+require_relative "target/api/pico_sdk/flash"
+require_relative "target/api/stm32cube/flash"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and
@@ -27,6 +30,8 @@ module BareRubyProt
                             machine doing the compiling.
         build   SOURCE.rb   compile, then run each API's toolchain over what it produced,
                             leaving the artifact beside its sources.
+        flash               Write what build left onto the boards that take it.
+        deploy  SOURCE.rb   build, then flash.
 
       Options:
         --target=NAME       Work on NAME, repeatable. Names and their short forms are in
@@ -51,6 +56,8 @@ module BareRubyProt
       case @command
       when "compile" then compile
       when "build" then build
+      when "flash" then flash
+      when "deploy" then deploy
       else usage
       end
     end
@@ -71,6 +78,23 @@ module BareRubyProt
         entry.target.api.toolchain.run(directory_of(entry), options: entry.options)
       end
       0
+    end
+
+    # What is on the boards is whatever the last build left, so flashing on its own is
+    # deliberate: it repeats a deployment without compiling it again.
+    def flash
+      entries.each do |entry|
+        entry.target.api.flash.run(directory_of(entry), boards: entry.boards,
+                                                        options: entry.options)
+      end
+      0
+    end
+
+    def deploy
+      status = build
+      return status unless status.zero?
+
+      flash
     end
 
     # A record of this desk answers for the targets it names. Naming targets on the

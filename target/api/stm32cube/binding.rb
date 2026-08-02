@@ -408,6 +408,8 @@ module BareRubyProt
 
     def self.toolchain = Stm32CubeToolchain
 
+    def self.flash = Stm32CubeFlash
+
     def self.build = Stm32CubeBuild
   end
 end
