@@ -488,13 +488,15 @@ module BareRubyProt
               uint32_t restored = (uint32_t)((((uint64_t)digits << 16) + power / 2u) / power);
               if (restored == fraction) {
                   snprintf(buffer, sizeof(buffer), "%s%u.%0*u",
-                           value < 0 ? "-" : "", whole, length, digits);
+                           value < 0 ? "-" : "", (unsigned int)whole, length,
+                           (unsigned int)digits);
                   return buffer;
               }
           }
 
-          snprintf(buffer, sizeof(buffer), "%s%u.%05u", value < 0 ? "-" : "", whole,
-                   (uint32_t)(((uint64_t)fraction * 100000u + 32768u) >> 16));
+          snprintf(buffer, sizeof(buffer), "%s%u.%05u", value < 0 ? "-" : "",
+                   (unsigned int)whole,
+                   (unsigned int)(((uint64_t)fraction * 100000u + 32768u) >> 16));
           return buffer;
       }
 

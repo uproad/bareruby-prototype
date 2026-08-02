@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# Generate one BareRuby application, synchronize it into CubeIDE, and build it.
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+TARGET=stm32-nucleo-f446re
+TARGET_DIRECTORY="$HERE/build/$TARGET"
+
+usage() {
+    cat >&2 <<'USAGE'
+Usage: brd-stm32 SOURCE.rb --cube-project=PATH [OPTIONS]
+
+Generates one BareRuby program for the NUCLEO-F446RE, synchronizes the selected
+C++ translation units into a user-owned CubeIDE project, and runs a headless
+CubeIDE build.
+
+  --cube-project=PATH  CubeIDE project to synchronize and build. May also be set
+                       with STM32_CUBE_PROJECT.
+  --configuration=NAME  Build Debug (the default) or Release.
+  --no-exceptions       Reject Ruby begin/rescue and omit exception support.
+  --generate-only       Stop after synchronizing the generated C++ files.
+
+Environment:
+  STM32CUBEIDE            Path to headless-build.sh or the stm32cubeide launcher.
+  STM32_CUBE_PROJECT      CubeIDE project used when --cube-project is omitted.
+  STM32CUBEIDE_WORKSPACE  Eclipse workspace used by the headless build. Defaults
+                          to a project-specific directory under
+                          .tools/stm32cubeide-workspace.
+  STM32CUBEIDE_CONFIGURATION
+                          Eclipse configuration area used by the headless build. Defaults
+                          to an IDE-specific directory under
+                          .tools/stm32cubeide-configuration.
+USAGE
+    exit 2
+}
+
+CONFIGURATION=Debug
+GENERATE_ONLY=false
+COMPILER_OPTIONS=()
+SOURCE=""
+PROJECT_DIRECTORY="${STM32_CUBE_PROJECT:-}"
+
+for argument in "$@"; do
+    case "$argument" in
+        --cube-project=*) PROJECT_DIRECTORY=${argument#*=} ;;
+        --configuration=Debug) CONFIGURATION=Debug ;;
+        --configuration=Release) CONFIGURATION=Release ;;
+        --configuration=*)
+            echo "brd-stm32: unsupported configuration: ${argument#*=}" >&2
+            usage
+            ;;
+        --no-exceptions) COMPILER_OPTIONS+=(--no-exceptions) ;;
+        --generate-only) GENERATE_ONLY=true ;;
+        -*)
+            echo "brd-stm32: unknown option: $argument" >&2
+            usage
+            ;;
+        *)
+            if [ -n "$SOURCE" ]; then
+                echo "brd-stm32: only one source file may be supplied" >&2
+                usage
+            fi
+            SOURCE=$(realpath -m "$argument")
+            ;;
+    esac
+done
+
+[ -n "$SOURCE" ] || usage
+[ -f "$SOURCE" ] || { echo "brd-stm32: no such file: $SOURCE" >&2; exit 1; }
+[ -n "$PROJECT_DIRECTORY" ] || {
+    echo "brd-stm32: --cube-project=PATH or STM32_CUBE_PROJECT is required" >&2
+    exit 1
+}
+
+PROJECT_DIRECTORY=$(realpath -m "$PROJECT_DIRECTORY")
+case "$PROJECT_DIRECTORY/" in
+    "$HERE/"*)
+        echo "brd-stm32: the CubeIDE project must be outside the BareRuby repository" >&2
+        exit 1
+        ;;
+esac
+[ -f "$PROJECT_DIRECTORY/.project" ] || {
+    echo "brd-stm32: not a CubeIDE project: $PROJECT_DIRECTORY" >&2
+    exit 1
+}
+[ -f "$PROJECT_DIRECTORY/.cproject" ] || {
+    echo "brd-stm32: missing CubeIDE configuration: $PROJECT_DIRECTORY/.cproject" >&2
+    exit 1
+}
+for required_directory in Core/Src Core/Inc; do
+    [ -d "$PROJECT_DIRECTORY/$required_directory" ] || {
+        echo "brd-stm32: missing project directory: $PROJECT_DIRECTORY/$required_directory" >&2
+        exit 1
+    }
+done
+
+PROJECT_NAME=""
+while IFS= read -r project_line; do
+    case "$project_line" in
+        *'<name>'*'</name>'*)
+            PROJECT_NAME=${project_line#*<name>}
+            PROJECT_NAME=${PROJECT_NAME%%</name>*}
+            break
+            ;;
+    esac
+done < "$PROJECT_DIRECTORY/.project"
+case "$PROJECT_NAME" in
+    ""|.|..|*/*)
+        echo "brd-stm32: could not read a safe project name from $PROJECT_DIRECTORY/.project" >&2
+        exit 1
+        ;;
+esac
+
+MAIN_SOURCE="$PROJECT_DIRECTORY/Core/Src/main.c"
+[ -f "$MAIN_SOURCE" ] || {
+    echo "brd-stm32: missing CubeMX entry source: $MAIN_SOURCE" >&2
+    exit 1
+}
+if ! grep -q '#include "bareruby_entry.h"' "$MAIN_SOURCE" ||
+   ! grep -q 'bareruby_entry();' "$MAIN_SOURCE"; then
+    echo "brd-stm32: $MAIN_SOURCE is not connected to BareRuby" >&2
+    echo "             Add bareruby_entry.h and bareruby_entry() in CubeMX USER CODE sections." >&2
+    exit 1
+fi
+
+echo "brd-stm32: generate ($TARGET)"
+ruby "$HERE/compile.rb" --target="$TARGET" "${COMPILER_OPTIONS[@]}" "$SOURCE"
+
+SOURCE_LIST="$TARGET_DIRECTORY/source-list.txt"
+[ -f "$SOURCE_LIST" ] || {
+    echo "brd-stm32: pass 12 did not emit $SOURCE_LIST" >&2
+    exit 1
+}
+
+GENERATED_SOURCES=()
+while IFS= read -r relative_source; do
+    [ -n "$relative_source" ] || continue
+    case "$relative_source" in
+        bareruby_program.cpp) ;;
+        ../bareruby_*.cpp)
+            [ "${relative_source#../}" = "$(basename "$relative_source")" ] || {
+                echo "brd-stm32: refusing unexpected generated path: $relative_source" >&2
+                exit 1
+            }
+            ;;
+        *)
+            echo "brd-stm32: refusing unexpected generated path: $relative_source" >&2
+            exit 1
+            ;;
+    esac
+
+    generated_source=$(realpath "$TARGET_DIRECTORY/$relative_source")
+    [ -f "$generated_source" ] || {
+        echo "brd-stm32: generated source is missing: $generated_source" >&2
+        exit 1
+    }
+    GENERATED_SOURCES+=("$generated_source")
+done < "$SOURCE_LIST"
+
+GENERATED_HEADERS=(
+    "$HERE/build/bareruby_binding.h"
+    "$HERE/build/bareruby_runtime.h"
+    "$HERE/platform/stm32/bareruby_entry.h"
+)
+for generated_header in "${GENERATED_HEADERS[@]}"; do
+    [ -f "$generated_header" ] || {
+        echo "brd-stm32: generated header is missing: $generated_header" >&2
+        exit 1
+    }
+done
+
+# Files with this prefix are owned by this bridge. Validate every replacement before
+# removing the previous set, and never touch CubeMX-generated or ordinary user files.
+find "$PROJECT_DIRECTORY/Core/Src" -maxdepth 1 -type f -name 'bareruby_*.cpp' -delete
+for generated_source in "${GENERATED_SOURCES[@]}"; do
+    destination="$PROJECT_DIRECTORY/Core/Src/$(basename "$generated_source")"
+    install -m 0644 "$generated_source" "$destination"
+done
+for generated_header in "${GENERATED_HEADERS[@]}"; do
+    destination="$PROJECT_DIRECTORY/Core/Inc/$(basename "$generated_header")"
+    install -m 0644 "$generated_header" "$destination"
+done
+
+echo "brd-stm32: synchronized generated sources into $PROJECT_NAME"
+if $GENERATE_ONLY; then
+    exit 0
+fi
+
+find_cubeide() {
+    if [ -n "${STM32CUBEIDE:-}" ]; then
+        if [ -x "$STM32CUBEIDE" ]; then
+            printf '%s\n' "$STM32CUBEIDE"
+            return
+        fi
+        echo "brd-stm32: STM32CUBEIDE is not executable: $STM32CUBEIDE" >&2
+        return 1
+    fi
+
+    local candidate
+    for candidate in "$(command -v headless-build.sh || true)" \
+                     "$(command -v stm32cubeide || true)" \
+                     /opt/st/stm32cubeide_*/headless-build.sh \
+                     /opt/st/stm32cubeide_*/stm32cubeide; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return
+        fi
+    done
+    return 1
+}
+
+if ! CUBEIDE=$(find_cubeide); then
+    echo "brd-stm32: STM32CubeIDE was not found" >&2
+    echo "             Set STM32CUBEIDE or use --generate-only." >&2
+    exit 1
+fi
+
+if [ -z "${STM32CUBEIDE_WORKSPACE:-}" ]; then
+    project_checksum=$(printf '%s\n' "$PROJECT_DIRECTORY" | cksum)
+    project_checksum=${project_checksum%% *}
+    STM32CUBEIDE_WORKSPACE="$HERE/.tools/stm32cubeide-workspace/$PROJECT_NAME-$project_checksum"
+fi
+if [ -z "${STM32CUBEIDE_CONFIGURATION:-}" ]; then
+    ide_checksum=$(printf '%s\n' "$CUBEIDE" | cksum)
+    ide_checksum=${ide_checksum%% *}
+    STM32CUBEIDE_CONFIGURATION="$HERE/.tools/stm32cubeide-configuration/$ide_checksum"
+fi
+mkdir -p "$STM32CUBEIDE_WORKSPACE" "$STM32CUBEIDE_CONFIGURATION"
+
+echo "brd-stm32: build ($PROJECT_NAME/$CONFIGURATION)"
+if [ "$(basename "$CUBEIDE")" = headless-build.sh ]; then
+    "$CUBEIDE" -configuration "$STM32CUBEIDE_CONFIGURATION" \
+        -data "$STM32CUBEIDE_WORKSPACE" -import "$PROJECT_DIRECTORY" \
+        -cleanBuild "$PROJECT_NAME/$CONFIGURATION"
+else
+    "$CUBEIDE" --launcher.suppressErrors -nosplash \
+        -application org.eclipse.cdt.managedbuilder.core.headlessbuild \
+        -configuration "$STM32CUBEIDE_CONFIGURATION" \
+        -data "$STM32CUBEIDE_WORKSPACE" -import "$PROJECT_DIRECTORY" \
+        -cleanBuild "$PROJECT_NAME/$CONFIGURATION"
+fi
+
+ARTIFACT="$PROJECT_DIRECTORY/$CONFIGURATION/$PROJECT_NAME.elf"
+[ -f "$ARTIFACT" ] || {
+    echo "brd-stm32: CubeIDE completed without producing $ARTIFACT" >&2
+    exit 1
+}
+echo "brd-stm32: firmware: $ARTIFACT"
