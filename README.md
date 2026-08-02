@@ -132,7 +132,7 @@ Covered so far:
   no generalized interrupt API, and no production diagnostics. Built with pico-sdk
   2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
-- **STM32F4 platform** — a user-owned NUCLEO-F446RE CubeMX project outside this
+- **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project outside this
   repository owns clock, pin, startup, HAL initialization and link configuration. Pass
   12 adds HAL-backed GPIO, timing, LD2, USART2 and I2C1 translation units, entered from a
   CubeMX-preserved user section after every peripheral is initialized. `brd-stm32`
@@ -405,7 +405,7 @@ The command finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the 
 `/opt/st` installation tree. `STM32_CUBE_PROJECT=/path/to/F446_Sample` can replace the
 command-line project option. `STM32CUBEIDE=/path/to/headless-build.sh` overrides IDE
 discovery, and `--generate-only` stops after placing the selected pass-12 sources into
-the project. The platform's [README](platform/stm32/README.md) records project
+the project. The binding's [README](binding/stm32/README.md) records project
 preparation, the ownership boundary, CubeMX regeneration, pin mapping, and supported
 bindings.
 

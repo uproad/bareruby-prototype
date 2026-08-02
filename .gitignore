@@ -4,6 +4,3 @@
 
 # Downloaded and locally built toolchains
 /.tools/
-
-# STM32CubeIDE projects are user-owned and must not be added below the platform adapter.
-/platform/stm32/*/

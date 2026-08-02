@@ -160,7 +160,7 @@ done < "$SOURCE_LIST"
 GENERATED_HEADERS=(
     "$HERE/build/bareruby_binding.h"
     "$HERE/build/bareruby_runtime.h"
-    "$HERE/platform/stm32/bareruby_entry.h"
+    "$HERE/binding/stm32/bareruby_entry.h"
 )
 for generated_header in "${GENERATED_HEADERS[@]}"; do
     [ -f "$generated_header" ] || {

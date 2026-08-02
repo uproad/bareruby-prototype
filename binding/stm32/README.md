@@ -3,7 +3,7 @@
 See [setup.md](setup.md) for required software and external CubeIDE project generation.
 See [build.md](build.md) for build, flash, execution, serial, and troubleshooting steps.
 
-This platform keeps the STM32 ownership boundary explicit without bundling an
+This binding keeps the STM32 ownership boundary explicit without bundling an
 STM32Cube project:
 
 - CubeMX owns the `.ioc` file, clock tree, pin mux, HAL initialization, startup,
