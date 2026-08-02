@@ -3,7 +3,7 @@
 
 require "fileutils"
 
-require_relative "target"
+require_relative "target/target"
 require_relative "ir/bareruby_ast"
 require_relative "ir/typed_ast"
 require_relative "ir/lir"

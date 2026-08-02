@@ -1,17 +1,17 @@
 # frozen_string_literal: true
 
-require "yaml"
-
-require_relative "target/isa"
-require_relative "target/substrate"
-require_relative "target/machine"
-require_relative "target/api/host/binding"
-require_relative "target/api/pico_sdk/binding"
-require_relative "target/api/stm32cube/binding"
+require_relative "isa"
+require_relative "substrate"
+require_relative "machine"
+require_relative "api/host/binding"
+require_relative "api/pico_sdk/binding"
+require_relative "api/stm32cube/binding"
 
 module BareRubyProt
-  # One machine the compiler produces artifacts for. The name is the whole identity of a
-  # target: it is what the command line and target.yml spell, and it is the directory the
+  # One machine the compiler produces artifacts for, and the roof over everything beside
+  # this file: the instruction sets, the substrates, the machines and the APIs are all
+  # here to be composed, and this is where the composing is done. The name is the whole
+  # identity of a target — it is what the command line spells and the directory the
   # artifacts land in, so there is never a second vocabulary to translate between.
   #
   # Underneath the name a target is a composition of four answers, and they are kept apart
@@ -29,7 +29,6 @@ module BareRubyProt
   # each needing a kind of their own. Nothing is inferred here: a target that leaves an
   # answer out is a target nobody has decided about yet.
   class Target
-    CONFIGURATION_FILE = File.expand_path("target.yml", __dir__)
     OPTION_PREFIX = "--target="
     DEFAULT_NAMES = ["host"].freeze
 
@@ -76,17 +75,13 @@ module BareRubyProt
 
     def self.[](name) = TABLE.fetch(ALIASES.fetch(name, name))
 
-    # Naming even one target on the command line settles the question, so target.yml is
-    # not consulted at all rather than merged into: a run asked for exactly what it says.
+    # A run compiles exactly what it was asked for. Nothing is read from a file and
+    # nothing is merged in behind the request, so what a command line says is the whole
+    # of what happens; with nothing said, the machine doing the compiling is the target.
     def self.select(options)
       names = options.map { |option| option.delete_prefix(OPTION_PREFIX) }
-      names = configured_names if names.empty?
       names = DEFAULT_NAMES if names.empty?
       names.map { |name| self[name] }.uniq
-    end
-
-    def self.configured_names
-      YAML.safe_load_file(CONFIGURATION_FILE).dig("bareruby", "compile", "target") || []
     end
   end
 end
