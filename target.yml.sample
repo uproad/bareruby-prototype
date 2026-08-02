@@ -1,16 +1,27 @@
-# Copy this to target.yml, which is not tracked. What is written here — which boards are
-# attached, what they are called, where an external project lives — is true of one desk
-# rather than of the project, so it does not belong in the repository.
+# This file is not meant to be written by hand:
+#
+#     ./bareruby target add
+#
+# asks which board it is — first roughly, by the family its maker sells it in, then
+# exactly — and writes the answer here. Nothing in an entry has to be looked up, which is
+# the point: a triple is not something a Ruby programmer new to microcontrollers should
+# have to go and find out. `./bareruby target list` prints every board that can be named.
+#
+# What is copied here is the shape of what that command writes, so a file can be read and
+# corrected once it exists. Copy it to target.yml, which is not tracked: which boards are
+# attached, and where an external project lives, is true of one desk rather than of the
+# project.
 #
 # `bareruby build`, `flash` and `deploy` take their targets from here when no --target is
 # given. `bareruby compile` never reads this file: a compilation is exactly what its
 # command line asked for.
 #
-# An entry names a composition rather than a target, because no one of the three answers
-# settles another. One board is reachable through more than one API — a NUCLEO board
-# through STM32Cube or through STM32duino — and one board whose chip carries two
-# instruction sets is built for either of them, as an RP2350 is for Arm or for RISC-V.
-# The three together are looked up: a composition nobody has run is not a target yet.
+# An entry names a composition rather than a target, and always names all three parts of
+# it, because no one of them settles another. One board is reachable through more than one
+# API — a NUCLEO board through STM32Cube or through STM32duino — and one board whose chip
+# carries two instruction sets is built for either of them, as an RP2350 is for Arm or for
+# RISC-V. The three together are looked up: a composition nobody has run is not a target
+# yet, and saying one names nothing prints the ones that do.
 #
 #   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re, none
 #   api:      what it is called through.  host, pico_sdk, stm32cube

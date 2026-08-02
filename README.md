@@ -217,7 +217,7 @@ first, so each does its own work and then the next one's.
 
 ```sh
 cd bareruby-prototype
-cp target.yml.sample target.yml              # once: say which boards are on this desk
+./bareruby target add                        # once per board: answer a few questions
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -231,6 +231,8 @@ cp target.yml.sample target.yml              # once: say which boards are on thi
 | `build` | `compile`, then each API's toolchain, leaving the artifact beside its sources | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
+| `target add` | asks which board this is and writes it into `target.yml` | writes it |
+| `target list` | every board that can be targeted, by family | no |
 
 `build` defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
 takes them from the environment when they are already set. Toolchain output is shown only
@@ -242,8 +244,23 @@ needs.
 ### Saying which boards are here
 
 `target.yml` is not tracked, because which boards are attached is true of a desk rather
-than of the project. [`target.yml.sample`](target.yml.sample) documents every field and is
-meant to be copied. An entry spells out a composition rather than naming a target:
+than of the project. It is not meant to be written by hand either — `./bareruby target
+add` asks, and writes the answer:
+
+```
+Which board is it?
+  1) Raspberry Pi Pico, through pico-sdk
+  2) ST NUCLEO, through STM32Cube and CubeIDE
+  3) This machine, with every peripheral traced instead of driven
+1-3> 1
+
+Which one?
+  1) raspberry-pi-pico
+  2) raspberry-pi-pico-w
+  …
+```
+
+and what it writes is an entry:
 
 ```yaml
 bareruby:
@@ -256,11 +273,22 @@ bareruby:
         - E6625888179C592E
 ```
 
-The three answers are given separately because none of them settles another. One board is
-reachable through more than one API — a NUCLEO board through STM32Cube or through
-STM32duino — and one board whose chip carries two instruction sets is built for either of
-them, as an RP2350 is for Arm or for RISC-V. `boards:` is a list because several identical
-boards take the same one artifact.
+An entry always spells out all three parts of a composition, because none of them settles
+another. One board is reachable through more than one API — a NUCLEO board through
+STM32Cube or through STM32duino — and one board whose chip carries two instruction sets is
+built for either of them, as an RP2350 is for Arm or for RISC-V. `boards:` is a list
+because several identical boards take the same one artifact.
+
+None of that is anything to look up, which is why it is asked for instead. What is asked,
+in what order, and what else a family needs — the path to a CubeIDE project, the serial of
+an ST-LINK probe — is in [`target-catalog.yml`](target-catalog.yml) rather than in the
+command, so a board that does not exist yet is reached by adding to that file. It restates
+no composition: a family names targets, and their machine, API and triple come from
+`target/target.rb`, where they already are. `./bareruby target list` prints them all, and
+an entry that names nothing prints them too.
+
+[`target.yml.sample`](target.yml.sample) documents every field, for reading a file back
+once it exists.
 
 ## Running the first stage
 
