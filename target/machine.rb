@@ -12,19 +12,21 @@ module BareRubyProt
   # are named separately so that neither has to enumerate the other.
   class Machine
     # key is what a board is called wherever one has to be named — a deployment record,
-    # the directory an artifact lands in — and it belongs to the board itself. name is
-    # what one binding happens to call it, which is a different question: `pico_w` is the
-    # word pico-sdk wants, and a second SDK reaching the same board would want another.
+    # the directory an artifact lands in — and it belongs to the board itself. chip is the
+    # SoC it carries, which is a fact about the board rather than about any SDK.
+    #
+    # What one SDK calls this board is a different question and is not answered here:
+    # `pico_w` is the word pico-sdk wants for the same board this calls `:pico_w`, and a
+    # second SDK reaching it would want another. Those live in `api/<api>/machine/`.
     #
     # How a peripheral on this board is reached is not recorded here. It is not a fact
     # about the board alone — the same indicator is `gpio_put` through one SDK and
     # `HAL_GPIO_WritePin` through another — so it lives in the cell where the board and
     # the API meet, under `api/<api>/machine/`.
-    attr_reader :key, :name, :chip
+    attr_reader :key, :chip
 
-    def initialize(key, name: nil, chip: nil)
+    def initialize(key, chip: nil)
       @key = key
-      @name = name
       @chip = chip
     end
 

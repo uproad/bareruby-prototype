@@ -6,6 +6,13 @@ module BareRubyProt
     # where the plain board's LED sits — is the radio's select line on this one. Bringing
     # the chip up is a driver and a firmware blob, so this board asks for them.
     module PicoW
+      # What pico-sdk calls this board. PICO_PLATFORM is the SDK's word rather than
+      # the chip's: an RP2350 answers to rp2350-arm-s or rp2350-riscv once which of
+      # its two cores to build for is chosen.
+      def self.pico_board = "pico_w"
+
+      def self.pico_platform = "rp2040"
+
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
 
       def self.onboard_led_libraries = [RADIO_LIBRARY]
