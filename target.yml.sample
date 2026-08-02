@@ -36,9 +36,16 @@
 #             twice — a debug build and a release build of the same board.
 #   debug:    optional. `true` or `1` and nothing else means a debug build; anything
 #             else, and saying nothing, means release.
-#   boards:   optional. Every board that takes this one artifact. With nothing here the
-#             one attached board the artifact fits is found and written. Run
-#             target/api/pico_sdk/flash.sh --list to see what is attached.
+#   boards:   optional, and usually best left out. With nothing here the one attached
+#             board the artifact fits is found and written, because the image says which
+#             chip it is for. Name serials only when two boards carry the same chip.
+#
+#             A serial is not always a lasting name for a board. An RP2040 reports the
+#             bootrom's id while it is in BOOTSEL and the flash id once it is running, so
+#             one written down here matches in one of those states and not in the other —
+#             which looks exactly like the board having been unplugged. An RP2350 reports
+#             one number for both. Run target/api/pico_sdk/flash.sh --list to see what is
+#             attached and what each answers to right now.
 #   options:  optional. What only this desk knows, passed to the API that needs it.
 
 bareruby:
@@ -47,14 +54,10 @@ bareruby:
       api: pico_sdk
       triple: thumbv6m-none-eabi
       debug: true
-      boards:
-        - E6625888179C592E
 
     - machine: pico2_w
       api: pico_sdk
       triple: thumbv8m.main-none-eabihf
-      boards:
-        - 34319CF054AB3BD6
 
     # Two builds of one composition, so each one names where it goes.
     # - name: pico2-release

@@ -34,8 +34,16 @@ bareruby:
           kind: list
           optional: true
           hint: >-
-            Leave empty and the one attached board the image fits is found and written.
-            Name serials only when two boards carry the same chip.
+            Leave this empty. The image says which chip it is for, and the one attached
+            board carrying that chip is found and written — which is what makes a Pico and
+            a Pico 2 usable together without either being named.
+
+            Name serials only when two boards carry the same chip, and know what is being
+            written down: an RP2040 reports the bootrom's id while in BOOTSEL and the flash
+            id once it is running, so a serial recorded here is true of one of those two
+            states and matches nothing in the other. An RP2350 reports one number for both.
+            Given nothing, flashing prints the candidates with the serials they answer to
+            at that moment, which is the one to pass.
           hint_command: target/api/pico_sdk/flash.sh --list
         - key: debug
           label: Debug firmware? The USB interface stays up, so it can be rewritten
