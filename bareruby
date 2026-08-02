@@ -85,22 +85,24 @@ module BareRubyProt
     # output once and compiling into it repeatedly is what lets them differ.
     def build
       Compiler.clear_output
-      entries.each do |entry|
+      done = entries.all? do |entry|
         compile_for([entry.target], debug: debug?(entry))
         place(entry)
         entry.target.api.toolchain.run(directory_of(entry), options: entry.options)
       end
-      0
+      done ? 0 : 1
     end
 
     # What is on the boards is whatever the last build left, so flashing on its own is
     # deliberate: it repeats a deployment without compiling it again.
+    # A tool that refuses has already said why, so its refusal is passed to the shell as a
+    # status rather than dressed up as an error of this program's own.
     def flash
-      entries.each do |entry|
+      done = entries.all? do |entry|
         entry.target.api.flash.run(directory_of(entry), boards: entry.boards,
                                                         options: entry.options)
       end
-      0
+      done ? 0 : 1
     end
 
     def deploy

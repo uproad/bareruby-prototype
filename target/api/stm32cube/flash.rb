@@ -14,7 +14,7 @@ module BareRubyProt
     def self.run(directory, boards:, options: {})
       image = File.join(directory, "bareruby_program.elf")
       ports = boards.empty? ? ["port=SWD"] : boards.map { |board| "port=SWD sn=#{board}" }
-      ports.each { |port| system(programmer, "-c", port, "-w", image, "-rst", exception: true) }
+      ports.all? { |port| system(programmer, "-c", port, "-w", image, "-rst") }
     end
 
     def self.programmer

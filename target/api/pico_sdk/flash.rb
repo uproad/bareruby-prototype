@@ -10,11 +10,13 @@ module BareRubyProt
   module PicoSdkFlash
     SCRIPT = File.expand_path("flash.sh", __dir__)
 
+    # The script says what went wrong when it goes wrong, so its answer is passed on as it
+    # is rather than raised over. Writing stops at the first board that refuses.
     def self.run(directory, boards:, options: {})
       image = File.join(directory, "bareruby_program.uf2")
-      return system(SCRIPT, image, exception: true) if boards.empty?
+      return system(SCRIPT, image) if boards.empty?
 
-      boards.each { |board| system(SCRIPT, "--board", board.to_s, image, exception: true) }
+      boards.all? { |board| system(SCRIPT, "--board", board.to_s, image) }
     end
   end
 end

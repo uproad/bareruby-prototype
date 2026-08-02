@@ -16,6 +16,10 @@ module BareRubyProt
 
     # A toolchain is chatty even when everything is fine, so its output is kept for the
     # failure it explains and said nothing about otherwise.
+    #
+    # A failure here is another program's, and that program has already said what went
+    # wrong. Answering false rather than raising is what keeps this side from burying that
+    # explanation under a stack of its own.
     def self.run(directory, command, environment = {})
       output = nil
       status = nil
@@ -23,10 +27,11 @@ module BareRubyProt
         IO.popen(environment, ["sh", "-c", command], err: %i[child out]) { |io| output = io.read }
         status = $CHILD_STATUS
       end
-      return if status.success?
+      return true if status.success?
 
       warn output
-      raise "bareruby: the second stage failed in #{directory}"
+      warn "bareruby: the second stage failed in #{directory}"
+      false
     end
   end
 end

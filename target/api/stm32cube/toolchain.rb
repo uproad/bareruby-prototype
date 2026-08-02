@@ -11,7 +11,7 @@ module BareRubyProt
 
     def self.run(directory, options: {})
       system(SCRIPT, directory, options["cube_project"].to_s,
-             options["configuration"] || "Debug", exception: true)
+             options["configuration"] || "Debug")
     end
 
     def self.artifact(directory) = File.join(directory, ARTIFACT)
