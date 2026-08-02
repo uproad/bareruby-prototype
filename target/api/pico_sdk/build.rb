@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../../../pass/pass_12_cpp_source_generator/onboard_led_source"
+require_relative "binding"
 
 module BareRubyProt
   # How the second stage builds a program for a board: pico-sdk through cmake, the record
@@ -50,12 +50,14 @@ module BareRubyProt
       MANIFEST
     end
 
-    # The radio's driver is linked only by a wireless board that actually lights its
-    # LED, so the firmware blob it carries is not a tax on every build for that board.
+    # The radio's driver is linked only by a board that reaches its indicator through the
+    # radio and by a program that actually lights it, so the firmware blob it carries is
+    # not a tax on every build for that board. What a board needs linked is the cell's
+    # answer, not this file's.
     def libraries
-      return SDK_LIBRARIES unless @target.machine.led == :wireless && @onboard_led
+      return SDK_LIBRARIES unless @onboard_led
 
-      SDK_LIBRARIES + [OnboardLedSource::WIRELESS_LIBRARY]
+      SDK_LIBRARIES + PicoSdkBinding.machine(@target.machine).onboard_led_libraries
     end
 
     def cmake_lists

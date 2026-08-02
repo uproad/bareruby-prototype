@@ -2,7 +2,6 @@
 
 require_relative "pass_12_cpp_source_generator/runtime_source"
 require_relative "pass_12_cpp_source_generator/binding_declaration"
-require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/cpp_renderer"
 require_relative "../target/api/host/build"
 require_relative "../target/api/pico_sdk/build"
@@ -24,9 +23,6 @@ module BareRubyProt
       def run
         @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
         @targets.each { |target| @result.merge!(target.api::FILES) }
-        if lights_onboard_led?
-          @targets.each { |target| @result.merge!(OnboardLedSource.files(target.machine.led)) }
-        end
         @targets.each { |target| @result.merge!(target_sources(target)) }
 
         self
@@ -51,6 +47,10 @@ module BareRubyProt
         @lir.calls_prefixed?("bareruby_string_") ||
           @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets, :bareruby_i2c_read)
       end
+
+      # Which way a board's indicator is reached is the board's own answer, given to the
+      # API beside it. Nothing here works it out.
+      def onboard_led_of(target) = target.api.machine(target.machine)
 
       def receives_uart? = @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets)
 
@@ -91,7 +91,7 @@ module BareRubyProt
         names << api::UART_RECEIVE_FILE if receives_uart?
         names << api::I2C_FILE if uses_i2c?
         names << api::I2C_READ_FILE if reads_i2c?
-        names << OnboardLedSource.file_name(target.machine.led) if lights_onboard_led?
+        names << onboard_led_of(target).onboard_led_file if lights_onboard_led?
         names << RuntimeSource::ARENA_FILE if allocates?
         names << RuntimeSource::STRING_FILE if builds_strings?
         # Arena exhaustion is reported through bareruby_throw even when the Ruby program

@@ -145,14 +145,39 @@ Covered so far:
   `write`. It is deliberately **not** a `GPIO` with a known pin number, because on a
   board that has an LED it is frequently not a GPIO at all: a Pico W drives its through
   the wireless chip, and GP25, where the plain Pico's LED sits, is that chip's select
-  line instead. Sharing GPIO's interface would only have hidden that. Four
-  implementations back one class — the traced host stub, `PICO_DEFAULT_LED_PIN` out of
-  pico-sdk's board header, `cyw43_arch_gpio_put`, and the STM32 LD2 HAL wrapper — and
-  which one a build links follows from the target, so the same six lines of Ruby reach
-  every supported on-board LED. A board
-  with no on-board LED is meant to accept all three calls and do nothing, so that the
-  presence of an indicator never decides whether a program compiles; every target here
-  has one, so nothing exercises that.
+  line instead. Sharing GPIO's interface would only have hidden that.
+
+  **Which implementation a board takes is written down, not worked out.** How a board's
+  indicator is reached is not a fact about the board alone: the same LED is `gpio_put` and
+  `PICO_DEFAULT_LED_PIN` through pico-sdk, and `HAL_GPIO_WritePin` and `LD2_Pin` through a
+  CubeMX project. Nor is it a fact about the API alone, because a Pico and a Pico W differ
+  under the very same SDK — one has its LED on a pin and the other behind a radio. It is a
+  fact about the two together, so it lives where the two meet:
+
+  ```ruby
+  # target/api/pico_sdk/machine/pico_w.rb
+  module PicoSdkBinding
+    module PicoW
+      def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
+
+      def self.onboard_led_text = ONBOARD_LED_RADIO
+
+      def self.onboard_led_libraries = [RADIO_LIBRARY]
+    end
+
+    MACHINES[:pico_w] = PicoW
+  end
+  ```
+
+  A board answers for itself, by naming what the API beside it already carries. Nothing is
+  worked out: `binding.rb` holds the C++ and the names, exactly as it does for GPIO and
+  UART, and there is no branch in it that decides which board gets which. A board an API
+  cannot reach has no file rather than a wrong answer, and a board that needs the radio's
+  driver and its firmware blob linked says so itself rather than a build guessing from
+  what it got. So the same six lines of Ruby reach every supported on-board LED. A board with no
+  on-board LED is meant to accept all three calls and do nothing, so that the presence of
+  an indicator never decides whether a program compiles; every board target here has one,
+  so nothing exercises that.
 
   Reaching the wireless LED means bringing the radio up and uploading its firmware, and
   that costs **255 KB of flash**: `samples/heartbeat.rb` is 15336 B of text on a Pico and

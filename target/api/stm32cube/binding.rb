@@ -392,13 +392,52 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_stm32.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_stm32.cpp"
 
+    # LD2 is on a pin, and which pin is the CubeMX project's answer: it defines
+    # LD2_GPIO_Port and LD2_Pin, so a board that puts its LED elsewhere needs no
+    # change here. Reaching it is the same mechanism a Pico uses, spelled in HAL.
+    ONBOARD_LED_PIN = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "main.h"
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          self->state = 0;
+          HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+      }
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          HAL_GPIO_WritePin(
+              LD2_GPIO_Port, LD2_Pin, self->state != 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
+    ONBOARD_LED_PIN_FILE = "bareruby_binding_onboard_led_stm32cube_pin.cpp"
+
     FILES = {
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
-      I2C_READ_FILE => I2C_READ
+      I2C_READ_FILE => I2C_READ,
+      ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN
     }.freeze
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+
+    # What a board takes is not worked out here. Each board this API reaches writes its
+    # own answer as a method, in machine/ beside this file, and this only hands the
+    # question over. A board this API cannot reach has no answer rather than a wrong one.
+    MACHINES = {}
+
+    def self.machine(machine) = MACHINES.fetch(machine.key)
 
     # The CubeIDE project owns main and calls into the program, so this side names its
     # translation unit after the program rather than after an entry point it does not own.
@@ -412,4 +451,9 @@ module BareRubyProt
 
     def self.build = Stm32CubeBuild
   end
+end
+
+# One board to a file, so that teaching this API a new board is adding a file.
+Dir.children(File.expand_path("machine", __dir__)).sort.grep(/\.rb\z/).each do |entry|
+  require_relative "machine/#{entry}"
 end

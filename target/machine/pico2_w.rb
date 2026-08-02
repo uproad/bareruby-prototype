@@ -3,6 +3,6 @@
 module BareRubyProt
   class Machine
     # Raspberry Pi Pico 2 W
-    PICO2_W = new(:pico2_w, name: "pico2_w", chip: "rp2350", led: :wireless)
+    PICO2_W = new(:pico2_w, name: "pico2_w", chip: "rp2350")
   end
 end

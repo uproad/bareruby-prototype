@@ -312,16 +312,89 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_pico.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_pico.cpp"
 
+    # A board whose indicator is on a pin of the microcontroller. Which pin is the
+    # board's answer, not this file's: pico-sdk's board header defines
+    # PICO_DEFAULT_LED_PIN, so a board that puts its LED elsewhere needs no change here.
+    ONBOARD_LED_PIN = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "hardware/gpio.h"
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          self->state = 0;
+          gpio_init(PICO_DEFAULT_LED_PIN);
+          gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+      }
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          gpio_put(PICO_DEFAULT_LED_PIN, self->state != 0);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
+    # A wireless board's indicator hangs off the radio, not off a pin, so reaching it
+    # means bringing the CYW43 up first — the chip runs firmware that the host uploads,
+    # which is what this costs. GP25, where the plain board's LED sits, is the radio's
+    # select line on this one; writing it here would fight the driver rather than blink.
+    ONBOARD_LED_RADIO = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include "pico/cyw43_arch.h"
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          self->state = 0;
+          cyw43_arch_init();
+      }
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, self->state != 0);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
+    ONBOARD_LED_PIN_FILE = "bareruby_binding_onboard_led_pico_sdk_pin.cpp"
+    ONBOARD_LED_RADIO_FILE = "bareruby_binding_onboard_led_pico_sdk_radio.cpp"
+
     FILES = {
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
-      I2C_READ_FILE => I2C_READ
+      I2C_READ_FILE => I2C_READ,
+      ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN,
+      ONBOARD_LED_RADIO_FILE => ONBOARD_LED_RADIO
     }.freeze
 
     # Every binding answers the same questions with the same names, so a build picks one
     # of these modules and asks it the same things.
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+    # Reaching the radio's indicator is a driver and a firmware blob rather than a
+    # register write, so the way that does it carries what it needs linked.
+    RADIO_LIBRARY = "pico_cyw43_arch_none"
+
+
+    # What a board takes is not worked out here. Each board this API reaches writes its
+    # own answer as a method, in machine/ beside this file, and this only hands the
+    # question over. A board this API cannot reach has no answer rather than a wrong one.
+    MACHINES = {}
+
+    def self.machine(machine) = MACHINES.fetch(machine.key)
 
     # pico-sdk hands the program the whole executable, so the entry point is this side's
     # to write and the translation unit that carries it is named for it.
@@ -335,4 +408,9 @@ module BareRubyProt
 
     def self.build = PicoSdkBuild
   end
+end
+
+# One board to a file, so that teaching this API a new board is adding a file.
+Dir.children(File.expand_path("machine", __dir__)).sort.grep(/\.rb\z/).each do |entry|
+  require_relative "machine/#{entry}"
 end
