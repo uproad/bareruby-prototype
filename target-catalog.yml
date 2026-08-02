@@ -1,0 +1,95 @@
+# What `bareruby target add` asks, and in what order.
+#
+# A composition is three answers — which board, what it is called through, which
+# instruction set — and none of them is a thing a Ruby programmer new to microcontrollers
+# should have to go and look up. So they are not asked for. What is asked is the board, in
+# the words its own maker uses, and the three answers follow from that.
+#
+# Nothing here restates a composition. A family names targets, and the machine, api and
+# triple of each come from target/target.rb, where they already are. Adding a board here
+# once it exists there is adding a label and a question, not a second source of truth.
+#
+# `asks` is what a family needs beyond the board itself. Each one takes:
+#
+#   key           where the answer goes in the entry. `options.` prefixes go under it.
+#   label         the question.
+#   kind          text | path | boolean | list | choice
+#   choices       for kind: choice.
+#   optional      true to let an empty answer skip the key entirely.
+#   hint          printed before the question.
+#   hint_command  run before the question, and its output printed.
+
+bareruby:
+  families:
+    - key: pico
+      label: Raspberry Pi Pico, through pico-sdk
+      targets:
+        - raspberry-pi-pico
+        - raspberry-pi-pico-w
+        - raspberry-pi-pico2
+        - raspberry-pi-pico2-w
+      asks:
+        - key: boards
+          label: Serial of each board to write this onto
+          kind: list
+          optional: true
+          hint: >-
+            Leave this empty. The image says which chip it is for, and the one attached
+            board carrying that chip is found and written — which is what makes a Pico and
+            a Pico 2 usable together without either being named.
+
+            Name serials only when two boards carry the same chip, and know what is being
+            written down: an RP2040 reports the bootrom's id while in BOOTSEL and the flash
+            id once it is running, so a serial recorded here is true of one of those two
+            states and matches nothing in the other. An RP2350 reports one number for both.
+            Given nothing, flashing prints the candidates with the serials they answer to
+            at that moment, which is the one to pass.
+          hint_command: target/api/pico_sdk/flash.sh --list
+        - key: debug
+          label: Debug firmware? The USB interface stays up, so it can be rewritten
+            without holding BOOTSEL, and puts has somewhere to arrive
+          kind: boolean
+          optional: true
+
+    - key: stm32
+      label: ST NUCLEO, through STM32Cube and CubeIDE
+      targets:
+        - stm32-nucleo-f446re
+      asks:
+        - key: options.cube_project
+          label: Path to the CubeIDE project this is built in
+          kind: path
+          hint: >-
+            Generated and configured with STM32CubeMX or STM32CubeIDE, outside this
+            repository. See target/api/stm32cube/setup.md.
+        - key: options.configuration
+          label: CubeIDE build configuration
+          kind: choice
+          choices:
+            - Debug
+            - Release
+          optional: true
+        - key: boards
+          label: Serial of each ST-LINK probe to write through
+          kind: list
+          optional: true
+          hint: Leave empty when one probe is attached.
+
+    - key: host
+      label: This machine, with every peripheral traced instead of driven
+      targets:
+        - host
+      asks: []
+
+  # Reserved. A family appears here when its targets exist in target/target.rb.
+  #
+  #   - key: arduino
+  #     label: Arduino boards, through the Arduino core
+  #     targets: [arduino-uno, arduino-mkr-zero, arduino-nano-esp32]
+  #     asks:
+  #       - key: boards
+  #         label: Serial port of each board
+  #         kind: list
+  #
+  #   - key: esp32
+  #     label: Espressif development boards, through ESP-IDF

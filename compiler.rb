@@ -1,9 +1,8 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require "fileutils"
 
-require_relative "target"
+require_relative "target/target"
 require_relative "ir/bareruby_ast"
 require_relative "ir/typed_ast"
 require_relative "ir/lir"
@@ -33,6 +32,12 @@ module BareRubyProt
       LIR::SCHEMA => LIR
     }.freeze
 
+    # Everything written last time goes, so what is left afterwards is exactly what this
+    # run produced. It is done once for a command rather than once for a compilation,
+    # because one command may compile more than once — targets that disagree about debug
+    # cannot share a run — and the second must not erase the first.
+    def self.clear_output = FileUtils.rm_rf(BUILD_DIRECTORY)
+
     def initialize(source_file_name, targets:, debug:, exceptions:)
       @source_file_name = source_file_name
       @targets = targets
@@ -42,7 +47,6 @@ module BareRubyProt
 
     def run
       FileUtils.mkdir_p(DUMP_DIRECTORY)
-      FileUtils.rm_rf(BUILD_DIRECTORY)
       FileUtils.mkdir_p(BUILD_DIRECTORY)
 
       generator = Pass::BareRubyAstGenerator.new(@source_file_name).run
@@ -159,13 +163,3 @@ module BareRubyProt
     end
   end
 end
-
-arguments = ARGV.dup
-debug = [arguments.delete("-d"), arguments.delete("--debug")].any?
-exceptions = arguments.delete("--no-exceptions").nil?
-target_options = arguments.grep(/\A#{BareRubyProt::Target::OPTION_PREFIX}/)
-targets = BareRubyProt::Target.select(target_options)
-arguments -= target_options
-source_file_name = arguments[0] || File.expand_path("ref.rb", __dir__)
-
-exit BareRubyProt::Compiler.new(source_file_name, targets:, debug:, exceptions:).run

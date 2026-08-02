@@ -74,17 +74,19 @@ class Led
 end
 
 class Heartbeat
-  def initialize(pin, ticks_per_beat)
-    @led = GPIO.new(pin, GPIO::OUT)
+  def initialize(ticks_per_beat)
+    @led = OnboardLED.new
     @ticks_per_beat = ticks_per_beat
     @at = 0
+    @lit = 0
   end
 
   def tick
-    if @at < @ticks_per_beat / 2
-      @led.write(1)
-    else
-      @led.write(0)
+    lit = 0
+    lit = 1 if @at < @ticks_per_beat / 2
+    if lit != @lit
+      @led.write(lit)
+      @lit = lit
     end
     @at = @at + 1
     @at = 0 if @at >= @ticks_per_beat
@@ -115,7 +117,7 @@ led6 = Led.new(6, led_frequency)
 led7 = Led.new(7, led_frequency)
 led8 = Led.new(8, led_frequency)
 
-heartbeat = Heartbeat.new(25, 1000000 / sample_period_us)
+heartbeat = Heartbeat.new(1000000 / sample_period_us)
 
 taken = 0
 

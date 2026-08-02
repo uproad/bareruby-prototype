@@ -34,7 +34,7 @@ it is given no argument.
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
 | `tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
-| `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel. Its detectors set their bounds through a helper `initialize` calls |
+| `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel. Its detectors set their bounds through a helper `initialize` calls. Its heartbeat is `OnboardLED`, so it says it is alive on any board rather than only on one whose LED is a pin |
 | `require.rb` | require expansion, with `require_lib.rb` and `require_helper.rb` requiring each other |
 | `object.rb` | An object passed to a method, aliased, held by another object and handed back. Matches real Ruby |
 | `implicit_return.rb` | Methods ending on a call, a `puts`, an `if` and a `while`, and one whose last expression is its value. Matches real Ruby |
@@ -99,7 +99,12 @@ still far above flicker fusion. Four objects carry the program, divided by mecha
 rather than by data: `PeakToPeakDetector` owns a converter and answers with the peak to
 peak of the last 30 ms, `AudioVisualizer` keeps one channel's swing and turns a span into
 a brightness in percent, `Led` owns a PWM slice and takes that brightness, and
-`Heartbeat` blinks GP25. None of them holds another. The loop is what joins them — it
+`Heartbeat` blinks the board's own indicator. It reaches it through `OnboardLED` rather
+than through GP25, which is where the LED sits on a plain Pico and where a wireless board
+puts the radio's select line instead — the same six lines say "still running" on every
+board this way. It writes only when the state changes, because a board that reaches its
+LED through a radio pays a bus transaction for each write and this loop ticks 40,000
+times a second. None of them holds another. The loop is what joins them — it
 takes a span from a detector, passes it to the visualizer and hands the answer to an LED
 — which is the work a controller exists to do. Input, policy and output change for
 different reasons: the window scheme, the gain rule, the output device. PWM is the last

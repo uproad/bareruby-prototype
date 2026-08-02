@@ -4,7 +4,7 @@ module BareRubyProt
   # The CubeIDE project owns reset, clocks, peripheral initialization, the linker script,
   # and the final link. BareRuby contributes C++ translation units entered from main.c
   # after CubeMX has initialized every configured peripheral.
-  class Stm32Build
+  class Stm32CubeBuild
     ENTRY = <<~CPP
       extern "C" void bareruby_entry(void) {
           bareruby_startup();
@@ -12,7 +12,8 @@ module BareRubyProt
       }
     CPP
 
-    def initialize(target, sources:, exceptions:)
+    # Every build is asked for in the same words, and answers with what it needs of them.
+    def initialize(target, sources:, onboard_led: false, debug: false, exceptions: true)
       @target = target
       @sources = sources
       @exceptions = exceptions
@@ -38,8 +39,9 @@ module BareRubyProt
     def manifest
       <<~MANIFEST
         target = #{@target.name}
-        board = #{@target.board}
-        platform = #{@target.platform}
+        board = #{@target.machine.name}
+        triple = #{@target.isa.triple}
+        chip = #{@target.machine.chip}
         toolchain = STM32CubeIDE MCU ARM GCC
         language_standard = CubeIDE project setting
         compile_options = CubeIDE project setting
