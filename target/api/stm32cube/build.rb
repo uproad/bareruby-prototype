@@ -39,7 +39,7 @@ module BareRubyProt
     def manifest
       <<~MANIFEST
         target = #{@target.name}
-        board = #{@target.machine.name}
+        board = #{@target.machine.key}
         triple = #{@target.isa.triple}
         chip = #{@target.machine.chip}
         toolchain = STM32CubeIDE MCU ARM GCC

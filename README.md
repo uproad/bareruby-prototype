@@ -381,8 +381,23 @@ and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, while the ST
 receives the exact source list synchronized into its existing CubeIDE project. The runtime
 and the bindings sit above them in `build/` and are shared. The Pico boards use the same
 pico-sdk binding — the peripherals are reached through the SDK, which spells them the same
-way whichever chip is underneath — and differ only in the board name their
-`CMakeLists.txt` hands to it.
+way whichever chip is underneath — and differ only in the two words their `CMakeLists.txt`
+hands to it.
+
+Those two words are pico-sdk's, not the boards'. `PICO_BOARD` is what that SDK calls a
+board, and `PICO_PLATFORM` is not even the chip's name: an RP2350 answers to
+`rp2350-arm-s` or `rp2350-riscv` once which of its two instruction sets to build for is
+chosen. So they are kept where the board and the API meet rather than on the board:
+
+```ruby
+# target/api/pico_sdk/machine/pico2_w.rb
+def self.pico_board = "pico2_w"
+
+def self.pico_platform = "rp2350"
+```
+
+What is left on the board itself is what is true of it whoever asks — the key it is known
+by, and the chip it carries.
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
 the unwinder and its tables are left out. On a `raspberry-pi-pico` build of

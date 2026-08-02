@@ -33,7 +33,7 @@ module BareRubyProt
     def manifest
       <<~MANIFEST
         target = #{@target.name}
-        board = #{@target.machine.name}
+        board = #{@target.machine.key}
         triple = #{@target.isa.triple}
         chip = #{@target.machine.chip}
         toolchain = arm-none-eabi-g++
@@ -66,8 +66,8 @@ module BareRubyProt
 
         # The board picks the chip, the linker script and the register headers, so it has
         # to be set before the SDK is imported rather than passed to the build later.
-        set(PICO_BOARD #{@target.machine.name})
-        set(PICO_PLATFORM #{@target.machine.chip})
+        set(PICO_BOARD #{PicoSdkBinding.machine(@target.machine).pico_board})
+        set(PICO_PLATFORM #{PicoSdkBinding.machine(@target.machine).pico_platform})
 
         include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
