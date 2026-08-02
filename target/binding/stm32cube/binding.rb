@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  module Stm32Binding
+  module Stm32CubeBinding
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -404,6 +404,6 @@ module BareRubyProt
     # translation unit after the program rather than after an entry point it does not own.
     PROGRAM_FILE = "bareruby_program.cpp"
 
-    def self.build = Stm32Build
+    def self.build = Stm32CubeBuild
   end
 end

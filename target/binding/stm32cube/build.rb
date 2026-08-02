@@ -4,7 +4,7 @@ module BareRubyProt
   # The CubeIDE project owns reset, clocks, peripheral initialization, the linker script,
   # and the final link. BareRuby contributes C++ translation units entered from main.c
   # after CubeMX has initialized every configured peripheral.
-  class Stm32Build
+  class Stm32CubeBuild
     ENTRY = <<~CPP
       extern "C" void bareruby_entry(void) {
           bareruby_startup();

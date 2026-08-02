@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  module PicoBinding
+  module PicoSdkBinding
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -327,6 +327,6 @@ module BareRubyProt
     # to write and the translation unit that carries it is named for it.
     PROGRAM_FILE = "main.cpp"
 
-    def self.build = PicoBuild
+    def self.build = PicoSdkBuild
   end
 end

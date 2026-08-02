@@ -4,9 +4,9 @@ require_relative "pass_12_cpp_source_generator/runtime_source"
 require_relative "pass_12_cpp_source_generator/binding_declaration"
 require_relative "pass_12_cpp_source_generator/onboard_led_source"
 require_relative "pass_12_cpp_source_generator/cpp_renderer"
-require_relative "../binding/host/build"
-require_relative "../binding/pico/build"
-require_relative "../binding/stm32/build"
+require_relative "../target/binding/host/build"
+require_relative "../target/binding/pico_sdk/build"
+require_relative "../target/binding/stm32cube/build"
 
 module BareRubyProt
   module Pass

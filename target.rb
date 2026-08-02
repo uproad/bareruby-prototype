@@ -2,12 +2,12 @@
 
 require "yaml"
 
-require_relative "isa"
-require_relative "substrate"
-require_relative "machine"
-require_relative "binding/host/binding"
-require_relative "binding/pico/binding"
-require_relative "binding/stm32/binding"
+require_relative "target/isa"
+require_relative "target/substrate"
+require_relative "target/machine"
+require_relative "target/binding/host/binding"
+require_relative "target/binding/pico_sdk/binding"
+require_relative "target/binding/stm32cube/binding"
 
 module BareRubyProt
   # One machine the compiler produces artifacts for. The name is the whole identity of a
@@ -49,19 +49,19 @@ module BareRubyProt
                     binding: HostBinding, machine: Machine::NONE),
       "raspberry-pi-pico" =>
         new("raspberry-pi-pico", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                 binding: PicoBinding, machine: Machine::PICO),
+                                 binding: PicoSdkBinding, machine: Machine::PICO),
       "raspberry-pi-pico-w" =>
         new("raspberry-pi-pico-w", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                   binding: PicoBinding, machine: Machine::PICO_W),
+                                   binding: PicoSdkBinding, machine: Machine::PICO_W),
       "raspberry-pi-pico2" =>
         new("raspberry-pi-pico2", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                  binding: PicoBinding, machine: Machine::PICO2),
+                                  binding: PicoSdkBinding, machine: Machine::PICO2),
       "raspberry-pi-pico2-w" =>
         new("raspberry-pi-pico2-w", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                    binding: PicoBinding, machine: Machine::PICO2_W),
+                                    binding: PicoSdkBinding, machine: Machine::PICO2_W),
       "stm32-nucleo-f446re" =>
         new("stm32-nucleo-f446re", isa: Isa::CORTEX_M4F, substrate: Substrate::BARE_METAL,
-                                   binding: Stm32Binding, machine: Machine::NUCLEO_F446RE)
+                                   binding: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE)
     }.freeze
 
     # The full names are what the artifacts are named after and what the documents say.

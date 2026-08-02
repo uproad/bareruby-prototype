@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-require_relative "../../pass/pass_12_cpp_source_generator/onboard_led_source"
+require_relative "../../../pass/pass_12_cpp_source_generator/onboard_led_source"
 
 module BareRubyProt
   # How the second stage builds a program for a board: pico-sdk through cmake, the record
   # of what that build is, and the flags that decide what the firmware carries.
-  class PicoBuild
+  class PicoSdkBuild
     SDK_LIBRARIES = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
                        hardware_i2c hardware_clocks].freeze
 
