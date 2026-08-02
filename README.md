@@ -141,6 +141,53 @@ Covered so far:
   LD2 and USART2 exercised; I2C links against STM32CubeF4 HAL 1.28.3 but remains
   hardware-unverified.
 
+- **The Arduino core binding** (`arduino-mega2560`) — an ATmega2560 at 16 MHz with 256 KB
+  of flash and 8 KB of SRAM, reached through the Arduino core and built by `arduino-cli`.
+  The core owns `main` and calls `setup` and `loop`, so this side supplies those two and
+  the program's own loop never comes back out of the first of them.
+
+  **What that build takes is not a build file but a directory.** A sketch is compiled
+  whole and nothing outside it is compiled at all, so the declaration the first stage
+  makes everywhere — these are the translation units this program reached for — is met by
+  gathering exactly those into one directory and handing it over. The link boundary
+  survives a build system this side does not own: a program that never touches I2C leaves
+  `Wire.h` unmentioned, so the library is never even discovered, let alone linked. What
+  comes out is a complete sketch, which opens in the Arduino IDE without this repository.
+
+  `samples/heartbeat.rb` is 4190 B of flash and 657 B of SRAM, and blinks the board's LED
+  on real hardware. `samples/features.rb`, `samples/fixed.rb` and `samples/string.rb`
+  print on the board exactly what they print on the host, which puts the arena and the
+  variable-length string runtime — 2963 B of the 8192 there are — on an eight-bit machine
+  with nothing changed for it.
+
+  **It is the first machine here whose natural word is not 32 bits, and it found three
+  faults every 32-bit target had been agreeing with.** All three are fixed in code shared
+  by every target, because all three were wrong everywhere and only visible here.
+
+  - **A printf conversion names a width, not a language type.** `int32_t` is an `int` on
+    a 64-bit machine and a `long` on this one, and a value crossing an ellipsis is not
+    converted to a parameter's type, because there is no parameter. So an interpolation
+    renders as `%ld` and pass 12 widens the value to `long`, which is 32 bits on both.
+    Under `%d`, `"count=#{70000} step=#{7}"` printed `count=4464 step=1` on the board —
+    the low half of the first value, and then its high half read as the second.
+  - **`1 << 15` is a shift into the sign bit** where an `int` is 16 bits. The half added
+    before `Fixed`'s rounding shift was being subtracted, and `(0.5 * 100).to_i32`
+    answered 49.
+  - **A `*` field width is not read** by the smallest `printf` a machine ships with, so a
+    width handed over as a value never arrives at all. `Fixed#to_s` now carries one
+    format per fraction width instead.
+
+  The three cost 56 B of flash on a `raspberry-pi-pico` build of `samples/fixed.rb`
+  (36644 B against 36700 B) and no RAM, which is the six format strings.
+
+  What this core cannot be asked for is recorded in its
+  [README](target/api/arduino/README.md): PWM has a duty and no frequency, because
+  `analogWrite` picks one and offers no way to name another; the chip has pull-ups and no
+  pull-downs; `%lld` is not implemented by this libc; and `begin` has no build here at
+  all, because the core compiles with `-fno-exceptions` and this libc carries no
+  unwinder. On a Pico the exception mechanism is a decision with a price; here it is
+  simply absent.
+
 - **The on-board LED** (`samples/heartbeat.rb`) — `OnboardLED.new`, then `on`, `off` and
   `write`. It is deliberately **not** a `GPIO` with a known pin number, because on a
   board that has an LED it is frequently not a GPIO at all: a Pico W drives its through
@@ -193,13 +240,16 @@ Covered so far:
   combination rather than either mechanism.
 
 - **Targets** — one run compiles for as many machines as it is asked to. `host`, the two
-  Pico boards and the two Pico W boards are named on the command line or in
-  `target.yml`, and each gets its own directory under `build/`. The board targets share
-  one pico-sdk binding and differ only in the board handed to the SDK, which is what
-  makes a second chip a table entry rather than a second back end: one first stage over
-  `samples/blink.rb` produced both an RP2040 and an RP2350 `.uf2`, Cortex-M0+ and
-  Cortex-M33, from the same generated `main.cpp`. Both were flashed onto real boards and
-  run. The Pico 2 board is a **Pico 2 W**, and it is where the naming rule stopped being
+  Pico boards, the two Pico W boards, the NUCLEO board and the Mega 2560 are named on the
+  command line or in `target.yml`, and each gets its own directory under `build/`. The
+  Pico targets share one pico-sdk binding and differ only in the board handed to the SDK,
+  which is what makes a second chip a table entry rather than a second back end: one
+  first stage over `samples/blink.rb` produced both an RP2040 and an RP2350 `.uf2`,
+  Cortex-M0+ and Cortex-M33, from the same generated `main.cpp`. Both were flashed onto
+  real boards and run. One `bareruby build` of `samples/heartbeat.rb` against the three
+  entries on this desk takes 24 seconds and leaves an RP2040 `.uf2`, an RP2350 `.uf2` and
+  an ATmega2560 `.hex` — three chips, and the third shares no instruction set with the
+  other two. The Pico 2 board is a **Pico 2 W**, and it is where the naming rule stopped being
   an argument and became an observation: `samples/blink.rb` writes GP25, the build and
   the flash both succeed without a single warning, the program runs — and the LED stays
   dark, because on that board the LED is on the wireless chip and not on GP25. The same
@@ -325,7 +375,7 @@ once it exists.
 
 ### Choosing targets
 
-A target is a machine the artifacts are produced for. There are six:
+A target is a machine the artifacts are produced for. There are seven:
 
 | Target | Short | Machine | Chip |
 | --- | --- | --- | --- |
@@ -335,6 +385,7 @@ A target is a machine the artifacts are produced for. There are six:
 | `raspberry-pi-pico2` | `pico2` | Raspberry Pi Pico 2 | RP2350 |
 | `raspberry-pi-pico2-w` | `pico2w` | Raspberry Pi Pico 2 W | RP2350 |
 | `stm32-nucleo-f446re` | `f446` | NUCLEO-F446RE | STM32F446RE |
+| `arduino-mega2560` | `mega` | Arduino Mega 2560 | ATmega2560 |
 
 The short names are for typing at a prompt; the full name is what the `build/` directory
 and the manifest are named after either way, so nothing downstream has two spellings to
@@ -365,6 +416,7 @@ build/pico_w-pico_sdk-thumbv6m-none-eabi/
 build/pico2-pico_sdk-thumbv8m.main-none-eabihf/
 build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
 build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/
+build/mega2560-arduino-avr-none/
 ```
 
 It is `<machine>-<api>-<triple>`, and it is long because that is how much it takes to be
@@ -377,8 +429,9 @@ a `name:` uses that instead, which is how one composition can be built twice —
 and a release one — without the two landing in one place.
 
 Only the selected targets are written. Their directories hold the generated entry point
-and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, while the STM32 target
-receives the exact source list synchronized into its existing CubeIDE project. The runtime
+and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, the STM32 target
+receives the exact source list synchronized into its existing CubeIDE project, and the
+Mega receives a sketch directory the reached translation units are gathered into. The runtime
 and the bindings sit above them in `build/` and are shared. The Pico boards use the same
 pico-sdk binding — the peripherals are reached through the SDK, which spells them the same
 way whichever chip is underneath — and differ only in the two words their `CMakeLists.txt`
@@ -540,6 +593,63 @@ ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
 `./bareruby flash --target=f446` writes that ELF over SWD with `STM32_Programmer_CLI`,
 naming ST-LINK probe serials from `boards:` when more than one probe is attached. **That
 path has never been run** — the STM32 firmware verified so far was flashed by hand.
+
+## Second stage: arduino-cli
+
+The Mega 2560 is built by `arduino-cli`, which reads a sketch — a directory holding a
+file of its own name, compiled whole. So the target's directory holds a
+`bareruby_program/` the toolchain gathers into: the translation units the manifest names,
+and the two headers, copied in beside a `bareruby_program.ino` that has nothing in it
+because the program is in the `.cpp` next to it. The whole of it is one command:
+
+```sh
+./bareruby build samples/heartbeat.rb --target=mega --no-exceptions
+```
+
+`--no-exceptions` is not optional here. The core compiles with `-fno-exceptions` and this
+libc carries no unwinder, so a program containing `begin` has no build for this board
+either way round: with the flag the first stage rejects it, and without the flag the
+second stage does.
+
+Two things are needed, neither of them needing `sudo`.
+
+```sh
+mkdir -p ~/toolchains/arduino-cli && cd ~/toolchains/arduino-cli
+curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz
+tar xf arduino-cli_latest_Linux_64bit.tar.gz
+./arduino-cli core install arduino:avr
+```
+
+That is 37 MB for the command and 44 MB for the core, which brings avr-gcc, avr-libc and
+avrdude with it. `~/toolchains/arduino-cli` is where `bareruby` looks when the command is
+not already on `PATH`; the core lands in `~/.arduino15` wherever it came from.
+
+What comes back is `bareruby_program.hex` and `bareruby_program.elf`, beside the sources
+they were made from rather than under whatever name the tool gave them.
+
+```sh
+./bareruby flash --target=mega
+```
+
+writes the `.hex` over the same serial port the board talks on. There is no image to read
+the chip out of and no volume to copy onto, so what identifies a board here is the port —
+and rather than guess at one, `arduino-cli` is asked which ports carry the board this
+firmware was built for. Three USB serial devices are attached to the desk this was
+written on, two of them Picos; the right one is found and the other two are never
+candidates. `boards:` in `target.yml` names a port only when two of the same board are
+attached.
+
+The board resets when the port is opened, so a serial reader sees the program from its
+first line:
+
+```sh
+stty -F /dev/ttyACM2 115200 raw -echo
+timeout 6 cat /dev/ttyACM2
+```
+
+There is no `--debug` here and nothing to turn on for output. The console is a bridge
+chip of the board's own, always attached and always listening, so `puts` reaches it in
+every build — where on a Pico stdout costs a USB stack and is off unless it is asked for.
 
 ## Second stage: hosted
 
@@ -877,6 +987,9 @@ program names neither.
 | pico-sdk | 2.3.0 (both boards) |
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
+| arduino-cli | 1.5.2-rc.1 |
+| arduino:avr core | 1.8.8 |
+| avr-g++ | 7.3.0 (atmel3.6.1-arduino7) |
 | STM32CubeIDE | 2.2.0 |
 | GNU Tools for STM32 | 14.3.1 |
 | STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
@@ -893,3 +1006,13 @@ the time; the Pico 2 W run and the two-board run were done under 2.3.0.
 Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
 real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
 because neither board is here.
+
+`arduino-mega2560` has run on real hardware as well. `samples/heartbeat.rb` blinks the
+board's LED at the 100 ms on / 900 ms off it asks for; `samples/features.rb`,
+`samples/fixed.rb` and `samples/string.rb` printed over the board's serial port and were
+compared line for line against the same programs run on the host, and against real Ruby
+where the two are meant to agree; and `samples/logger.rb` said `logger ready` through
+`uart.puts` and then said nothing for six seconds, which is a pulled-up input reading
+high some sixty times. The board is an ELEGOO MEGA 2560 R3 rather than the Arduino it
+copies — the same chip, the same bridge, and Arduino's own vendor and product ids, so
+nothing between the Ruby and the flash can tell the two apart.
