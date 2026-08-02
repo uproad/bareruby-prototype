@@ -15,23 +15,24 @@ module BareRubyProt
     # the directory an artifact lands in — and it belongs to the board itself. name is
     # what one binding happens to call it, which is a different question: `pico_w` is the
     # word pico-sdk wants, and a second SDK reaching the same board would want another.
-    attr_reader :key, :name, :chip, :led
+    #
+    # How a peripheral on this board is reached is not recorded here. It is not a fact
+    # about the board alone — the same indicator is `gpio_put` through one SDK and
+    # `HAL_GPIO_WritePin` through another — so it lives in the cell where the board and
+    # the API meet, under `api/<api>/machine/`.
+    attr_reader :key, :name, :chip
 
-    # led is how the on-board LED is reached, which is a different question from which
-    # chip the board carries: a wireless board puts its LED on the radio rather than on a
-    # pin of the microcontroller, so two boards with one chip answer it differently.
-    def initialize(key, name: nil, chip: nil, led:)
+    def initialize(key, name: nil, chip: nil)
       @key = key
       @name = name
       @chip = chip
-      @led = led
     end
 
     # The machine doing the compiling has no peripheral to reach, so every binding call
     # lands on a stub. It is still a machine, and saying so keeps the hosted target from
     # being a shape of its own. The same answer serves a target that runs in a sandbox
     # rather than on a board.
-    NONE = new(:none, led: :host)
+    NONE = new(:none)
   end
 end
 

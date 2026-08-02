@@ -296,21 +296,56 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_host.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_host.cpp"
 
+    # A machine with no indicator to reach answers all the same, so that whether a
+    # board has one never decides whether a program compiles.
+    ONBOARD_LED_NONE = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <stdio.h>
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          self->state = 0;
+          fprintf(stderr, "onboard_led_init()\\n");
+      }
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          fprintf(stderr, "onboard_led_write(value=%d)\\n", (int)self->state);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
+    ONBOARD_LED_NONE_FILE = "bareruby_binding_onboard_led_host_none.cpp"
+
     FILES = {
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
-      I2C_READ_FILE => I2C_READ
+      I2C_READ_FILE => I2C_READ,
+      ONBOARD_LED_NONE_FILE => ONBOARD_LED_NONE
     }.freeze
 
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+
+    # What a board takes is not worked out here. Each board this API reaches writes its
+    # own answer as a method, in machine/ beside this file, and this only hands the
+    # question over. A board this API cannot reach has no answer rather than a wrong one.
+    MACHINES = {}
+
+    def self.machine(machine) = MACHINES.fetch(machine.key)
 
     # Nothing on the other side of this build owns main, so the program's own translation
     # unit carries the entry point and is named for it.
     PROGRAM_FILE = "main.cpp"
 
-    # What this API is called wherever one has to be named: a deployment record, and the
-    # directory an artifact lands in.
     def self.key = :host
 
     def self.toolchain = HostToolchain
@@ -319,4 +354,9 @@ module BareRubyProt
 
     def self.build = HostBuild
   end
+end
+
+# One board to a file, so that teaching this API a new board is adding a file.
+Dir.children(File.expand_path("machine", __dir__)).sort.grep(/\.rb\z/).each do |entry|
+  require_relative "machine/#{entry}"
 end
