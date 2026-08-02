@@ -75,6 +75,22 @@ bareruby:
           optional: true
           hint: Leave empty when one probe is attached.
 
+    - key: arduino
+      label: Arduino and compatible boards, through the Arduino core
+      targets:
+        - arduino-mega2560
+      asks:
+        - key: boards
+          label: Serial port of each board to write this onto
+          kind: list
+          optional: true
+          hint: >-
+            Leave this empty. A board reached through this core answers with its own
+            name over the port it talks on, so the one attached board this firmware was
+            built for is found and written. Name ports only when two of the same board
+            are attached; given nothing to go on, flashing prints the candidates.
+          hint_command: arduino-cli board list
+
     - key: host
       label: This machine, with every peripheral traced instead of driven
       targets:
@@ -82,14 +98,6 @@ bareruby:
       asks: []
 
   # Reserved. A family appears here when its targets exist in target/target.rb.
-  #
-  #   - key: arduino
-  #     label: Arduino boards, through the Arduino core
-  #     targets: [arduino-uno, arduino-mkr-zero, arduino-nano-esp32]
-  #     asks:
-  #       - key: boards
-  #         label: Serial port of each board
-  #         kind: list
   #
   #   - key: esp32
   #     label: Espressif development boards, through ESP-IDF
