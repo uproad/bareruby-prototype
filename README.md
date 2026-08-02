@@ -405,7 +405,7 @@ The command finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the 
 `/opt/st` installation tree. `STM32_CUBE_PROJECT=/path/to/F446_Sample` can replace the
 command-line project option. `STM32CUBEIDE=/path/to/headless-build.sh` overrides IDE
 discovery, and `--generate-only` stops after placing the selected pass-12 sources into
-the project. The binding's [README](target/binding/stm32cube/README.md) records project
+the project. The binding's [README](target/api/stm32cube/README.md) records project
 preparation, the ownership boundary, CubeMX regeneration, pin mapping, and supported
 bindings.
 
