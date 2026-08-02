@@ -8,7 +8,9 @@ module BareRubyProt
     # program ends rather than idling: falling off the end of it is the run finishing.
     ENTRY = "int main(void) {\n    bareruby_main();\n    return 0;\n}\n"
 
-    def initialize(sources:)
+    # Every build is asked for in the same words, and answers with what it needs of them.
+    def initialize(target, sources:, onboard_led: false, debug: false, exceptions: true)
+      @target = target
       @sources = sources.join(" ")
     end
 
@@ -20,7 +22,8 @@ module BareRubyProt
 
     def manifest
       <<~MANIFEST
-        target = host
+        target = #{@target.name}
+        triple = #{@target.isa.triple}
         toolchain = g++
         language_standard = gnu++20
         compile_options = -std=gnu++20 -fno-rtti

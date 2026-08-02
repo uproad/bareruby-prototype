@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "onboard_led_source"
+require_relative "../../pass/pass_12_cpp_source_generator/onboard_led_source"
 
 module BareRubyProt
   # How the second stage builds a program for a board: pico-sdk through cmake, the record
@@ -33,8 +33,9 @@ module BareRubyProt
     def manifest
       <<~MANIFEST
         target = #{@target.name}
-        board = #{@target.board}
-        platform = #{@target.platform}
+        board = #{@target.machine.name}
+        triple = #{@target.isa.triple}
+        chip = #{@target.machine.chip}
         toolchain = arm-none-eabi-g++
         language_standard = gnu++20
         compile_options = -std=gnu++20 -fno-rtti
@@ -52,7 +53,7 @@ module BareRubyProt
     # The radio's driver is linked only by a wireless board that actually lights its
     # LED, so the firmware blob it carries is not a tax on every build for that board.
     def libraries
-      return SDK_LIBRARIES unless @target.led == :wireless && @onboard_led
+      return SDK_LIBRARIES unless @target.machine.led == :wireless && @onboard_led
 
       SDK_LIBRARIES + [OnboardLedSource::WIRELESS_LIBRARY]
     end
@@ -63,8 +64,8 @@ module BareRubyProt
 
         # The board picks the chip, the linker script and the register headers, so it has
         # to be set before the SDK is imported rather than passed to the build later.
-        set(PICO_BOARD #{@target.board})
-        set(PICO_PLATFORM #{@target.platform})
+        set(PICO_BOARD #{@target.machine.name})
+        set(PICO_PLATFORM #{@target.machine.chip})
 
         include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 

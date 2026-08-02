@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  module PicoBindingSource
+  module PicoBinding
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -319,8 +319,14 @@ module BareRubyProt
       I2C_READ_FILE => I2C_READ
     }.freeze
 
-    # The two binding implementations answer the same questions with the same names on
-    # either side, so a build picks one of these modules and asks it the same things.
+    # Every binding answers the same questions with the same names, so a build picks one
+    # of these modules and asks it the same things.
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+    # pico-sdk hands the program the whole executable, so the entry point is this side's
+    # to write and the translation unit that carries it is named for it.
+    PROGRAM_FILE = "main.cpp"
+
+    def self.build = PicoBuild
   end
 end

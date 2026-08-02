@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  module HostBindingSource
+  module HostBinding
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -304,5 +304,11 @@ module BareRubyProt
     }.freeze
 
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+    # Nothing on the other side of this build owns main, so the program's own translation
+    # unit carries the entry point and is named for it.
+    PROGRAM_FILE = "main.cpp"
+
+    def self.build = HostBuild
   end
 end

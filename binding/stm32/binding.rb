@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  module Stm32BindingSource
+  module Stm32Binding
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -399,5 +399,11 @@ module BareRubyProt
       I2C_READ_FILE => I2C_READ
     }.freeze
     ALWAYS = [PERIPHERAL_FILE].freeze
+
+    # The CubeIDE project owns main and calls into the program, so this side names its
+    # translation unit after the program rather than after an entry point it does not own.
+    PROGRAM_FILE = "bareruby_program.cpp"
+
+    def self.build = Stm32Build
   end
 end

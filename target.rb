@@ -2,47 +2,66 @@
 
 require "yaml"
 
+require_relative "isa"
+require_relative "substrate"
+require_relative "machine"
+require_relative "binding/host/binding"
+require_relative "binding/pico/binding"
+require_relative "binding/stm32/binding"
+
 module BareRubyProt
   # One machine the compiler produces artifacts for. The name is the whole identity of a
   # target: it is what the command line and target.yml spell, and it is the directory the
   # artifacts land in, so there is never a second vocabulary to translate between.
+  #
+  # Underneath the name a target is a composition of four answers, and they are kept apart
+  # because none of them decides another:
+  #
+  #   isa       — the instruction set, named by its triple
+  #   substrate — what lies underneath, which settles whether the program ends
+  #   binding   — the API the generated code is written against, which owns the C++
+  #   machine   — the instance and what can be reached on it
+  #
+  # One API serves boards that share no instruction set, one board is reachable through
+  # more than one API, and an instruction set says nothing about whether an operating
+  # system is underneath it. Naming the four separately is what keeps a machine whose
+  # instruction set is WebAssembly, and a desktop whose peripherals are all stubs, from
+  # each needing a kind of their own. Nothing is inferred here: a target that leaves an
+  # answer out is a target nobody has decided about yet.
   class Target
     CONFIGURATION_FILE = File.expand_path("target.yml", __dir__)
     OPTION_PREFIX = "--target="
     DEFAULT_NAMES = ["host"].freeze
 
-    attr_reader :name, :board, :platform, :led, :backend
+    attr_reader :name, :isa, :substrate, :binding, :machine
 
-    # led is how the on-board LED is reached, which is a different question from which
-    # chip the board carries: a wireless board puts its LED on the radio rather than on a
-    # pin of the microcontroller, so two boards with one chip answer it differently.
-    def initialize(name, board: nil, platform: nil, led:, backend: nil)
+    def initialize(name, isa:, substrate:, binding:, machine:)
       @name = name
-      @board = board
-      @platform = platform
-      @led = led
-      @backend = backend || (board ? :pico : :host)
+      @isa = isa
+      @substrate = substrate
+      @binding = binding
+      @machine = machine
     end
 
-    def hosted? = @backend == :host
-
-    def pico? = @backend == :pico
-
-    def stm32? = @backend == :stm32
-
     TABLE = {
-      "host" => new("host", led: :host),
+      "host" =>
+        new("host", isa: Isa::COMPILING, substrate: Substrate::HOSTED,
+                    binding: HostBinding, machine: Machine::NONE),
       "raspberry-pi-pico" =>
-        new("raspberry-pi-pico", board: "pico", platform: "rp2040", led: :pin),
+        new("raspberry-pi-pico", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
+                                 binding: PicoBinding, machine: Machine::PICO),
       "raspberry-pi-pico-w" =>
-        new("raspberry-pi-pico-w", board: "pico_w", platform: "rp2040", led: :wireless),
+        new("raspberry-pi-pico-w", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
+                                   binding: PicoBinding, machine: Machine::PICO_W),
       "raspberry-pi-pico2" =>
-        new("raspberry-pi-pico2", board: "pico2", platform: "rp2350", led: :pin),
+        new("raspberry-pi-pico2", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
+                                  binding: PicoBinding, machine: Machine::PICO2),
       "raspberry-pi-pico2-w" =>
-        new("raspberry-pi-pico2-w", board: "pico2_w", platform: "rp2350", led: :wireless),
+        new("raspberry-pi-pico2-w", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
+                                    binding: PicoBinding, machine: Machine::PICO2_W),
       "stm32-nucleo-f446re" =>
-        new("stm32-nucleo-f446re", board: "NUCLEO-F446RE", platform: "stm32f4",
-                                     led: :stm32, backend: :stm32)
+        new("stm32-nucleo-f446re", isa: Isa::CORTEX_M4F, substrate: Substrate::BARE_METAL,
+                                   binding: Stm32Binding, machine: Machine::NUCLEO_F446RE)
     }.freeze
 
     # The full names are what the artifacts are named after and what the documents say.
