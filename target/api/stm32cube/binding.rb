@@ -406,6 +406,8 @@ module BareRubyProt
 
     def self.key = :stm32cube
 
+    def self.toolchain = Stm32CubeToolchain
+
     def self.build = Stm32CubeBuild
   end
 end

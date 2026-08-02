@@ -313,6 +313,8 @@ module BareRubyProt
     # directory an artifact lands in.
     def self.key = :host
 
+    def self.toolchain = HostToolchain
+
     def self.build = HostBuild
   end
 end

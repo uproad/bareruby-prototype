@@ -1,8 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require "English"
+require "fileutils"
+
 require_relative "compiler"
 require_relative "deployment"
+require_relative "target/api/host/toolchain"
+require_relative "target/api/pico_sdk/toolchain"
+require_relative "target/api/stm32cube/toolchain"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and
@@ -19,11 +25,14 @@ module BareRubyProt
         compile SOURCE.rb   Ruby to C++, into build/<composition>/.
                             Reads no configuration; without --target the target is the
                             machine doing the compiling.
+        build   SOURCE.rb   compile, then run each API's toolchain over what it produced,
+                            leaving the artifact beside its sources.
 
       Options:
-        --target=NAME       Compile for NAME, repeatable. Names and their short forms are
-                            in target/target.rb.
-        -d, --debug         Build the debug firmware.
+        --target=NAME       Work on NAME, repeatable. Names and their short forms are in
+                            target/target.rb. Without it, build takes its targets from
+                            target.yml — see target.yml.sample.
+        -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
     USAGE
 
@@ -41,6 +50,7 @@ module BareRubyProt
     def run
       case @command
       when "compile" then compile
+      when "build" then build
       else usage
       end
     end
@@ -48,6 +58,46 @@ module BareRubyProt
     def compile
       Compiler.clear_output
       compile_for(Target.select(@target_options), debug: @debug)
+    end
+
+    # One entry at a time rather than one run for all of them, because two entries may
+    # disagree about debug and that disagreement reaches the generated C++. Clearing the
+    # output once and compiling into it repeatedly is what lets them differ.
+    def build
+      Compiler.clear_output
+      entries.each do |entry|
+        compile_for([entry.target], debug: debug?(entry))
+        place(entry)
+        entry.target.api.toolchain.run(directory_of(entry), options: entry.options)
+      end
+      0
+    end
+
+    # A record of this desk answers for the targets it names. Naming targets on the
+    # command line instead asks for exactly those, and the record still answers for what
+    # only it can know: which boards are attached, and where an external project lives.
+    def entries
+      recorded = Deployment.entries
+      return recorded if @target_options.empty?
+
+      Target.select(@target_options).map do |target|
+        recorded.find { |entry| entry.target.equal?(target) } ||
+          Deployment::Entry.new(target, nil, false, [], {})
+      end
+    end
+
+    def debug?(entry) = @debug || entry.debug
+
+    def directory_of(entry) = File.join(Compiler::BUILD_DIRECTORY, entry.directory)
+
+    # An entry that named itself takes the name it chose, so that two entries built from
+    # one composition — a debug one and a release one — do not land in one place.
+    def place(entry)
+      return unless entry.name
+
+      FileUtils.rm_rf(directory_of(entry))
+      FileUtils.mv(File.join(Compiler::BUILD_DIRECTORY, entry.target.directory),
+                   directory_of(entry))
     end
 
     def compile_for(targets, debug:)
