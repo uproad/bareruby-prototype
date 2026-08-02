@@ -135,7 +135,7 @@ Covered so far:
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project outside this
   repository owns clock, pin, startup, HAL initialization and link configuration. Pass
   12 adds HAL-backed GPIO, timing, LD2, USART2 and I2C1 translation units, entered from a
-  CubeMX-preserved user section after every peripheral is initialized. `brd-stm32`
+  CubeMX-preserved user section after every peripheral is initialized. `bareruby build`
   generates one application, synchronizes only the reached units, and drives
   STM32CubeIDE's headless builder. A physical board has been programmed over SWD, with
   LD2 and USART2 exercised; I2C links against STM32CubeF4 HAL 1.28.3 but remains
@@ -208,35 +208,66 @@ means nothing at all.
 The programs these milestones were verified with are in [`samples/`](samples/README.md),
 which lists what each one covers and records what the two ported programs had to change.
 `ref.rb`, the representative program from the design documents, stays here at the root
-because it is what `compile.rb` compiles when it is given no argument.
+because it is what `bareruby compile` compiles when it is given no argument.
 
 ## The short way
 
-`brd` runs the whole cycle — first stage, second stage, flash — for one program:
+`bareruby` is the only command. Its verbs stack: `build` compiles first, `deploy` builds
+first, so each does its own work and then the next one's.
 
 ```sh
 cd bareruby-prototype
-./brd app.rb -d                              # debug firmware: USB stays up, reflashable without the button
-./brd app.rb                                 # default firmware
-./brd app.rb --target=raspberry-pi-pico2     # for a Pico 2 instead
-./brd                                        # prints usage
+cp target.yml.sample target.yml              # once: say which boards are on this desk
+./bareruby deploy app.rb                     # compile, build, and write it onto them
+./bareruby build app.rb --target=pico2       # one target, no flashing
+./bareruby flash                             # write what the last build left, again
+./bareruby compile app.rb                    # first stage only, no toolchain needed
+./bareruby                                   # prints usage
 ```
 
-It defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
-takes them from the environment when they are already set. cmake output is shown only
-when a step fails. It builds every board target the run selected — one SDK serves both
-boards — and flashes when there is exactly one, since flashing addresses one attached
-board.
+| Verb | What it does | Reads `target.yml` |
+| --- | --- | --- |
+| `compile` | Ruby to C++, into `build/<composition>/` | no — without `--target` the target is the machine doing the compiling |
+| `build` | `compile`, then each API's toolchain, leaving the artifact beside its sources | yes |
+| `flash` | writes what `build` left onto the boards that take it | yes |
+| `deploy` | `build`, then `flash` | yes |
 
-The rest of this file is what `brd` does, step by step, and how to install what it
+`build` defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
+takes them from the environment when they are already set. Toolchain output is shown only
+when a step fails.
+
+The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
+
+### Saying which boards are here
+
+`target.yml` is not tracked, because which boards are attached is true of a desk rather
+than of the project. [`target.yml.sample`](target.yml.sample) documents every field and is
+meant to be copied. An entry spells out a composition rather than naming a target:
+
+```yaml
+bareruby:
+  targets:
+    - machine: pico
+      api: pico_sdk
+      triple: thumbv6m-none-eabi
+      debug: true
+      boards:
+        - E6625888179C592E
+```
+
+The three answers are given separately because none of them settles another. One board is
+reachable through more than one API — a NUCLEO board through STM32Cube or through
+STM32duino — and one board whose chip carries two instruction sets is built for either of
+them, as an RP2350 is for Arm or for RISC-V. `boards:` is a list because several identical
+boards take the same one artifact.
 
 ## Running the first stage
 
 ```sh
-ruby compile.rb                       # defaults to ref.rb
-ruby compile.rb samples/blink.rb
-ruby compile.rb -d samples/blink.rb   # debug firmware
+./bareruby compile                       # defaults to ref.rb
+./bareruby compile samples/blink.rb
+./bareruby compile -d samples/blink.rb   # debug firmware
 ```
 
 ### Choosing targets
@@ -260,25 +291,37 @@ know about.
 machines as it lists:
 
 ```sh
-ruby compile.rb --target=host samples/blink.rb
-ruby compile.rb --target=raspberry-pi-pico --target=raspberry-pi-pico2 samples/blink.rb
-ruby compile.rb --target=pico --target=picow --target=pico2 --target=pico2w samples/heartbeat.rb
-ruby compile.rb --target=f446 --no-exceptions samples/heartbeat.rb
+./bareruby compile --target=host samples/blink.rb
+./bareruby compile --target=raspberry-pi-pico --target=raspberry-pi-pico2 samples/blink.rb
+./bareruby compile --target=pico --target=picow --target=pico2 --target=pico2w samples/heartbeat.rb
+./bareruby compile --target=f446 --no-exceptions samples/heartbeat.rb
 ```
 
-Without `--target=` the targets come from `target.yml` at the repository root:
+`bareruby compile` reads no configuration at all: a compilation is exactly what its
+command line asked for, and with nothing said the target is `host`. From `build` onwards a
+command needs to know which desk it is standing at, and that is what `target.yml` answers.
 
-```yaml
-bareruby:
-  compile:
-    target:
-      - host
-      - raspberry-pi-pico
+### Where the artifacts land
+
+A target's directory is the composition that made it:
+
+```
+build/none-host-x86_64-pc-linux/
+build/pico-pico_sdk-thumbv6m-none-eabi/
+build/pico_w-pico_sdk-thumbv6m-none-eabi/
+build/pico2-pico_sdk-thumbv8m.main-none-eabihf/
+build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
+build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/
 ```
 
-Naming even one target on the command line settles the question, so `target.yml` is not
-consulted at all in that case rather than merged into — a run produces exactly what it
-was asked for. With neither, the target is `host`.
+It is `<machine>-<api>-<triple>`, and it is long because that is how much it takes to be
+unique. The triple alone will not do: a Pico and a Pico W are both `thumbv6m-none-eabi` and
+their firmware is not the same — one drives its LED from a pin and the other through the
+radio, which brings a driver and a firmware blob with it. The board alone will not do
+either, because an RP2350 is built for Arm or for RISC-V. What lies underneath is left out
+of the name only because the triple already carries it. An entry in `target.yml` that gives
+a `name:` uses that instead, which is how one composition can be built twice — a debug one
+and a release one — without the two landing in one place.
 
 Only the selected targets are written. Their directories hold the generated entry point
 and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, while the STM32 target
@@ -371,16 +414,24 @@ every commit while they were:
 ### Where the shipped C++ comes from
 
 Most of the C++ that lands in `build/` is carried by this repository rather than written
-line by line by the compiler. It belongs to the last pass and to nothing else, so it sits
-beside it in `pass/pass_12_cpp_source_generator/`, one file per area — the runtime proper,
-the binding declarations, the hosted implementations, the pico-sdk implementations, and
-the three on-board LED implementations. Each of those files also names its own
-translation units: the name a piece of C++ is written under belongs with that C++ and
-nowhere else. Beside them sits how the second stage builds each kind of machine — one g++
-invocation for the host, pico-sdk through cmake for a board — so a toolchain is described
-in one place rather than woven through the pass. `main.cpp`, the one C++ file that is
-written rather than carried, is rendered from the low-level IR beside them; the machine
-it is built for supplies the entry point and says whether output has anywhere to go.
+line by line by the compiler, and where a piece of it lives says who it belongs to.
+
+What is the same everywhere belongs to the last pass and sits beside it in
+`pass/pass_12_cpp_source_generator/`: the runtime proper — the arena, the strings, the
+fixed-point arithmetic — and the declarations every binding answers.
+
+What differs by the API being called sits under `target/api/<api>/`, one directory each:
+`binding.rb` implements those declarations in that API's own words, `build.rb` writes down
+what the second stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a
+machine. Those four are everything an API owns, and they are the only files that change
+when a new one is added. Each names its own translation units, because the name a piece of
+C++ is written under belongs with that C++ and nowhere else.
+
+`main.cpp`, the one C++ file that is written rather than carried, is rendered from the
+low-level IR; the API it is built for supplies the entry point and says whether output has
+anywhere to go — and for a machine whose `main` is owned by someone else, the file is
+called `bareruby_program.cpp` instead, because this side does not name an entry point it
+does not own.
 
 What is left of the pass is the assembly: it asks the low-level IR what the program
 reaches for, asks each source for its files, and hands each target the ones it needs. All
@@ -394,20 +445,33 @@ repository. CubeMX owns clocks, pins, HAL initialization, startup and linker scr
 pass 12 supplies C++ through the HAL. The complete generation, synchronization, and
 headless build is one command:
 
-```sh
-./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/path/to/F446_Sample --no-exceptions
-./brd-stm32 samples/i2c.rb \
-  --cube-project=/path/to/F446_Sample --configuration=Release --no-exceptions
+Where that project lives is something only this desk knows, so it is said in `target.yml`
+rather than on the command line:
+
+```yaml
+    - machine: nucleo_f446re
+      api: stm32cube
+      triple: thumbv7em-none-eabihf
+      options:
+        cube_project: /path/to/F446_Sample
+        configuration: Debug
 ```
 
-The command finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the normal
-`/opt/st` installation tree. `STM32_CUBE_PROJECT=/path/to/F446_Sample` can replace the
-command-line project option. `STM32CUBEIDE=/path/to/headless-build.sh` overrides IDE
-discovery, and `--generate-only` stops after placing the selected pass-12 sources into
-the project. The binding's [README](target/api/stm32cube/README.md) records project
-preparation, the ownership boundary, CubeMX regeneration, pin mapping, and supported
-bindings.
+```sh
+./bareruby build samples/heartbeat.rb --target=f446 --no-exceptions
+```
+
+The toolchain finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the normal
+`/opt/st` installation tree; `STM32CUBEIDE=/path/to/headless-build.sh` overrides that. It
+copies in only the translation units this program reached for, replaces nothing but the
+files it owns, and brings the linked ELF back to `build/<composition>/bareruby_program.elf`
+so that flashing needs to know nothing about where the external project keeps its output.
+The binding's [README](target/api/stm32cube/README.md) records project preparation, the
+ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
+
+`./bareruby flash --target=f446` writes that ELF over SWD with `STM32_Programmer_CLI`,
+naming ST-LINK probe serials from `boards:` when more than one probe is attached. **That
+path has never been run** — the STM32 firmware verified so far was flashed by hand.
 
 ## Second stage: hosted
 
@@ -415,7 +479,7 @@ Needs a GNU `g++` (version 12 or newer). Ubuntu 24.04 ships 13.3, which is fine.
 The build command is recorded in the manifest, so just run what it says:
 
 ```sh
-cd build/host
+cd build/none-host-x86_64-pc-linux
 g++ -std=gnu++20 -fno-rtti -I.. -o bareruby_program \
     main.cpp ../bareruby_binding_host.cpp ../bareruby_runtime_fixed.cpp \
     ../bareruby_runtime_stdio.cpp
@@ -471,7 +535,7 @@ than a missing dependency, hence initializing it up front.
 
 `picotool` needs no separate install: SDK 2.x downloads and builds it on demand. Left
 alone it lands inside the target's build tree, which the next first-stage run deletes, so
-`PICOTOOL_FETCH_FROM_GIT_PATH` points it somewhere outside — `brd` defaults that to
+`PICOTOOL_FETCH_FROM_GIT_PATH` points it somewhere outside — `bareruby` defaults that to
 `~/pico/picotool` (17 MB, built once). Its libusb-dependent parts are skipped when the
 headers are absent, which costs nothing here: only `.uf2` generation is wanted.
 
@@ -516,16 +580,16 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 ### Building the firmware
 
 ```sh
-cd build/raspberry-pi-pico
+cd build/pico-pico_sdk-thumbv6m-none-eabi
 export PICO_SDK_PATH=$HOME/pico/pico-sdk-2
 export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
 cmake --build build
 ```
 
-The result is `build/bareruby_program.uf2`. The `build/raspberry-pi-pico/build/` tree is
-gitignored; `compile.rb` deletes it on the next run along with the rest of `build/`.
-`build/raspberry-pi-pico2` is built by exactly the same commands with the same SDK — the
+The result is `build/bareruby_program.uf2`. The `build/pico-pico_sdk-thumbv6m-none-eabi/build/` tree is
+gitignored; `bareruby` deletes it on the next run along with the rest of `build/`.
+`build/pico2-pico_sdk-thumbv8m.main-none-eabihf` is built by exactly the same commands with the same SDK — the
 board's `CMakeLists.txt` carries the whole of the difference.
 
 Output for `samples/blink.rb`, measured on both boards from the same first stage:
@@ -600,10 +664,10 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-./flash.sh --list                # what is attached, and the fstab line for each
-./flash.sh                       # defaults to the raspberry-pi-pico artifact
-./flash.sh path/to/other.uf2
-./flash.sh --board SERIAL path/to/other.uf2
+target/api/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
+target/api/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
+target/api/pico_sdk/flash.sh path/to/other.uf2
+target/api/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
 ```
 
 The script locates boards by SCSI vendor `RPI` and by USB vendor `2e8a` rather than by a
@@ -617,17 +681,17 @@ expected to fail at the end.
 Boards can stay attached together, which is what makes a Pico and a Pico 2 usable as one
 test bench. **Which board a firmware goes to follows from the firmware**: bytes 28..31 of
 a `.uf2` are the family id of the chip it was built for (`0xE48BFF56` for RP2040,
-`0xE48BFF57` for RP2350), and only boards carrying that chip are considered. `brd` uses
-that to flash every board a run selected, one after another:
+`0xE48BFF57` for RP2350), and only boards carrying that chip are considered. `deploy` uses
+that to write every board a run selected, one after another:
 
 ```sh
-./brd --target=raspberry-pi-pico --target=raspberry-pi-pico2 -d samples/blink.rb
+./bareruby deploy samples/blink.rb          # every entry in target.yml
 ```
 
 Two boards of the *same* chip — a Pico and a Pico W, a Pico 2 and a Pico 2 W — cannot be
-told apart that way. That is not an oversight in the script; it is the same fact this
-repository names its targets after boards for. `flash.sh` refuses to guess and prints the
-candidates:
+told apart that way. That is not an oversight in the script; it is the same fact a
+composition names a machine as well as a triple for. `boards:` in `target.yml` says which
+one, and given nothing to go on `flash.sh` refuses to guess and prints the candidates:
 
 ```
 flash: 2 boards carry rp2040, so the image does not say which one to use.
@@ -675,7 +739,7 @@ Only the mount needs privileges. One line in `/etc/fstab` per board removes even
 /dev/disk/by-id/usb-RPI_RP2350_34319CF054AB3BD6-0:0-part1 /mnt/pico2 vfat noauto,user,umask=000 0 0
 ```
 
-`flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
+`target/api/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
 mount points are read back out of `/etc/fstab`, so they can be named anything as long as
 each is distinct.
 
@@ -703,7 +767,7 @@ disappears from `lsusb` after flashing and GP25 (the on-board LED) blinks at the
 500 ms period written in `samples/blink.rb`; the board presents no USB interface at all,
 which is correct with both stdio channels disabled, and the button is needed to flash
 again. With `-d` it comes back as `2e8a:000a` with a `/dev/ttyACM0`, and successive
-edits were flashed by rerunning `flash.sh` alone — verified by changing the blink
+edits were flashed by rerunning `bareruby flash` alone — verified by changing the blink
 period to 100 ms and then 800 ms and watching the LED follow.
 
 Verified again on a **Pico 2 W**, which is an RP2350 board. `flash.sh` wrote the
@@ -729,7 +793,7 @@ The LED is the part worth recording. `samples/blink.rb` was flashed onto the sam
 and a variant logging each write showed `gp25 high` / `gp25 low` alternating once a
 second on the serial port while **the LED stayed dark the whole time**. The writes reach
 GP25; on a Pico 2 W the LED is not there. Both boards then took the same `samples/blink.rb`
-from one `brd` invocation, and the Pico blinked while the Pico 2 W did not.
+from one `bareruby deploy` invocation, and the Pico blinked while the Pico 2 W did not.
 
 `samples/heartbeat.rb` closes that gap and was flashed onto both. The Pico blinks at the
 100 ms on / 900 ms off it asks for, reaching its LED through GP25; the Pico 2 W blinks
