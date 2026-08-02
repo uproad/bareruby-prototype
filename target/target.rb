@@ -42,6 +42,13 @@ module BareRubyProt
       @machine = machine
     end
 
+    # Where the artifacts land. Three of the four answers are spelled out, because three
+    # of them can differ while the rest agree: one board reached through two APIs, and one
+    # board built for either of the two instruction sets its chip carries, are different
+    # firmware that must not overwrite each other. The substrate is left out because the
+    # triple already carries it. It is a long name, and that length is the information.
+    def directory = "#{@machine.key}-#{@api.key}-#{@isa.triple}"
+
     TABLE = {
       "host" =>
         new("host", isa: Isa::COMPILING, substrate: Substrate::HOSTED,

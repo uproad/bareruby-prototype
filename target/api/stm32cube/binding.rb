@@ -404,6 +404,8 @@ module BareRubyProt
     # translation unit after the program rather than after an entry point it does not own.
     PROGRAM_FILE = "bareruby_program.cpp"
 
+    def self.key = :stm32cube
+
     def self.build = Stm32CubeBuild
   end
 end

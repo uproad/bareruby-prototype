@@ -309,6 +309,10 @@ module BareRubyProt
     # unit carries the entry point and is named for it.
     PROGRAM_FILE = "main.cpp"
 
+    # What this API is called wherever one has to be named: a deployment record, and the
+    # directory an artifact lands in.
+    def self.key = :host
+
     def self.build = HostBuild
   end
 end

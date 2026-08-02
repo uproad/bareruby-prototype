@@ -133,7 +133,7 @@ if [ -n "$LIST" ]; then
     exit 0
 fi
 
-UF2="${UF2:-$HERE/build/raspberry-pi-pico/build/bareruby_program.uf2}"
+UF2="${UF2:-$HERE/build/pico-pico_sdk-thumbv6m-none-eabi/build/bareruby_program.uf2}"
 
 if [ ! -f "$UF2" ]; then
     echo "flash: no such file: $UF2" >&2

@@ -63,7 +63,7 @@ module BareRubyProt
       def target_sources(target)
         build = build_of(target)
         files = { target.api::PROGRAM_FILE => program_text(build) }.merge(build.files)
-        files.transform_keys { |name| "#{target.name}/#{name}" }
+        files.transform_keys { |name| "#{target.directory}/#{name}" }
       end
 
       def program_text(build)

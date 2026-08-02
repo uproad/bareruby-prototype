@@ -11,12 +11,17 @@ module BareRubyProt
   # one of them, and one binding serves boards that share nothing but their SDK. The two
   # are named separately so that neither has to enumerate the other.
   class Machine
-    attr_reader :name, :chip, :led
+    # key is what a board is called wherever one has to be named — a deployment record,
+    # the directory an artifact lands in — and it belongs to the board itself. name is
+    # what one binding happens to call it, which is a different question: `pico_w` is the
+    # word pico-sdk wants, and a second SDK reaching the same board would want another.
+    attr_reader :key, :name, :chip, :led
 
     # led is how the on-board LED is reached, which is a different question from which
     # chip the board carries: a wireless board puts its LED on the radio rather than on a
     # pin of the microcontroller, so two boards with one chip answer it differently.
-    def initialize(name, chip: nil, led:)
+    def initialize(key, name: nil, chip: nil, led:)
+      @key = key
       @name = name
       @chip = chip
       @led = led
@@ -26,7 +31,7 @@ module BareRubyProt
     # lands on a stub. It is still a machine, and saying so keeps the hosted target from
     # being a shape of its own. The same answer serves a target that runs in a sandbox
     # rather than on a board.
-    NONE = new(nil, led: :host)
+    NONE = new(:none, led: :host)
   end
 end
 

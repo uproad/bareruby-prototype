@@ -4,7 +4,7 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TARGET=stm32-nucleo-f446re
-TARGET_DIRECTORY="$HERE/build/$TARGET"
+TARGET_DIRECTORY="$HERE/build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf"
 
 usage() {
     cat >&2 <<'USAGE'

@@ -327,6 +327,8 @@ module BareRubyProt
     # to write and the translation unit that carries it is named for it.
     PROGRAM_FILE = "main.cpp"
 
+    def self.key = :pico_sdk
+
     def self.build = PicoSdkBuild
   end
 end
