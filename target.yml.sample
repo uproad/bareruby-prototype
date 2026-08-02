@@ -1,0 +1,67 @@
+# Copy this to target.yml, which is not tracked. What is written here — which boards are
+# attached, what they are called, where an external project lives — is true of one desk
+# rather than of the project, so it does not belong in the repository.
+#
+# `bareruby build`, `flash` and `deploy` take their targets from here when no --target is
+# given. `bareruby compile` never reads this file: a compilation is exactly what its
+# command line asked for.
+#
+# An entry names a composition rather than a target, because no one of the three answers
+# settles another. One board is reachable through more than one API — a NUCLEO board
+# through STM32Cube or through STM32duino — and one board whose chip carries two
+# instruction sets is built for either of them, as an RP2350 is for Arm or for RISC-V.
+# The three together are looked up: a composition nobody has run is not a target yet.
+#
+#   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re, none
+#   api:      what it is called through.  host, pico_sdk, stm32cube
+#   triple:   which instruction set, and what lies under it.
+#               thumbv6m-none-eabi           RP2040
+#               thumbv8m.main-none-eabihf    RP2350, Arm
+#               thumbv7em-none-eabihf        STM32F4
+#               x86_64-pc-linux              the machine doing the compiling
+#   name:     optional. The directory under build/ this entry lands in. Without it the
+#             directory is <machine>-<api>-<triple>, which is long because that is how
+#             much it takes to be unique. Give a name when one composition is wanted
+#             twice — a debug build and a release build of the same board.
+#   debug:    optional. `true` or `1` and nothing else means a debug build; anything
+#             else, and saying nothing, means release.
+#   boards:   optional. Every board that takes this one artifact. With nothing here the
+#             one attached board the artifact fits is found and written. Run
+#             target/api/pico_sdk/flash.sh --list to see what is attached.
+#   options:  optional. What only this desk knows, passed to the API that needs it.
+
+bareruby:
+  targets:
+    - machine: pico
+      api: pico_sdk
+      triple: thumbv6m-none-eabi
+      debug: true
+      boards:
+        - E6625888179C592E
+
+    - machine: pico2_w
+      api: pico_sdk
+      triple: thumbv8m.main-none-eabihf
+      boards:
+        - 34319CF054AB3BD6
+
+    # Two builds of one composition, so each one names where it goes.
+    # - name: pico2-release
+    #   machine: pico2
+    #   api: pico_sdk
+    #   triple: thumbv8m.main-none-eabihf
+
+    # The CubeIDE project is generated and configured by the user and lives outside this
+    # repository, so only this file knows where it is. boards: takes ST-LINK probe
+    # serials rather than board serials, because SWD is reached through the probe.
+    # - machine: nucleo_f446re
+    #   api: stm32cube
+    #   triple: thumbv7em-none-eabihf
+    #   options:
+    #     cube_project: /path/to/F446_Sample
+    #     configuration: Debug
+
+    # Nothing is flashed, because the artifact is already on the machine that runs it.
+    # - machine: none
+    #   api: host
+    #   triple: x86_64-pc-linux
