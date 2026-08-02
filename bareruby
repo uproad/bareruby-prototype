@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "compiler"
+require_relative "deployment"
+
+module BareRubyProt
+  # The one way in. The commands stack rather than duplicate: build compiles first and
+  # then runs a toolchain over what it produced, deploy builds first and then writes what
+  # it built onto the boards that take it. Each does its own work and then the next one's.
+  #
+  # compile is the only command that reads nothing but its own arguments. From build
+  # onwards a command needs to know which desk it is standing at — which boards are here
+  # and where the external projects live — and that is what target.yml answers.
+  class Cli
+    USAGE = <<~USAGE
+      Usage: bareruby COMMAND [SOURCE.rb] [OPTIONS]
+
+        compile SOURCE.rb   Ruby to C++, into build/<composition>/.
+                            Reads no configuration; without --target the target is the
+                            machine doing the compiling.
+
+      Options:
+        --target=NAME       Compile for NAME, repeatable. Names and their short forms are
+                            in target/target.rb.
+        -d, --debug         Build the debug firmware.
+        --no-exceptions     Reject begin/rescue and leave the unwinder out.
+    USAGE
+
+    def self.run(arguments) = new(arguments).run
+
+    def initialize(arguments)
+      @arguments = arguments.dup
+      @command = @arguments.shift
+      @debug = [@arguments.delete("-d"), @arguments.delete("--debug")].any?
+      @exceptions = @arguments.delete("--no-exceptions").nil?
+      @target_options = @arguments.grep(/\A#{Target::OPTION_PREFIX}/)
+      @arguments -= @target_options
+    end
+
+    def run
+      case @command
+      when "compile" then compile
+      else usage
+      end
+    end
+
+    def compile
+      Compiler.clear_output
+      compile_for(Target.select(@target_options), debug: @debug)
+    end
+
+    def compile_for(targets, debug:)
+      Compiler.new(source, targets:, debug:, exceptions: @exceptions).run
+    end
+
+    def source = @arguments[0] || File.expand_path("ref.rb", __dir__)
+
+    def usage
+      warn USAGE
+      2
+    end
+  end
+end
+
+exit BareRubyProt::Cli.run(ARGV)

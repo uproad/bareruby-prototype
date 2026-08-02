@@ -124,7 +124,7 @@ if ! grep -q '#include "bareruby_entry.h"' "$MAIN_SOURCE" ||
 fi
 
 echo "brd-stm32: generate ($TARGET)"
-ruby "$HERE/compile.rb" --target="$TARGET" "${COMPILER_OPTIONS[@]}" "$SOURCE"
+ruby "$HERE/bareruby" compile --target="$TARGET" "${COMPILER_OPTIONS[@]}" "$SOURCE"
 
 SOURCE_LIST="$TARGET_DIRECTORY/source-list.txt"
 [ -f "$SOURCE_LIST" ] || {

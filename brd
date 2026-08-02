@@ -62,7 +62,7 @@ for path in "$PICO_SDK_PATH" "$PICO_TOOLCHAIN_PATH"; do
 done
 
 echo "brd: first stage"
-ruby "$HERE/compile.rb" "${DEBUG[@]}" "${TARGETS[@]}" "$SOURCE"
+ruby "$HERE/bareruby" compile "${DEBUG[@]}" "${TARGETS[@]}" "$SOURCE"
 
 # A directory with a CMakeLists.txt is a board target: the hosted one is built by
 # hand from its manifest and has nothing here to drive.
