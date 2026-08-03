@@ -309,9 +309,30 @@ cd bareruby-prototype
 | `target add` | asks which board this is and writes it into `target.yml` | writes it |
 | `target list` | every board that can be targeted, by family | no |
 
-`build` defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
-takes them from the environment when they are already set. Toolchain output is shown only
-when a step fails.
+`build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
+one directory per API, each named for the version it is:
+
+```text
+.tools/
+├── pico_sdk/
+│   ├── pico-sdk-2.3.0/
+│   ├── arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
+│   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+├── arduino/
+│   └── arduino-cli-1.5.2-rc.1/
+└── stm32cube/                          # CubeIDE's workspace and configuration
+```
+
+`.tools/` is gitignored, being a gigabyte of other people's releases, but it sits under
+the repository all the same: what a build reaches for is the build's, and a checkout that
+has to be told where its own SDK is has been left half-installed. The version is in the
+name because it is part of what a measurement means — moving from pico-sdk 1.5.1 to 2.3.0
+changed every figure recorded below.
+
+A desk that keeps its own copies elsewhere says so through the environment, and what is
+set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT_PATH`,
+and, for the Arduino core, an `arduino-cli` already on `PATH`. Toolchain output is shown
+only when a step fails.
 
 The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
@@ -614,15 +635,17 @@ second stage does.
 Two things are needed, neither of them needing `sudo`.
 
 ```sh
-mkdir -p ~/toolchains/arduino-cli && cd ~/toolchains/arduino-cli
-curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz
-tar xf arduino-cli_latest_Linux_64bit.tar.gz
+mkdir -p .tools/arduino/arduino-cli-1.5.2-rc.1 && cd .tools/arduino/arduino-cli-1.5.2-rc.1
+curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+tar xf arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
 ./arduino-cli core install arduino:avr
 ```
 
 That is 37 MB for the command and 44 MB for the core, which brings avr-gcc, avr-libc and
-avrdude with it. `~/toolchains/arduino-cli` is where `bareruby` looks when the command is
-not already on `PATH`; the core lands in `~/.arduino15` wherever it came from.
+avrdude with it. `.tools/arduino/arduino-cli-1.5.2-rc.1` is where `bareruby` looks when
+the command is not already on `PATH`. The core does not land there: `arduino-cli` keeps
+it in `~/.arduino15`, which is the tool's own arrangement and not this repository's to
+move.
 
 What comes back is `bareruby_program.hex` and `bareruby_program.elf`, beside the sources
 they were made from rather than under whatever name the tool gave them.
@@ -693,9 +716,9 @@ Use **2.3.0** for both boards. RP2350 support arrived in SDK 2.0.0 — 1.5.1 sto
 serves both.
 
 ```sh
-mkdir -p ~/pico
-git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk-2
-git -C ~/pico/pico-sdk-2 submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver
+SDK=.tools/pico_sdk/pico-sdk-2.3.0
+git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git $SDK
+git -C $SDK submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver
 ```
 
 That is 33 MB for the SDK, 25 MB for TinyUSB and 10 MB for the CYW43 driver.
@@ -714,8 +737,10 @@ than a missing dependency, hence initializing it up front.
 `picotool` needs no separate install: SDK 2.x downloads and builds it on demand. Left
 alone it lands inside the target's build tree, which the next first-stage run deletes, so
 `PICOTOOL_FETCH_FROM_GIT_PATH` points it somewhere outside — `bareruby` defaults that to
-`~/pico/picotool` (17 MB, built once). Its libusb-dependent parts are skipped when the
-headers are absent, which costs nothing here: only `.uf2` generation is wanted.
+`.tools/pico_sdk/picotool-2.3.0` (17 MB, built once). Which picotool that is, is the SDK's
+decision rather than this repository's, so it is filed under the SDK's version. Its
+libusb-dependent parts are skipped when the headers are absent, which costs nothing here:
+only `.uf2` generation is wanted.
 
 Earlier work in this repository used **1.5.1**, which generates the `.uf2` with the
 `elf2uf2` bundled in the SDK and so needs no picotool. That was the only reason to stay
@@ -728,7 +753,7 @@ Download ARM's official release and unpack it. It bundles newlib, which is what
 pico-sdk needs.
 
 ```sh
-mkdir -p ~/toolchains && cd ~/toolchains
+mkdir -p .tools/pico_sdk && cd .tools/pico_sdk
 curl -fsSLO https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 tar xf arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 ```
@@ -758,9 +783,9 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 ### Building the firmware
 
 ```sh
+export PICO_SDK_PATH=$PWD/.tools/pico_sdk/pico-sdk-2.3.0
+export PICO_TOOLCHAIN_PATH=$PWD/.tools/pico_sdk/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cd build/pico-pico_sdk-thumbv6m-none-eabi
-export PICO_SDK_PATH=$HOME/pico/pico-sdk-2
-export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
 cmake --build build
 ```
