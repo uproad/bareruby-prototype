@@ -1,7 +1,9 @@
 # STM32 environment setup
 
-BareRuby does not include STM32Cube HAL, CMSIS, startup code, linker scripts, or a
-generated STM32 project. Install STM32CubeIDE and prepare a user-owned CubeIDE project
+BareRuby tracks no STM32Cube HAL, CMSIS, startup code, linker script, or generated STM32
+project: they are the desk's, and none of them is committed here. They are still kept
+under `.tools/stm32cube/`, which is where everything a build reaches for is kept and
+where nothing is committed from. Install STM32CubeIDE and prepare a CubeIDE project there
 before building STM32 firmware.
 
 This guide describes the current NUCLEO-F446RE target on Ubuntu and WSL2.
@@ -28,15 +30,16 @@ export PATH=/path/to/ruby-4.0/bin:$PATH
 
 STM32CubeIDE is required for the final STM32 build. It supplies the ARM GNU toolchain,
 the STM32-aware Eclipse builder, and `headless-build.sh`. Download the Linux installer
-from STMicroelectronics, install it inside Ubuntu or WSL, and verify the headless
-builder. For example:
+from STMicroelectronics, install it inside Ubuntu or WSL under `.tools/stm32cube/`, and
+verify the headless builder:
 
 ```sh
-test -x /opt/st/stm32cubeide_2.2.0/headless-build.sh
+test -x .tools/stm32cube/stm32cubeide_2.2.0/headless-build.sh
 ```
 
-BareRuby searches `PATH` and `/opt/st/stm32cubeide_*` automatically. A nonstandard
-installation can be selected explicitly:
+BareRuby looks there first, then in `PATH`, then under `/opt/st/stm32cubeide_*`, which is
+where ST's installer puts it when told nothing. An installation anywhere else can be
+named explicitly:
 
 ```sh
 export STM32CUBEIDE=/path/to/stm32cubeide/headless-build.sh
@@ -54,18 +57,20 @@ install STM32CubeProgrammer for Linux and locate its CLI:
 test -x "$HOME/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI"
 ```
 
-Alternatively, open the external project in STM32CubeIDE and use its integrated
-ST-LINK Run or Debug support.
+Alternatively, open the project in STM32CubeIDE and use its integrated ST-LINK Run or
+Debug support.
 
-## Prepare an external STM32 project
+## Prepare the STM32 project
 
-The STM32 project must live outside the BareRuby repository. Generate it with
-STM32CubeIDE or a compatible STM32CubeMX release, then place or copy the complete
-generated project into a user-owned directory. For example:
+Generate it with STM32CubeIDE or a compatible STM32CubeMX release, then place or copy the
+complete generated project under `.tools/stm32cube/`. For example:
 
 ```text
-/home/user/bareruby-stm32/F446_Sample
+.tools/stm32cube/F446_Sample
 ```
+
+One project there is found without being named. A desk keeping several, or keeping one
+somewhere else, says which in `target.yml` as `options.cube_project`.
 
 The directory must contain at least:
 
@@ -168,5 +173,5 @@ session:
 sudo usermod -aG dialout "$USER"
 ```
 
-Continue with [build.md](build.md) after Ruby, STM32CubeIDE, the external project, and
+Continue with [build.md](build.md) after Ruby, STM32CubeIDE, the Cube project, and
 ST-LINK are ready.

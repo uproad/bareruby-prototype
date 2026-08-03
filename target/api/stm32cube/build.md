@@ -1,14 +1,14 @@
 # Build, flash, and run STM32 firmware
 
 Complete [setup.md](setup.md) first. The commands below assume that STM32CubeIDE is
-installed and that a complete user-owned CubeIDE project has been generated outside the
-BareRuby repository.
+installed and that a complete CubeIDE project has been generated under
+`.tools/stm32cube/`.
 
 The examples use these directories:
 
 ```text
 /home/user/bareruby/bareruby-prototype
-/home/user/bareruby/bareruby-stm32/F446_Sample
+/home/user/bareruby/bareruby-prototype/.tools/stm32cube/F446_Sample
 ```
 
 Replace them with the paths used on the local machine.
@@ -20,13 +20,13 @@ Change to the BareRuby repository and verify the required tools:
 ```sh
 cd /home/user/bareruby/bareruby-prototype
 ruby --version
-test -x /opt/st/stm32cubeide_2.2.0/headless-build.sh
+test -x .tools/stm32cube/stm32cubeide_2.2.0/headless-build.sh
 ```
 
 Build `heartbeat.rb` for the external project:
 
 ```sh
-STM32_CUBE_PROJECT=/home/user/bareruby/bareruby-stm32/F446_Sample \
+STM32_CUBE_PROJECT=.tools/stm32cube/F446_Sample \
 STM32CUBEIDE=/opt/st/stm32cubeide_2.2.0/headless-build.sh \
 ./brd-stm32 samples/heartbeat.rb --no-exceptions
 ```
@@ -35,7 +35,7 @@ The project can also be supplied as a command-line option:
 
 ```sh
 ./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
+  --cube-project=.tools/stm32cube/F446_Sample \
   --no-exceptions
 ```
 
@@ -43,14 +43,14 @@ The default configuration is `Debug`. A successful build ends with output simila
 
 ```text
 Build Finished. 0 errors, 0 warnings.
-brd-stm32: firmware: /home/user/bareruby/bareruby-stm32/F446_Sample/Debug/F446_Sample.elf
+brd-stm32: firmware: .tools/stm32cube/F446_Sample/Debug/F446_Sample.elf
 ```
 
 Build a Release image with:
 
 ```sh
 ./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
+  --cube-project=.tools/stm32cube/F446_Sample \
   --configuration=Release --no-exceptions
 ```
 
@@ -59,14 +59,14 @@ the CubeIDE builder:
 
 ```sh
 ./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
+  --cube-project=.tools/stm32cube/F446_Sample \
   --no-exceptions --generate-only
 ```
 
 Each run deletes and recreates `Core/Src/bareruby_*.cpp` and overwrites
-`Core/Inc/bareruby_*.h` in the external project. Ordinary CubeMX and user files are not
-changed. The external project must be writable, and these generated files should
-normally be ignored by its version control rules.
+`Core/Inc/bareruby_*.h` in the Cube project. Ordinary CubeMX and user files are not
+changed. The project must be writable. Nothing under `.tools/` is committed here, so
+these generated files need no version control rules of their own.
 
 ## Flash with STM32CubeProgrammer
 
@@ -81,7 +81,7 @@ Write, verify, and reset the Debug ELF:
 ```sh
 "$HOME/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI" \
   -c port=SWD \
-  -w /home/user/bareruby/bareruby-stm32/F446_Sample/Debug/F446_Sample.elf \
+  -w .tools/stm32cube/F446_Sample/Debug/F446_Sample.elf \
   -v \
   -rst
 ```
@@ -91,7 +91,7 @@ verification. The `-rst` option resets the MCU and starts the new firmware.
 
 ## Flash from STM32CubeIDE
 
-Open or import the same external `F446_Sample` project in STM32CubeIDE. Select its Debug
+Open or import the same `F446_Sample` project in STM32CubeIDE. Select its Debug
 or Release configuration, create an STM32 C/C++ Application Run configuration using
 ST-LINK over SWD, and run it. BareRuby-generated files are ordinary sources inside the
 CubeIDE project, so the IDE writes the same ELF produced by the headless build.
