@@ -1,16 +1,17 @@
 # STM32 platform
 
-See [setup.md](setup.md) for required software and external CubeIDE project generation.
+See [setup.md](setup.md) for required software and CubeMX project generation.
 See [build.md](build.md) for build, flash, execution, serial, and troubleshooting steps.
 
-This binding keeps the STM32 ownership boundary explicit without bundling an
+This binding keeps the STM32 ownership boundary explicit without committing an
 STM32Cube project:
 
 - CubeMX owns the `.ioc` file, clock tree, pin mux, HAL initialization, startup,
-  linker scripts, and the STM32CubeIDE project.
+  linker script, and the project metadata.
 - BareRuby pass 12 owns the generated application, runtime, and HAL wrappers.
-- `brd-stm32` copies only the generated translation units reached by the Ruby program
-  into a user-supplied Cube project and asks STM32CubeIDE to perform the final link.
+- The second stage copies only the translation units the Ruby program reached for into
+  the Cube project, and links them against the HAL with the ARM GNU toolchain the
+  freestanding boards already use. STM32CubeIDE is not involved.
 
 The first target expects a NUCLEO-F446RE project that configures LD2, USART2 on PA2/PA3,
 and I2C1 on PB8/PB9. USART2 is connected to the board's ST-LINK virtual COM port. I2C1
@@ -18,21 +19,23 @@ is configured without internal pulls, so the bus requires external pull-up resis
 
 ## Workflow
 
-1. Install Ruby and STM32CubeIDE, generate the external project, and add the preserved
-   CubeMX entry hook described in [setup.md](setup.md).
-2. Run `brd-stm32` as described in [build.md](build.md). It generates the application,
-   synchronizes only `bareruby_*` files, and asks CubeIDE to produce the ELF.
-3. Write the ELF with STM32CubeProgrammer or CubeIDE, then observe LD2 or USART2 as
-   appropriate for the selected sample.
+1. Install Ruby, the ARM toolchain and the HAL, put a Cube project under
+   `.tools/stm32cube/`, and add the preserved CubeMX entry hook described in
+   [setup.md](setup.md).
+2. Run `./bareruby build --target=f446` as described in [build.md](build.md). It
+   generates the application, synchronizes only `bareruby_*` files, writes the makefile,
+   and links the ELF.
+3. Write the ELF with STM32CubeProgrammer, then observe LD2 or USART2 as appropriate for
+   the selected sample.
 
 ## Changing the Cube configuration
 
-Open the external `.ioc` file in STM32CubeIDE or a compatible CubeMX release, change
-the pins or peripherals, and generate code normally. The integration in `main.c` is in
-CubeMX `USER CODE` sections, so regeneration preserves both the `bareruby_entry.h`
-include and the call made after all `MX_*_Init` functions.
+Open the `.ioc` file in STM32CubeMX, change the pins or peripherals, and generate code
+normally. The integration in `main.c` is in CubeMX `USER CODE` sections, so regeneration
+preserves both the `bareruby_entry.h` include and the call made after all `MX_*_Init`
+functions.
 
-Run `brd-stm32` again after regeneration. The current NUCLEO-F446RE binding expects
+Build again after regeneration. The current NUCLEO-F446RE binding expects
 `LD2_GPIO_Port`, `LD2_Pin`, `huart2`, and `hi2c1`. If those names change, its pass-12
 STM32 wrapper must change with them.
 
@@ -54,10 +57,11 @@ two forms. Longer output prefixes on a read are rejected instead of silently cha
 the transaction. PWM, ADC, and GPIO interrupts are not part of this first STM32 slice.
 
 The generated LED, UART receive, and I2C firmware translation units have been compiled
-and linked with the STM32CubeIDE ARM GNU toolchain against a user-owned STM32F4 HAL
-project. Headless builds, SWD programming, LD2, and USART2 output have been exercised on
-a physical NUCLEO-F446RE; I2C has been linked but not verified on hardware. The CubeIDE
-project itself is deliberately not part of this repository.
+and linked against a user-owned STM32F4 HAL project. SWD programming, LD2, and USART2
+output have been exercised on a physical NUCLEO-F446RE; I2C has been linked but not
+verified on hardware. Those hardware runs predate the move off STM32CubeIDE and were
+built by its headless builder; the current second stage has been verified by building,
+not by flashing. The Cube project itself is deliberately not committed here.
 
 ## Sample compatibility notes
 
@@ -104,5 +108,5 @@ Samples not yet supported unchanged:
 - `arena.rb` — tests exception-based arena recovery; the documented STM32 build disables
   C++ exceptions.
 
-Clean CubeIDE links have been verified for representative programs from each supported
+Clean links have been verified for representative programs from each supported
 runtime/peripheral group: `heartbeat.rb`, `string.rb`, `uart_receive.rb`, and `i2c.rb`.

@@ -6,7 +6,7 @@ module BareRubyProt
   # one probe attached there is nothing to say.
   #
   # This path has never been run: it is written from what STM32CubeProgrammer documents,
-  # and the CubeIDE builds that produced the firmware it writes were flashed by hand.
+  # and the firmware that has reached a board was flashed by hand.
   module Stm32CubeFlash
     PROGRAMMER = "STM32_Programmer_CLI"
     HOME_INSTALL = "~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI"

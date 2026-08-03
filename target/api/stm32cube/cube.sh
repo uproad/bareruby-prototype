@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Synchronize one generated program into a user-owned CubeIDE project and build it.
+# Synchronize one generated program into a CubeMX project and build it.
 #
 #     cube.sh TARGET_DIRECTORY PROJECT_DIRECTORY CONFIGURATION
 #
-# The CubeIDE project owns reset, clocks, peripheral initialization, the linker script
-# and the final link. Only the translation units this program reached for are copied in,
-# and only files this bridge owns are replaced.
+# The CubeMX project owns reset, clocks, peripheral initialization, the linker script and
+# the startup file. Only the translation units this program reached for are copied in, and
+# only files this bridge owns are replaced.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -140,67 +140,33 @@ for generated_header in "${GENERATED_HEADERS[@]}"; do
     install -m 0644 "$generated_header" "$PROJECT_DIRECTORY/Core/Inc/$(basename "$generated_header")"
 done
 
+install -m 0644 "$TARGET_DIRECTORY/Makefile" "$PROJECT_DIRECTORY/Makefile"
+
 echo "bareruby: synchronized generated sources into $PROJECT_NAME"
 
-find_cubeide() {
-    if [ -n "${STM32CUBEIDE:-}" ]; then
-        if [ -x "$STM32CUBEIDE" ]; then
-            printf '%s\n' "$STM32CUBEIDE"
-            return
-        fi
-        echo "bareruby: STM32CUBEIDE is not executable: $STM32CUBEIDE" >&2
-        return 1
-    fi
-
-    # What this repository keeps comes first, then what the desk installed for itself.
-    local candidate
-    for candidate in "$TOOLS"/stm32cubeide_*/headless-build.sh \
-                     "$TOOLS"/stm32cubeide_*/stm32cubeide \
-                     "$(command -v headless-build.sh || true)" \
-                     "$(command -v stm32cubeide || true)" \
-                     /opt/st/stm32cubeide_*/headless-build.sh \
-                     /opt/st/stm32cubeide_*/stm32cubeide; do
-        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-            printf '%s\n' "$candidate"
-            return
-        fi
-    done
-    return 1
+# CubeMX generates sources, not a build. The build it names is STM32CubeIDE, an Eclipse
+# application that cannot be had without an ST account — so what it would have compiled
+# is compiled here instead, by the ARM GNU toolchain the freestanding boards already use.
+TOOLCHAIN="${ARM_TOOLCHAIN_PATH:-$ROOT/.tools/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}/bin/arm-none-eabi"
+[ -x "$TOOLCHAIN-g++" ] || {
+    echo "bareruby: no ARM toolchain at $TOOLCHAIN-g++" >&2
+    echo "          Put one under .tools/, or name one in ARM_TOOLCHAIN_PATH." >&2
+    exit 1
 }
 
-if ! CUBEIDE=$(find_cubeide); then
-    echo "bareruby: STM32CubeIDE was not found. Set STM32CUBEIDE." >&2
+# A toolchain is chatty even when everything is fine, so its output is kept for the
+# failure it explains and said nothing about otherwise.
+echo "bareruby: build ($PROJECT_NAME/$CONFIGURATION)"
+if ! BUILD_OUTPUT=$(make -C "$PROJECT_DIRECTORY" -j "$(nproc)" \
+                        CONFIGURATION="$CONFIGURATION" TOOLCHAIN="$TOOLCHAIN" 2>&1); then
+    printf '%s\n' "$BUILD_OUTPUT" >&2
+    echo "bareruby: the second stage failed in $PROJECT_DIRECTORY" >&2
     exit 1
 fi
 
-if [ -z "${STM32CUBEIDE_WORKSPACE:-}" ]; then
-    project_checksum=$(printf '%s\n' "$PROJECT_DIRECTORY" | cksum)
-    project_checksum=${project_checksum%% *}
-    STM32CUBEIDE_WORKSPACE="$TOOLS/workspace/$PROJECT_NAME-$project_checksum"
-fi
-if [ -z "${STM32CUBEIDE_CONFIGURATION:-}" ]; then
-    ide_checksum=$(printf '%s\n' "$CUBEIDE" | cksum)
-    ide_checksum=${ide_checksum%% *}
-    STM32CUBEIDE_CONFIGURATION="$TOOLS/configuration/$ide_checksum"
-fi
-mkdir -p "$STM32CUBEIDE_WORKSPACE" "$STM32CUBEIDE_CONFIGURATION"
-
-echo "bareruby: build ($PROJECT_NAME/$CONFIGURATION)"
-if [ "$(basename "$CUBEIDE")" = headless-build.sh ]; then
-    "$CUBEIDE" -configuration "$STM32CUBEIDE_CONFIGURATION" \
-        -data "$STM32CUBEIDE_WORKSPACE" -import "$PROJECT_DIRECTORY" \
-        -cleanBuild "$PROJECT_NAME/$CONFIGURATION"
-else
-    "$CUBEIDE" --launcher.suppressErrors -nosplash \
-        -application org.eclipse.cdt.managedbuilder.core.headlessbuild \
-        -configuration "$STM32CUBEIDE_CONFIGURATION" \
-        -data "$STM32CUBEIDE_WORKSPACE" -import "$PROJECT_DIRECTORY" \
-        -cleanBuild "$PROJECT_NAME/$CONFIGURATION"
-fi
-
-ARTIFACT="$PROJECT_DIRECTORY/$CONFIGURATION/$PROJECT_NAME.elf"
+ARTIFACT="$PROJECT_DIRECTORY/$CONFIGURATION/bareruby_program.elf"
 [ -f "$ARTIFACT" ] || {
-    echo "bareruby: CubeIDE completed without producing $ARTIFACT" >&2
+    echo "bareruby: the build completed without producing $ARTIFACT" >&2
     exit 1
 }
 

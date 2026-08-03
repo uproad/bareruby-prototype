@@ -10,7 +10,7 @@ FreeRTOS owns `main` and calls `app_main`, which puts this binding in the same s
 the STM32Cube one: the program is entered from outside, so `PROGRAM_FILE` is named after
 the program rather than after an entry point this side does not own. The build declares
 its sources to `idf_component_register` instead of writing a build file, the way
-`source-list.txt` already does for CubeIDE.
+`source-list.txt` already does for the Cube project.
 
 `machine/` carries what each development board is called and how its LED is reached: a
 plain GPIO on some, an addressable RGB device on others.

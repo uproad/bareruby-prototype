@@ -15,17 +15,21 @@ module BareRubyProt
     # 1.5.1 to 2.3.0 changed every size this repository has recorded, so a figure without
     # the version it was measured under says less than it appears to. A desk that keeps
     # its own copies elsewhere says so through the environment, which still wins.
-    TOOLS = File.expand_path("../../../.tools/pico_sdk", __dir__)
+    TOOLS = File.expand_path("../../../.tools", __dir__)
 
     # One SDK serves every board: RP2350 needs 2.0.0 or newer, and RP2040 is still
     # supported there, so there is no reason to keep a second checkout for it.
+    #
+    # The ARM toolchain sits beside the per-API directories rather than inside this one,
+    # because the STM32 boards are built by the same compiler — a thing two APIs reach
+    # for is not either one's.
     PATHS = {
-      "PICO_SDK_PATH" => "pico-sdk-2.3.0",
+      "PICO_SDK_PATH" => "pico_sdk/pico-sdk-2.3.0",
       "PICO_TOOLCHAIN_PATH" => "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi",
       # SDK 2.x builds picotool on demand. Left alone it lands inside the target's build
       # tree, which the next first-stage run deletes, so it is kept outside of it instead.
       # Which picotool that is, is the SDK's decision, so it carries the SDK's version.
-      "PICOTOOL_FETCH_FROM_GIT_PATH" => "picotool-2.3.0"
+      "PICOTOOL_FETCH_FROM_GIT_PATH" => "pico_sdk/picotool-2.3.0"
     }.freeze
 
     IMAGES = ["bareruby_program.uf2", "bareruby_program.elf"].freeze
