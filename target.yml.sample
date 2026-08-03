@@ -67,15 +67,17 @@ bareruby:
     #   api: pico_sdk
     #   triple: thumbv8m.main-none-eabihf
 
-    # The CubeIDE project is generated and configured by the user and lives outside this
-    # repository, so only this file knows where it is. boards: takes ST-LINK probe
-    # serials rather than board serials, because SWD is reached through the probe.
+    # The CubeIDE project is generated and configured by the user, and sits under
+    # .tools/stm32cube/ with everything else a build reaches for. One there needs no
+    # naming; cube_project is for a desk keeping several, or keeping its own elsewhere.
+    # boards: takes ST-LINK probe serials rather than board serials, because SWD is
+    # reached through the probe.
     # - machine: nucleo_f446re
     #   api: stm32cube
     #   triple: thumbv7em-none-eabihf
     #   options:
-    #     cube_project: /path/to/F446_Sample
     #     configuration: Debug
+    #     cube_project: /path/to/F446_Sample
 
     # boards: takes serial ports here, because that is what a board reached through the
     # Arduino core is written to over. With nothing here the one attached board this

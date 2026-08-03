@@ -4,8 +4,8 @@
 #     cube.sh TARGET_DIRECTORY PROJECT_DIRECTORY CONFIGURATION
 #
 # The CubeIDE project owns reset, clocks, peripheral initialization, the linker script
-# and the final link, and it lives outside this repository. Only the translation units
-# this program reached for are copied in, and only files this bridge owns are replaced.
+# and the final link. Only the translation units this program reached for are copied in,
+# and only files this bridge owns are replaced.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -15,18 +15,34 @@ TARGET_DIRECTORY=$1
 PROJECT_DIRECTORY=$2
 CONFIGURATION=${3:-Debug}
 
-[ -n "$PROJECT_DIRECTORY" ] || {
-    echo "bareruby: the stm32cube target needs options.cube_project in target.yml" >&2
-    exit 1
-}
+TOOLS="$ROOT/.tools/stm32cube"
+
+# CubeMX generates the project rather than this repository, but a build reaches for it,
+# so it belongs where everything else a build reaches for is kept. One project there
+# needs no naming. A desk that keeps several, or keeps its own somewhere else, says which
+# in target.yml — the same shape as an SDK path in the environment.
+if [ -z "$PROJECT_DIRECTORY" ]; then
+    FOUND=()
+    for candidate in "$TOOLS"/*/; do
+        [ -f "$candidate.cproject" ] && FOUND+=("${candidate%/}")
+    done
+    case ${#FOUND[@]} in
+        1) PROJECT_DIRECTORY=${FOUND[0]} ;;
+        0)
+            echo "bareruby: no CubeIDE project under $TOOLS" >&2
+            echo "          Put one there, or name one as options.cube_project in target.yml." >&2
+            exit 1
+            ;;
+        *)
+            echo "bareruby: several CubeIDE projects under $TOOLS:" >&2
+            printf '            %s\n' "${FOUND[@]##*/}" >&2
+            echo "          Name one as options.cube_project in target.yml." >&2
+            exit 1
+            ;;
+    esac
+fi
 
 PROJECT_DIRECTORY=$(realpath -m "$PROJECT_DIRECTORY")
-case "$PROJECT_DIRECTORY/" in
-    "$ROOT/"*)
-        echo "bareruby: the CubeIDE project must be outside the BareRuby repository" >&2
-        exit 1
-        ;;
-esac
 [ -f "$PROJECT_DIRECTORY/.project" ] || {
     echo "bareruby: not a CubeIDE project: $PROJECT_DIRECTORY" >&2
     exit 1
@@ -136,8 +152,11 @@ find_cubeide() {
         return 1
     fi
 
+    # What this repository keeps comes first, then what the desk installed for itself.
     local candidate
-    for candidate in "$(command -v headless-build.sh || true)" \
+    for candidate in "$TOOLS"/stm32cubeide_*/headless-build.sh \
+                     "$TOOLS"/stm32cubeide_*/stm32cubeide \
+                     "$(command -v headless-build.sh || true)" \
                      "$(command -v stm32cubeide || true)" \
                      /opt/st/stm32cubeide_*/headless-build.sh \
                      /opt/st/stm32cubeide_*/stm32cubeide; do
@@ -157,12 +176,12 @@ fi
 if [ -z "${STM32CUBEIDE_WORKSPACE:-}" ]; then
     project_checksum=$(printf '%s\n' "$PROJECT_DIRECTORY" | cksum)
     project_checksum=${project_checksum%% *}
-    STM32CUBEIDE_WORKSPACE="$ROOT/.tools/stm32cube/workspace/$PROJECT_NAME-$project_checksum"
+    STM32CUBEIDE_WORKSPACE="$TOOLS/workspace/$PROJECT_NAME-$project_checksum"
 fi
 if [ -z "${STM32CUBEIDE_CONFIGURATION:-}" ]; then
     ide_checksum=$(printf '%s\n' "$CUBEIDE" | cksum)
     ide_checksum=${ide_checksum%% *}
-    STM32CUBEIDE_CONFIGURATION="$ROOT/.tools/stm32cube/configuration/$ide_checksum"
+    STM32CUBEIDE_CONFIGURATION="$TOOLS/configuration/$ide_checksum"
 fi
 mkdir -p "$STM32CUBEIDE_WORKSPACE" "$STM32CUBEIDE_CONFIGURATION"
 
