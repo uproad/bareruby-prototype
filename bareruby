@@ -31,13 +31,13 @@ module BareRubyProt
         compile SOURCE.rb   Ruby to C++, into build/<composition>/.
                             Reads no configuration; without --target the target is the
                             machine doing the compiling.
-        build   SOURCE.rb   compile, then run each API's toolchain over what it produced,
+        build   SOURCE.rb   compile, then run each binding's toolchain over what it produced,
                             leaving the artifact beside its sources.
         flash               Write what build left onto the boards that take it.
         deploy  SOURCE.rb   build, then flash.
-        target add          Ask which board this is, and write the answer into
+        target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
-        target list         Every board that can be targeted, by family.
+        target list         Every machine that can be targeted, by family.
 
       Options:
         --target=NAME       Work on NAME, repeatable. Names and their short forms are in

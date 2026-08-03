@@ -307,8 +307,8 @@ cd bareruby-prototype
 | `build` | `compile`, then each binding's toolchain, leaving the artifact beside its sources | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
-| `target add` | asks which board this is and writes it into `target.yml` | writes it |
-| `target list` | every board that can be targeted, by family | no |
+| `target add` | asks which machine this is and writes it into `target.yml` | writes it |
+| `target list` | every machine that can be targeted, by family | no |
 
 `build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
 one directory per binding, each named for the version it is:
@@ -360,7 +360,7 @@ than of the project. It is not meant to be written by hand either — `./barerub
 add` asks, and writes the answer:
 
 ```
-Which board is it?
+Which machine is it?
   1) Raspberry Pi Pico, through pico-sdk
   2) ST NUCLEO, through the STM32Cube HAL
   3) This machine, with every peripheral traced instead of driven

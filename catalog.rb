@@ -6,11 +6,13 @@ require_relative "deployment"
 
 module BareRubyProt
   # Asking, rather than being told. A composition takes three answers and none of them is
-  # a thing to be looked up, so what is asked for is the board — first roughly, by the
+  # a thing to be looked up, so what is asked for is the machine — first roughly, by the
   # family its maker sells it in, then exactly — and the three follow from the answer.
   #
-  # What to ask is data, in target-catalog.yml, so a board that does not exist yet is
-  # reached by adding to that file rather than to this one.
+  # It asks for a machine rather than a board because not every one of them is a board:
+  # this desk itself is an entry, with every peripheral traced instead of driven. What to
+  # ask is data, in target-catalog.yml, so a machine that does not exist yet is reached by
+  # adding to that file rather than to this one.
   class Catalog
     FILE = File.expand_path("target-catalog.yml", __dir__)
 
@@ -32,7 +34,7 @@ module BareRubyProt
     end
 
     def self.add
-      family = choose("Which board is it?", families) { |entry| entry["label"] }
+      family = choose("Which machine is it?", families) { |entry| entry["label"] }
       name = choose("Which one?", family["targets"]) { |entry| Target[entry].name }
       record = Deployment.spelling(Target[name])
       family["asks"].each { |ask| gather(record, answer(ask)) }
