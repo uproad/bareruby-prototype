@@ -16,9 +16,10 @@ module BareRubyProt
   # What comes back is left where cmake's is: beside the sources it was made from, under a
   # name that does not carry how the tool arranges itself.
   module ArduinoToolchain
-    # arduino-cli installs itself wherever it is unpacked. This is where the README puts
-    # it; one already on PATH wins, because a desk that has it has said so.
-    INSTALL = "~/toolchains/arduino-cli"
+    # arduino-cli installs itself wherever it is unpacked, so it is unpacked under the
+    # repository, beside the version it is — a core's output is the version of the tool
+    # that produced it. One already on PATH wins, because a desk that has it has said so.
+    INSTALL = File.expand_path("../../../.tools/arduino/arduino-cli-1.5.2-rc.1", __dir__)
 
     IMAGES = {
       "bareruby_program.ino.hex" => "bareruby_program.hex",
@@ -46,7 +47,7 @@ module BareRubyProt
       end
     end
 
-    def self.environment = { "PATH" => "#{ENV.fetch('PATH', '')}:#{File.expand_path(INSTALL)}" }
+    def self.environment = { "PATH" => "#{ENV.fetch('PATH', '')}:#{INSTALL}" }
 
     def self.artifact(directory) = File.join(directory, IMAGES.values.first)
   end

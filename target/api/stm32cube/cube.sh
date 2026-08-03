@@ -157,12 +157,12 @@ fi
 if [ -z "${STM32CUBEIDE_WORKSPACE:-}" ]; then
     project_checksum=$(printf '%s\n' "$PROJECT_DIRECTORY" | cksum)
     project_checksum=${project_checksum%% *}
-    STM32CUBEIDE_WORKSPACE="$ROOT/.tools/stm32cubeide-workspace/$PROJECT_NAME-$project_checksum"
+    STM32CUBEIDE_WORKSPACE="$ROOT/.tools/stm32cube/workspace/$PROJECT_NAME-$project_checksum"
 fi
 if [ -z "${STM32CUBEIDE_CONFIGURATION:-}" ]; then
     ide_checksum=$(printf '%s\n' "$CUBEIDE" | cksum)
     ide_checksum=${ide_checksum%% *}
-    STM32CUBEIDE_CONFIGURATION="$ROOT/.tools/stm32cubeide-configuration/$ide_checksum"
+    STM32CUBEIDE_CONFIGURATION="$ROOT/.tools/stm32cube/configuration/$ide_checksum"
 fi
 mkdir -p "$STM32CUBEIDE_WORKSPACE" "$STM32CUBEIDE_CONFIGURATION"
 
