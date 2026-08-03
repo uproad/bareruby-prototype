@@ -439,7 +439,7 @@ module BareRubyProt
 
     def self.machine(machine) = MACHINES.fetch(machine.key)
 
-    # The CubeIDE project owns main and calls into the program, so this side names its
+    # The CubeMX project owns main and calls into the program, so this side names its
     # translation unit after the program rather than after an entry point it does not own.
     PROGRAM_FILE = "bareruby_program.cpp"
 

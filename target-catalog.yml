@@ -52,18 +52,24 @@ bareruby:
           optional: true
 
     - key: stm32
-      label: ST NUCLEO, through STM32Cube and CubeIDE
+      label: ST NUCLEO, through the STM32Cube HAL
       targets:
         - stm32-nucleo-f446re
       asks:
         - key: options.cube_project
-          label: Path to the CubeIDE project this is built in
+          label: Path to the CubeMX project this is built in
           kind: path
+          optional: true
           hint: >-
-            Generated and configured with STM32CubeMX or STM32CubeIDE, outside this
-            repository. See target/api/stm32cube/setup.md.
+            Leave this empty. The project is generated and configured with STM32CubeMX or
+            STM32CubeIDE and kept under .tools/stm32cube/, where the one that is there is
+            found without being named — which is what keeps a path this long out of a file
+            that is read every build.
+
+            Answer only when the desk keeps several projects there, or keeps its own
+            somewhere else. See target/api/stm32cube/setup.md.
         - key: options.configuration
-          label: CubeIDE build configuration
+          label: How to optimize this build
           kind: choice
           choices:
             - Debug

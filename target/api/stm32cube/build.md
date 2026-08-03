@@ -1,72 +1,61 @@
 # Build, flash, and run STM32 firmware
 
-Complete [setup.md](setup.md) first. The commands below assume that STM32CubeIDE is
-installed and that a complete user-owned CubeIDE project has been generated outside the
-BareRuby repository.
+Complete [setup.md](setup.md) first. The commands below assume that the ARM toolchain,
+the STM32Cube HAL and a CubeMX project are under `.tools/stm32cube/`.
 
 The examples use these directories:
 
 ```text
 /home/user/bareruby/bareruby-prototype
-/home/user/bareruby/bareruby-stm32/F446_Sample
+/home/user/bareruby/bareruby-prototype/.tools/stm32cube/F446_Sample
 ```
 
 Replace them with the paths used on the local machine.
 
 ## Build a sample
 
-Change to the BareRuby repository and verify the required tools:
-
 ```sh
 cd /home/user/bareruby/bareruby-prototype
-ruby --version
-test -x /opt/st/stm32cubeide_2.2.0/headless-build.sh
+./bareruby build --target=f446 samples/heartbeat.rb --no-exceptions
 ```
 
-Build `heartbeat.rb` for the external project:
+The project is not named on the command line. One Cube project under
+`.tools/stm32cube/` is found without being named; a desk keeping several, or keeping one
+elsewhere, says which in `target.yml`:
 
-```sh
-STM32_CUBE_PROJECT=/home/user/bareruby/bareruby-stm32/F446_Sample \
-STM32CUBEIDE=/opt/st/stm32cubeide_2.2.0/headless-build.sh \
-./brd-stm32 samples/heartbeat.rb --no-exceptions
+```yaml
+    - machine: nucleo_f446re
+      api: stm32cube
+      triple: thumbv7em-none-eabihf
+      options:
+        configuration: Debug
+        cube_project: /path/to/F446_Sample   # only when it is not the one under .tools/
 ```
 
-The project can also be supplied as a command-line option:
-
-```sh
-./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
-  --no-exceptions
-```
-
-The default configuration is `Debug`. A successful build ends with output similar to:
+A successful build says three things and nothing else:
 
 ```text
-Build Finished. 0 errors, 0 warnings.
-brd-stm32: firmware: /home/user/bareruby/bareruby-stm32/F446_Sample/Debug/F446_Sample.elf
+bareruby: synchronized generated sources into F446_Sample
+bareruby: build (F446_Sample/Debug)
+bareruby: firmware: build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/bareruby_program.elf
 ```
 
-Build a Release image with:
+The compiler is chatty even when it succeeds, so its output is kept for the failure it
+explains and shown only then.
+
+`options.configuration` picks how the C and C++ are optimized: `Debug` builds with
+`-Og -g3`, `Release` with `-O2`. Both leave the ELF in the same place.
+
+Use `compile` instead of `build` to generate the C++ and stop before the toolchain runs:
 
 ```sh
-./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
-  --configuration=Release --no-exceptions
+./bareruby compile --target=f446 samples/heartbeat.rb --no-exceptions
 ```
 
-Use `--generate-only` to compile Ruby and synchronize the generated C++ without running
-the CubeIDE builder:
-
-```sh
-./brd-stm32 samples/heartbeat.rb \
-  --cube-project=/home/user/bareruby/bareruby-stm32/F446_Sample \
-  --no-exceptions --generate-only
-```
-
-Each run deletes and recreates `Core/Src/bareruby_*.cpp` and overwrites
-`Core/Inc/bareruby_*.h` in the external project. Ordinary CubeMX and user files are not
-changed. The external project must be writable, and these generated files should
-normally be ignored by its version control rules.
+Each build deletes and recreates `Core/Src/bareruby_*.cpp`, overwrites
+`Core/Inc/bareruby_*.h`, and writes a `Makefile` in the Cube project. Ordinary CubeMX and
+user files are not changed. The project must be writable. Nothing under `.tools/` is
+committed here, so these generated files need no version control rules of their own.
 
 ## Flash with STM32CubeProgrammer
 
@@ -76,12 +65,12 @@ Connect the NUCLEO board and verify that ST-LINK is visible:
 lsusb
 ```
 
-Write, verify, and reset the Debug ELF:
+Write, verify, and reset the ELF:
 
 ```sh
 "$HOME/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI" \
   -c port=SWD \
-  -w /home/user/bareruby/bareruby-stm32/F446_Sample/Debug/F446_Sample.elf \
+  -w build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/bareruby_program.elf \
   -v \
   -rst
 ```
@@ -91,10 +80,10 @@ verification. The `-rst` option resets the MCU and starts the new firmware.
 
 ## Flash from STM32CubeIDE
 
-Open or import the same external `F446_Sample` project in STM32CubeIDE. Select its Debug
-or Release configuration, create an STM32 C/C++ Application Run configuration using
+A desk that has STM32CubeIDE can open or import the `F446_Sample` project in it, select a
+Debug or Release configuration, create an STM32 C/C++ Application Run configuration using
 ST-LINK over SWD, and run it. BareRuby-generated files are ordinary sources inside the
-CubeIDE project, so the IDE writes the same ELF produced by the headless build.
+project, so the IDE builds and writes an equivalent ELF. Nothing here needs the IDE.
 
 ## Observe the program
 
@@ -130,18 +119,30 @@ Exit picocom with `Ctrl+A`, followed by `Ctrl+X`.
 Install Ruby 4 or prepend its `bin` directory to `PATH` as described in
 [setup.md](setup.md).
 
-### `STM32CubeIDE was not found`
+### `no ARM toolchain at ...`
 
-Set the headless builder explicitly:
+Unpack ARM's release under `.tools/` as the repository README describes, or name one that
+is already installed:
 
 ```sh
-export STM32CUBEIDE=/opt/st/stm32cubeide_2.2.0/headless-build.sh
+export ARM_TOOLCHAIN_PATH=/path/to/arm-gnu-toolchain
 ```
+
+### `no CubeIDE project under .tools/stm32cube`
+
+Put a CubeMX project there, or name one as `options.cube_project` in `target.yml`. See
+[setup.md](setup.md), which also covers starting from the NUCLEO template STM32CubeF4
+ships when STM32CubeMX itself is not available.
 
 ### `main.c is not connected to BareRuby`
 
 Add both `#include "bareruby_entry.h"` and `bareruby_entry();` to the CubeMX user
 sections shown in [setup.md](setup.md).
+
+### A HAL header is missing
+
+`Drivers/` in an STM32CubeF4 checkout is a set of submodules. Initialize them as
+[setup.md](setup.md) shows, then copy the HAL into the project.
 
 ### ST-LINK is not detected
 

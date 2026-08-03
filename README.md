@@ -132,14 +132,15 @@ Covered so far:
   no generalized interrupt API, and no production diagnostics. Built with pico-sdk
   2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
-- **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project outside this
-  repository owns clock, pin, startup, HAL initialization and link configuration. Pass
+- **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
+  `.tools/stm32cube/`, owns clock, pin, startup, HAL initialization and the linker
+  script. Pass
   12 adds HAL-backed GPIO, timing, LD2, USART2 and I2C1 translation units, entered from a
   CubeMX-preserved user section after every peripheral is initialized. `bareruby build`
-  generates one application, synchronizes only the reached units, and drives
-  STM32CubeIDE's headless builder. A physical board has been programmed over SWD, with
-  LD2 and USART2 exercised; I2C links against STM32CubeF4 HAL 1.28.3 but remains
-  hardware-unverified.
+  generates one application, synchronizes only the reached units, and links them against
+  the HAL with `arm-none-eabi-g++`. A physical board has been programmed over SWD, with
+  LD2 and USART2 exercised; that run predates the move off STM32CubeIDE's headless
+  builder. I2C links against STM32CubeF4 HAL 1.28.3 but remains hardware-unverified.
 
 - **The Arduino core binding** (`arduino-mega2560`) — an ATmega2560 at 16 MHz with 256 KB
   of flash and 8 KB of SRAM, reached through the Arduino core and built by `arduino-cli`.
@@ -309,9 +310,45 @@ cd bareruby-prototype
 | `target add` | asks which board this is and writes it into `target.yml` | writes it |
 | `target list` | every board that can be targeted, by family | no |
 
-`build` defaults `PICO_SDK_PATH` and `PICO_TOOLCHAIN_PATH` to the locations used below and
-takes them from the environment when they are already set. Toolchain output is shown only
-when a step fails.
+`build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
+one directory per API, each named for the version it is:
+
+```text
+.tools/
+├── common/
+│   └── arm/
+│       └── arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
+├── pico_sdk/
+│   ├── pico-sdk-2.3.0/
+│   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+├── arduino/
+│   ├── arduino-cli-1.5.2-rc.1/
+│   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
+│   └── downloads/
+└── stm32cube/
+    ├── STM32CubeF4-1.28.3/             # HAL, CMSIS, startup files, linker scripts
+    └── F446_Sample/                    # the CubeMX project this desk builds for
+```
+
+`.tools/` is gitignored, being a gigabyte of other people's releases, but it sits under
+the repository all the same: what a build reaches for is the build's, and a checkout that
+has to be told where its own SDK is has been left half-installed. The version is in the
+name because it is part of what a measurement means — moving from pico-sdk 1.5.1 to 2.3.0
+changed every figure recorded below.
+
+`common/` is for what more than one API reaches for, filed under the instruction set it
+serves rather than under an API that only half-owns it: the Pico boards and the NUCLEO are
+compiled by the same `arm-none-eabi-g++`, so it is neither `pico_sdk`'s nor `stm32cube`'s.
+Its version is in its name for the same reason every other version here is.
+
+A desk that keeps its own copies elsewhere says so through the environment, and what is
+set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT_PATH`,
+`ARM_TOOLCHAIN_PATH`, `ARDUINO_DIRECTORIES_DATA` and its two companions, and an
+`arduino-cli` already on `PATH`. Toolchain output is shown only when a step fails.
+
+What is not here is what the desk brings to any work at all: `ruby`, `make`, `cmake`,
+`git`. The line is what an artifact is made of — a cross compiler, an SDK, a board's
+libraries — against what does the making.
 
 The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
@@ -325,7 +362,7 @@ add` asks, and writes the answer:
 ```
 Which board is it?
   1) Raspberry Pi Pico, through pico-sdk
-  2) ST NUCLEO, through STM32Cube and CubeIDE
+  2) ST NUCLEO, through the STM32Cube HAL
   3) This machine, with every peripheral traced instead of driven
 1-3> 1
 
@@ -429,8 +466,8 @@ a `name:` uses that instead, which is how one composition can be built twice —
 and a release one — without the two landing in one place.
 
 Only the selected targets are written. Their directories hold the generated entry point
-and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, the STM32 target
-receives the exact source list synchronized into its existing CubeIDE project, and the
+and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, the STM32 target a
+`Makefile` and the exact source list synchronized into its Cube project, and the
 Mega receives a sketch directory the reached translation units are gathered into. The runtime
 and the bindings sit above them in `build/` and are shared. The Pico boards use the same
 pico-sdk binding — the peripherals are reached through the SDK, which spells them the same
@@ -559,34 +596,42 @@ reaches for, asks each source for its files, and hands each target the ones it n
 of it was one file until the C++ grew to two thirds of it, which is a poor place to read
 any of it from.
 
-## Second stage: STM32CubeIDE
+## Second stage: STM32Cube HAL
 
-The NUCLEO-F446RE target uses a user-owned CubeMX/CubeIDE project outside this
-repository. CubeMX owns clocks, pins, HAL initialization, startup and linker scripts;
-pass 12 supplies C++ through the HAL. The complete generation, synchronization, and
-headless build is one command:
+The NUCLEO-F446RE target uses a CubeMX project the desk generates for itself. CubeMX owns
+clocks, pins, HAL initialization, startup and linker scripts; pass 12 supplies C++ through
+the HAL.
 
-Where that project lives is something only this desk knows, so it is said in `target.yml`
-rather than on the command line:
+That project is generated rather than downloaded, but a build reaches for it all the
+same, so it is kept under `.tools/stm32cube/` with everything else a build reaches for.
+One project there needs no naming. A desk that keeps several, or keeps its own somewhere
+else, says which in `target.yml` — the same shape as an SDK path in the environment:
 
 ```yaml
     - machine: nucleo_f446re
       api: stm32cube
       triple: thumbv7em-none-eabihf
       options:
-        cube_project: /path/to/F446_Sample
         configuration: Debug
+        cube_project: /path/to/F446_Sample   # only when it is not the one under .tools/
 ```
 
 ```sh
 ./bareruby build samples/heartbeat.rb --target=f446 --no-exceptions
 ```
 
-The toolchain finds `headless-build.sh` or `stm32cubeide` in `PATH` and under the normal
-`/opt/st` installation tree; `STM32CUBEIDE=/path/to/headless-build.sh` overrides that. It
-copies in only the translation units this program reached for, replaces nothing but the
-files it owns, and brings the linked ELF back to `build/<composition>/bareruby_program.elf`
-so that flashing needs to know nothing about where the external project keeps its output.
+CubeMX generates sources, not a build. The build it names is STM32CubeIDE — an Eclipse
+application that cannot be downloaded without an ST account — and nothing in a firmware
+needs it: the same sources, the same linker script and the same startup file, handed to
+the `arm-none-eabi-g++` this repository already keeps for the Pico boards, produce the
+image. So that is what the second stage does. The first stage writes the makefile that
+says how, alongside the C++, the way it writes a `CMakeLists.txt` for a Pico.
+
+The toolchain copies in only the translation units this program reached for, replaces
+nothing but the files it owns, and brings the linked ELF back to
+`build/<composition>/bareruby_program.elf` so that flashing needs to know nothing about
+how the Cube project arranges its output. `options.configuration` picks `-Og -g3` or
+`-O2`; `ARM_TOOLCHAIN_PATH` names a compiler kept somewhere other than `.tools/`.
 The binding's [README](target/api/stm32cube/README.md) records project preparation, the
 ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
 
@@ -614,15 +659,22 @@ second stage does.
 Two things are needed, neither of them needing `sudo`.
 
 ```sh
-mkdir -p ~/toolchains/arduino-cli && cd ~/toolchains/arduino-cli
-curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz
-tar xf arduino-cli_latest_Linux_64bit.tar.gz
+mkdir -p .tools/arduino/arduino-cli-1.5.2-rc.1 && cd .tools/arduino/arduino-cli-1.5.2-rc.1
+curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+tar xf arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+export ARDUINO_DIRECTORIES_DATA=$PWD/../data
 ./arduino-cli core install arduino:avr
 ```
 
-That is 37 MB for the command and 44 MB for the core, which brings avr-gcc, avr-libc and
-avrdude with it. `~/toolchains/arduino-cli` is where `bareruby` looks when the command is
-not already on `PATH`; the core lands in `~/.arduino15` wherever it came from.
+That is 37 MB for the command and 381 MB for the core and the indexes it arrives with —
+avr-gcc, avr-libc and avrdude among them, which is to say the compiler that actually
+builds a sketch. Left alone `arduino-cli` files all of that under `~/.arduino15`, which
+would put the larger half of this API's toolchain outside the repository while the
+command driving it sat inside; `ARDUINO_DIRECTORIES_DATA` says otherwise, and `bareruby`
+passes the same thing on every build. `ARDUINO_DIRECTORIES_DOWNLOADS` and
+`ARDUINO_DIRECTORIES_USER` follow it, so nothing is left in a home directory. None of
+these carry a version, because `arduino-cli` keeps its own inside — one directory holds
+every core and tool version it has been asked for.
 
 What comes back is `bareruby_program.hex` and `bareruby_program.elf`, beside the sources
 they were made from rather than under whatever name the tool gave them.
@@ -693,9 +745,9 @@ Use **2.3.0** for both boards. RP2350 support arrived in SDK 2.0.0 — 1.5.1 sto
 serves both.
 
 ```sh
-mkdir -p ~/pico
-git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git ~/pico/pico-sdk-2
-git -C ~/pico/pico-sdk-2 submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver
+SDK=.tools/pico_sdk/pico-sdk-2.3.0
+git clone -b 2.3.0 --depth 1 https://github.com/raspberrypi/pico-sdk.git $SDK
+git -C $SDK submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver
 ```
 
 That is 33 MB for the SDK, 25 MB for TinyUSB and 10 MB for the CYW43 driver.
@@ -714,8 +766,10 @@ than a missing dependency, hence initializing it up front.
 `picotool` needs no separate install: SDK 2.x downloads and builds it on demand. Left
 alone it lands inside the target's build tree, which the next first-stage run deletes, so
 `PICOTOOL_FETCH_FROM_GIT_PATH` points it somewhere outside — `bareruby` defaults that to
-`~/pico/picotool` (17 MB, built once). Its libusb-dependent parts are skipped when the
-headers are absent, which costs nothing here: only `.uf2` generation is wanted.
+`.tools/pico_sdk/picotool-2.3.0` (17 MB, built once). Which picotool that is, is the SDK's
+decision rather than this repository's, so it is filed under the SDK's version. Its
+libusb-dependent parts are skipped when the headers are absent, which costs nothing here:
+only `.uf2` generation is wanted.
 
 Earlier work in this repository used **1.5.1**, which generates the `.uf2` with the
 `elf2uf2` bundled in the SDK and so needs no picotool. That was the only reason to stay
@@ -728,10 +782,13 @@ Download ARM's official release and unpack it. It bundles newlib, which is what
 pico-sdk needs.
 
 ```sh
-mkdir -p ~/toolchains && cd ~/toolchains
+mkdir -p .tools/common/arm && cd .tools/common/arm
 curl -fsSLO https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 tar xf arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 ```
+
+This is the compiler the NUCLEO uses too, which is why it is under `common/arm/` rather
+than under `pico_sdk/`.
 
 Note the extracted directory capitalises the release differently from the tarball:
 `arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi`.
@@ -758,9 +815,9 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 ### Building the firmware
 
 ```sh
+export PICO_SDK_PATH=$PWD/.tools/pico_sdk/pico-sdk-2.3.0
+export PICO_TOOLCHAIN_PATH=$PWD/.tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cd build/pico-pico_sdk-thumbv6m-none-eabi
-export PICO_SDK_PATH=$HOME/pico/pico-sdk-2
-export PICO_TOOLCHAIN_PATH=$HOME/toolchains/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cmake -B build -S .
 cmake --build build
 ```
@@ -990,13 +1047,15 @@ program names neither.
 | arduino-cli | 1.5.2-rc.1 |
 | arduino:avr core | 1.8.8 |
 | avr-g++ | 7.3.0 (atmel3.6.1-arduino7) |
-| STM32CubeIDE | 2.2.0 |
-| GNU Tools for STM32 | 14.3.1 |
 | STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
 | STM32CubeProgrammer | 2.23.0 |
+| STM32CubeIDE | 2.2.0 (the hardware runs below, and nothing since) |
+| GNU Tools for STM32 | 14.3.1 (likewise) |
 
-The STM32 translation units and complete ELF were built with STM32CubeIDE's GNU Tools
-for STM32 14.3.1. Headless build, SWD programming, LD2, and USART2 were verified on a
+The STM32 target is now built by the `arm-none-eabi-g++` in the table above, the same one
+the Pico boards use. The hardware runs recorded here came before that: their translation
+units and ELF were built with STM32CubeIDE's GNU Tools for STM32 14.3.1, and headless
+build, SWD programming, LD2, and USART2 were verified on a
 physical NUCLEO-F446RE. I2C was linked against STM32CubeF4 HAL 1.28.3 but has not yet
 been exercised with an external device.
 
