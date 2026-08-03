@@ -41,7 +41,7 @@ STM32 wrapper must change with them.
 
 ## Current binding contract
 
-| BareRuby API | F446 implementation |
+| BareRuby call | F446 implementation |
 | --- | --- |
 | `OnboardLED` | LD2 on PA5 through HAL GPIO |
 | `GPIO` | HAL GPIO, encoded as `port_index * 16 + pin`; PA0 is 0, PB0 is 16, PC13 is 45 |

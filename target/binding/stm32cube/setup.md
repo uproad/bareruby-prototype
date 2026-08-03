@@ -30,7 +30,7 @@ export PATH=/path/to/ruby-4.0/bin:$PATH
 
 The firmware is compiled and linked by `arm-none-eabi-g++` — the same toolchain the Pico
 boards are built by, which is why it is filed under `common/` by instruction set rather
-than under either API:
+than under either binding:
 
 ```sh
 test -x .tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-g++

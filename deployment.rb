@@ -11,8 +11,8 @@ module BareRubyProt
   # that reason, so having no file at all is the ordinary case rather than a mistake.
   #
   # A composition is spelled out rather than named, because no one of the three answers
-  # settles another: one board is reachable through more than one API, and one board
-  # whose chip carries two instruction sets is built for either of them. What the three
+  # settles another: one machine is reachable through more than one binding, and one
+  # machine whose chip carries two instruction sets is built for either of them. What the three
   # together name is looked up rather than assembled — a composition nobody has run is
   # not a target, it is an untried idea.
   class Deployment
@@ -49,7 +49,7 @@ module BareRubyProt
     # record read here is the same shape as every other one, whatever it names. Writing
     # one by hand is not the way it is meant to be written — `bareruby target add` asks
     # and writes it — but a file written either way reads the same.
-    FIELDS = %w[machine api triple].freeze
+    FIELDS = %w[machine binding triple].freeze
 
     def self.target_of(record)
       wanted = FIELDS.to_h { |field| [field, record[field].to_s] }
@@ -61,7 +61,7 @@ module BareRubyProt
     end
 
     def self.spelling(target)
-      { "machine" => target.machine.key.to_s, "api" => target.api.key.to_s,
+      { "machine" => target.machine.key.to_s, "binding" => target.binding.key.to_s,
         "triple" => target.isa.triple }
     end
 

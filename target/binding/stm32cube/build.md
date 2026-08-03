@@ -25,7 +25,7 @@ elsewhere, says which in `target.yml`:
 
 ```yaml
     - machine: nucleo_f446re
-      api: stm32cube
+      binding: stm32cube
       triple: thumbv7em-none-eabihf
       options:
         configuration: Debug

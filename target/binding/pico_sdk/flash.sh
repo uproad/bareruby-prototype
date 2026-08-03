@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Flash a .uf2 onto one attached Raspberry Pi Pico board.
 #
-#     target/api/pico_sdk/flash.sh [--board SERIAL] [path/to/firmware.uf2]
-#     target/api/pico_sdk/flash.sh --list
+#     target/binding/pico_sdk/flash.sh [--board SERIAL] [path/to/firmware.uf2]
+#     target/binding/pico_sdk/flash.sh --list
 #
 # Several boards can stay attached at once. Which one receives the firmware follows
 # from the firmware itself: a .uf2 carries the family id of the chip it was built for,
@@ -158,7 +158,7 @@ count=$(printf '%s' "$candidates" | grep -c . || true)
 
 if [ "$count" -eq 0 ]; then
     echo "flash: no attached board carries $CHIP." >&2
-    echo "       Run 'target/api/pico_sdk/flash.sh --list' to see what is attached. A board running a" >&2
+    echo "       Run 'target/binding/pico_sdk/flash.sh --list' to see what is attached. A board running a" >&2
     echo "       default build shows nothing until BOOTSEL is held." >&2
     exit 1
 fi

@@ -3,7 +3,7 @@
 require "English"
 
 module BareRubyProt
-  # What every API's second stage has in common. The build already wrote down what it is —
+  # What every binding's second stage has in common. The build already wrote down what it is —
   # manifest.txt carries the command that turns the generated C++ into an artifact — so
   # running it is reading that line back rather than keeping a second copy of it here.
   # A toolchain that a manifest cannot describe in one line says so by not using this.

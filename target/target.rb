@@ -3,14 +3,14 @@
 require_relative "isa"
 require_relative "substrate"
 require_relative "machine"
-require_relative "api/host/binding"
-require_relative "api/pico_sdk/binding"
-require_relative "api/stm32cube/binding"
-require_relative "api/arduino/binding"
+require_relative "binding/host/binding"
+require_relative "binding/pico_sdk/binding"
+require_relative "binding/stm32cube/binding"
+require_relative "binding/arduino/binding"
 
 module BareRubyProt
   # One machine the compiler produces artifacts for, and the roof over everything beside
-  # this file: the instruction sets, the substrates, the machines and the APIs are all
+  # this file: the instruction sets, the substrates, the machines and the bindings are all
   # here to be composed, and this is where the composing is done. The name is the whole
   # identity of a target — it is what the command line spells and the directory the
   # artifacts land in, so there is never a second vocabulary to translate between.
@@ -20,11 +20,11 @@ module BareRubyProt
   #
   #   isa       — the instruction set, named by its triple
   #   substrate — what lies underneath, which settles whether the program ends
-  #   api       — what the generated code calls, and the binding that answers it in C++
-  #   machine   — the instance and what can be reached on it
+  #   binding   — the implementation that answers, written in the words of what is called
+  #   machine   — what the artifact runs on, and what can be reached there
   #
-  # One API serves boards that share no instruction set, one board is reachable through
-  # more than one API, and an instruction set says nothing about whether an operating
+  # One binding serves machines that share no instruction set, one machine is reachable
+  # through more than one of them, and an instruction set says nothing about whether an operating
   # system is underneath it. Naming the four separately is what keeps a machine whose
   # instruction set is WebAssembly, and a desktop whose peripherals are all stubs, from
   # each needing a kind of their own. Nothing is inferred here: a target that leaves an
@@ -33,45 +33,45 @@ module BareRubyProt
     OPTION_PREFIX = "--target="
     DEFAULT_NAMES = ["host"].freeze
 
-    attr_reader :name, :isa, :substrate, :api, :machine
+    attr_reader :name, :isa, :substrate, :binding, :machine
 
-    def initialize(name, isa:, substrate:, api:, machine:)
+    def initialize(name, isa:, substrate:, binding:, machine:)
       @name = name
       @isa = isa
       @substrate = substrate
-      @api = api
+      @binding = binding
       @machine = machine
     end
 
     # Where the artifacts land. Three of the four answers are spelled out, because three
-    # of them can differ while the rest agree: one board reached through two APIs, and one
-    # board built for either of the two instruction sets its chip carries, are different
+    # of them can differ while the rest agree: one machine reached through two bindings, and
+    # one machine built for either of the two instruction sets its chip carries, are different
     # firmware that must not overwrite each other. The substrate is left out because the
     # triple already carries it. It is a long name, and that length is the information.
-    def directory = "#{@machine.key}-#{@api.key}-#{@isa.triple}"
+    def directory = "#{@machine.key}-#{@binding.key}-#{@isa.triple}"
 
     TABLE = {
       "host" =>
         new("host", isa: Isa::COMPILING, substrate: Substrate::HOSTED,
-                    api: HostBinding, machine: Machine::NONE),
+                    binding: HostBinding, machine: Machine::NONE),
       "raspberry-pi-pico" =>
         new("raspberry-pi-pico", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                 api: PicoSdkBinding, machine: Machine::PICO),
+                                 binding: PicoSdkBinding, machine: Machine::PICO),
       "raspberry-pi-pico-w" =>
         new("raspberry-pi-pico-w", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                   api: PicoSdkBinding, machine: Machine::PICO_W),
+                                   binding: PicoSdkBinding, machine: Machine::PICO_W),
       "raspberry-pi-pico2" =>
         new("raspberry-pi-pico2", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                  api: PicoSdkBinding, machine: Machine::PICO2),
+                                  binding: PicoSdkBinding, machine: Machine::PICO2),
       "raspberry-pi-pico2-w" =>
         new("raspberry-pi-pico2-w", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                    api: PicoSdkBinding, machine: Machine::PICO2_W),
+                                    binding: PicoSdkBinding, machine: Machine::PICO2_W),
       "stm32-nucleo-f446re" =>
         new("stm32-nucleo-f446re", isa: Isa::CORTEX_M4F, substrate: Substrate::BARE_METAL,
-                                   api: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE),
+                                   binding: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE),
       "arduino-mega2560" =>
         new("arduino-mega2560", isa: Isa::AVR, substrate: Substrate::BARE_METAL,
-                                api: ArduinoBinding, machine: Machine::MEGA2560)
+                                binding: ArduinoBinding, machine: Machine::MEGA2560)
     }.freeze
 
     # The full names are what the artifacts are named after and what the documents say.

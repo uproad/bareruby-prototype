@@ -432,9 +432,9 @@ module BareRubyProt
     ALWAYS = [PERIPHERAL_FILE].freeze
 
 
-    # What a board takes is not worked out here. Each board this API reaches writes its
-    # own answer as a method, in machine/ beside this file, and this only hands the
-    # question over. A board this API cannot reach has no answer rather than a wrong one.
+    # What a machine takes is not worked out here. Each machine this binding reaches
+    # writes its own answer as a method, in machine/ beside this file, and this only hands
+    # the question over. A machine it cannot reach has no answer rather than a wrong one.
     MACHINES = {}
 
     def self.machine(machine) = MACHINES.fetch(machine.key)
@@ -453,7 +453,7 @@ module BareRubyProt
   end
 end
 
-# One board to a file, so that teaching this API a new board is adding a file.
+# One machine to a file, so that teaching this binding a new machine is adding a file.
 Dir.children(File.expand_path("machine", __dir__)).sort.grep(/\.rb\z/).each do |entry|
   require_relative "machine/#{entry}"
 end

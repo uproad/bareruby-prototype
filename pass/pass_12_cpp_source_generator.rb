@@ -3,10 +3,10 @@
 require_relative "pass_12_cpp_source_generator/runtime_source"
 require_relative "pass_12_cpp_source_generator/binding_declaration"
 require_relative "pass_12_cpp_source_generator/cpp_renderer"
-require_relative "../target/api/host/build"
-require_relative "../target/api/pico_sdk/build"
-require_relative "../target/api/stm32cube/build"
-require_relative "../target/api/arduino/build"
+require_relative "../target/binding/host/build"
+require_relative "../target/binding/pico_sdk/build"
+require_relative "../target/binding/stm32cube/build"
+require_relative "../target/binding/arduino/build"
 
 module BareRubyProt
   module Pass
@@ -23,7 +23,7 @@ module BareRubyProt
 
       def run
         @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
-        @targets.each { |target| @result.merge!(target.api::FILES) }
+        @targets.each { |target| @result.merge!(target.binding::FILES) }
         @targets.each { |target| @result.merge!(target_sources(target)) }
 
         self
@@ -49,9 +49,9 @@ module BareRubyProt
           @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets, :bareruby_i2c_read)
       end
 
-      # Which way a board's indicator is reached is the board's own answer, given to the
-      # API beside it. Nothing here works it out.
-      def onboard_led_of(target) = target.api.machine(target.machine)
+      # Which way a machine's indicator is reached is the machine's own answer, given to
+      # the binding beside it. Nothing here works it out.
+      def onboard_led_of(target) = target.binding.machine(target.machine)
 
       def receives_uart? = @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets)
 
@@ -63,7 +63,7 @@ module BareRubyProt
       # record of how it is built, and — for a board — the build system that does it.
       def target_sources(target)
         build = build_of(target)
-        files = { target.api::PROGRAM_FILE => program_text(build) }.merge(build.files)
+        files = { target.binding::PROGRAM_FILE => program_text(build) }.merge(build.files)
         files.transform_keys { |name| "#{target.directory}/#{name}" }
       end
 
@@ -75,9 +75,9 @@ module BareRubyProt
       end
 
       # Every build is asked for in the same words, and each takes what it needs of them,
-      # so which API a target calls is the whole of the choice made here.
+      # so which binding a target calls is the whole of the choice made here.
       def build_of(target)
-        target.api.build.new(target, sources: sources(target),
+        target.binding.build.new(target, sources: sources(target),
                                      onboard_led: lights_onboard_led?,
                                      debug: @debug, exceptions: @exceptions)
       end
@@ -87,18 +87,18 @@ module BareRubyProt
       # binding answers, so one list serves all of them — and no file is named here, only
       # asked for.
       def sources(target)
-        api = target.api
-        names = api::ALWAYS + RuntimeSource::ALWAYS
-        names << api::UART_RECEIVE_FILE if receives_uart?
-        names << api::I2C_FILE if uses_i2c?
-        names << api::I2C_READ_FILE if reads_i2c?
+        binding = target.binding
+        names = binding::ALWAYS + RuntimeSource::ALWAYS
+        names << binding::UART_RECEIVE_FILE if receives_uart?
+        names << binding::I2C_FILE if uses_i2c?
+        names << binding::I2C_READ_FILE if reads_i2c?
         names << onboard_led_of(target).onboard_led_file if lights_onboard_led?
         names << RuntimeSource::ARENA_FILE if allocates?
         names << RuntimeSource::STRING_FILE if builds_strings?
         # Arena exhaustion is reported through bareruby_throw even when the Ruby program
         # contains no explicit raise.
         names << RuntimeSource::THROW_FILE if throws? || allocates?
-        [api::PROGRAM_FILE] + names.map { |name| "../#{name}" }
+        [binding::PROGRAM_FILE] + names.map { |name| "../#{name}" }
       end
     end
   end

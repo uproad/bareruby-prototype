@@ -18,14 +18,14 @@
 #
 # An entry names a composition rather than a target, and always names all three parts of
 # it, because no one of them settles another. One board is reachable through more than one
-# API — a NUCLEO board through STM32Cube or through STM32duino — and one board whose chip
+# binding — a NUCLEO board through STM32Cube or through STM32duino — and one whose chip
 # carries two instruction sets is built for either of them, as an RP2350 is for Arm or for
 # RISC-V. The three together are looked up: a composition nobody has run is not a target
 # yet, and saying one names nothing prints the ones that do.
 #
 #   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re,
 #                                 mega2560, none
-#   api:      what it is called through.  host, pico_sdk, stm32cube, arduino
+#   binding:  what it is called through.  host, pico_sdk, stm32cube, arduino
 #   triple:   which instruction set, and what lies under it.
 #               thumbv6m-none-eabi           RP2040
 #               thumbv8m.main-none-eabihf    RP2350, Arm
@@ -33,7 +33,7 @@
 #               avr-none                     AVR. The chip is named by the FQBN, not here
 #               x86_64-pc-linux              the machine doing the compiling
 #   name:     optional. The directory under build/ this entry lands in. Without it the
-#             directory is <machine>-<api>-<triple>, which is long because that is how
+#             directory is <machine>-<binding>-<triple>, which is long because that is how
 #             much it takes to be unique. Give a name when one composition is wanted
 #             twice — a debug build and a release build of the same board.
 #   debug:    optional. `true` or `1` and nothing else means a debug build; anything
@@ -46,25 +46,25 @@
 #             bootrom's id while it is in BOOTSEL and the flash id once it is running, so
 #             one written down here matches in one of those states and not in the other —
 #             which looks exactly like the board having been unplugged. An RP2350 reports
-#             one number for both. Run target/api/pico_sdk/flash.sh --list to see what is
+#             one number for both. Run target/binding/pico_sdk/flash.sh --list to see what is
 #             attached and what each answers to right now.
-#   options:  optional. What only this desk knows, passed to the API that needs it.
+#   options:  optional. What only this desk knows, passed to the binding that needs it.
 
 bareruby:
   targets:
     - machine: pico
-      api: pico_sdk
+      binding: pico_sdk
       triple: thumbv6m-none-eabi
       debug: true
 
     - machine: pico2_w
-      api: pico_sdk
+      binding: pico_sdk
       triple: thumbv8m.main-none-eabihf
 
     # Two builds of one composition, so each one names where it goes.
     # - name: pico2-release
     #   machine: pico2
-    #   api: pico_sdk
+    #   binding: pico_sdk
     #   triple: thumbv8m.main-none-eabihf
 
     # The CubeIDE project is generated and configured by the user, and sits under
@@ -73,7 +73,7 @@ bareruby:
     # boards: takes ST-LINK probe serials rather than board serials, because SWD is
     # reached through the probe.
     # - machine: nucleo_f446re
-    #   api: stm32cube
+    #   binding: stm32cube
     #   triple: thumbv7em-none-eabihf
     #   options:
     #     configuration: Debug
@@ -84,10 +84,10 @@ bareruby:
     # firmware was built for is found, which is what keeps a Pico on the next port from
     # ever being a candidate.
     # - machine: mega2560
-    #   api: arduino
+    #   binding: arduino
     #   triple: avr-none
 
     # Nothing is flashed, because the artifact is already on the machine that runs it.
     # - machine: none
-    #   api: host
+    #   binding: host
     #   triple: x86_64-pc-linux

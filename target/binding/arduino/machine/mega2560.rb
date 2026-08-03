@@ -9,7 +9,7 @@ module BareRubyProt
       # board's entry leaves open. It is the core's word rather than the board's: the
       # same three parts reach an ATmega1280 by changing only the last of them, and
       # another core reaching this board would want a different spelling entirely. So it
-      # lives here, where the board and the API meet, and not on the board.
+      # lives here, where the machine and the binding meet, and not on the machine.
       def self.fqbn = "arduino:avr:mega:cpu=atmega2560"
 
       def self.onboard_led_file = ONBOARD_LED_PIN_FILE

@@ -81,7 +81,7 @@ module BareRubyProt
     end
 
     # A key with a dot in it is a key inside a key, which is how the answers only one
-    # API needs stay under that API's own heading rather than spreading across the entry.
+    # binding needs stay under that binding's own heading rather than spreading across it.
     def self.place(key, value)
       outer, inner = key.split(".")
       inner ? { outer => { inner => value } } : { outer => value }

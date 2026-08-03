@@ -25,7 +25,7 @@ module BareRubyProt
 
     # The core is the compiler: avr-gcc, avr-libc and avrdude arrive with it, and they are
     # what actually builds a sketch. Left alone arduino-cli files them under ~/.arduino15,
-    # which would leave the largest part of this API's toolchain outside the repository
+    # which would leave the largest part of this binding's toolchain outside the repository
     # while the command that drives it sits inside. These say otherwise. Versions are not
     # in the names because arduino-cli keeps its own inside — one directory holds every
     # core and every tool version it has been asked for.
