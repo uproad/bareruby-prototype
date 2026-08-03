@@ -2,9 +2,10 @@
 /dump/
 /build/
 
-# The SDKs and toolchains each API builds with, downloaded or built in place, one
-# directory per API and each named for its version. Here because the build reaches for
-# them; out of git because they are other people's releases.
+# The SDKs and toolchains the APIs build with, downloaded or built in place: one
+# directory per API, plus common/ for what more than one of them reaches for, and every
+# version in its name. Here because the build reaches for them; out of git because they
+# are other people's releases.
 /.tools/
 
 # Which boards are on this desk is a fact about a desk, not about the project.

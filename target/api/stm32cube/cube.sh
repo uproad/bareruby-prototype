@@ -147,7 +147,7 @@ echo "bareruby: synchronized generated sources into $PROJECT_NAME"
 # CubeMX generates sources, not a build. The build it names is STM32CubeIDE, an Eclipse
 # application that cannot be had without an ST account — so what it would have compiled
 # is compiled here instead, by the ARM GNU toolchain the freestanding boards already use.
-TOOLCHAIN="${ARM_TOOLCHAIN_PATH:-$ROOT/.tools/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}/bin/arm-none-eabi"
+TOOLCHAIN="${ARM_TOOLCHAIN_PATH:-$ROOT/.tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}/bin/arm-none-eabi"
 [ -x "$TOOLCHAIN-g++" ] || {
     echo "bareruby: no ARM toolchain at $TOOLCHAIN-g++" >&2
     echo "          Put one under .tools/, or name one in ARM_TOOLCHAIN_PATH." >&2

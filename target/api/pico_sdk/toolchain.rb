@@ -20,12 +20,12 @@ module BareRubyProt
     # One SDK serves every board: RP2350 needs 2.0.0 or newer, and RP2040 is still
     # supported there, so there is no reason to keep a second checkout for it.
     #
-    # The ARM toolchain sits beside the per-API directories rather than inside this one,
-    # because the STM32 boards are built by the same compiler — a thing two APIs reach
-    # for is not either one's.
+    # The ARM toolchain is filed under common/ rather than here, because the STM32 boards
+    # are built by the same compiler — a thing two APIs reach for is not either one's.
+    # What it is common to is an instruction set, so that is the shelf it sits on.
     PATHS = {
       "PICO_SDK_PATH" => "pico_sdk/pico-sdk-2.3.0",
-      "PICO_TOOLCHAIN_PATH" => "arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi",
+      "PICO_TOOLCHAIN_PATH" => "common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi",
       # SDK 2.x builds picotool on demand. Left alone it lands inside the target's build
       # tree, which the next first-stage run deletes, so it is kept outside of it instead.
       # Which picotool that is, is the SDK's decision, so it carries the SDK's version.

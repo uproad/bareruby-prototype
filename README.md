@@ -315,7 +315,9 @@ one directory per API, each named for the version it is:
 
 ```text
 .tools/
-├── arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/   # both ARM boards are built by it
+├── common/
+│   └── arm/
+│       └── arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
 ├── pico_sdk/
 │   ├── pico-sdk-2.3.0/
 │   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
@@ -332,9 +334,10 @@ has to be told where its own SDK is has been left half-installed. The version is
 name because it is part of what a measurement means — moving from pico-sdk 1.5.1 to 2.3.0
 changed every figure recorded below.
 
-The ARM toolchain sits beside the per-API directories rather than inside one, because the
-Pico boards and the NUCLEO are compiled by the same `arm-none-eabi-g++`. A thing two APIs
-reach for is not either one's.
+`common/` is for what more than one API reaches for, filed under the instruction set it
+serves rather than under an API that only half-owns it: the Pico boards and the NUCLEO are
+compiled by the same `arm-none-eabi-g++`, so it is neither `pico_sdk`'s nor `stm32cube`'s.
+Its version is in its name for the same reason every other version here is.
 
 A desk that keeps its own copies elsewhere says so through the environment, and what is
 set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT_PATH`,
@@ -768,12 +771,13 @@ Download ARM's official release and unpack it. It bundles newlib, which is what
 pico-sdk needs.
 
 ```sh
-cd .tools
+mkdir -p .tools/common/arm && cd .tools/common/arm
 curl -fsSLO https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 tar xf arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
 ```
 
-This is the compiler the NUCLEO uses too, which is why it is not under `pico_sdk/`.
+This is the compiler the NUCLEO uses too, which is why it is under `common/arm/` rather
+than under `pico_sdk/`.
 
 Note the extracted directory capitalises the release differently from the tarball:
 `arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi`.
@@ -801,7 +805,7 @@ Any recent cmake works; 4.4.0 was used here. The generated `CMakeLists.txt` decl
 
 ```sh
 export PICO_SDK_PATH=$PWD/.tools/pico_sdk/pico-sdk-2.3.0
-export PICO_TOOLCHAIN_PATH=$PWD/.tools/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+export PICO_TOOLCHAIN_PATH=$PWD/.tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 cd build/pico-pico_sdk-thumbv6m-none-eabi
 cmake -B build -S .
 cmake --build build
