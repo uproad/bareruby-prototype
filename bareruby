@@ -10,9 +10,11 @@ require_relative "catalog"
 require_relative "target/api/host/toolchain"
 require_relative "target/api/pico_sdk/toolchain"
 require_relative "target/api/stm32cube/toolchain"
+require_relative "target/api/arduino/toolchain"
 require_relative "target/api/host/flash"
 require_relative "target/api/pico_sdk/flash"
 require_relative "target/api/stm32cube/flash"
+require_relative "target/api/arduino/flash"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and

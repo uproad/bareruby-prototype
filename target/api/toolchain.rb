@@ -10,9 +10,14 @@ module BareRubyProt
   module Toolchain
     MANIFEST = "manifest.txt"
 
-    def self.recorded_command(directory)
-      File.read(File.join(directory, MANIFEST))[/^build_command = (.+)$/, 1]
+    # The manifest is what the build wrote down about itself, so anything a later step
+    # needs to know about the build is read back from it rather than worked out again.
+    # Flashing reaches for it too, which is what lets it need nothing but the directory.
+    def self.recorded(directory, name)
+      File.read(File.join(directory, MANIFEST))[/^#{name} = (.+)$/, 1]
     end
+
+    def self.recorded_command(directory) = recorded(directory, "build_command")
 
     # A toolchain is chatty even when everything is fine, so its output is kept for the
     # failure it explains and said nothing about otherwise.

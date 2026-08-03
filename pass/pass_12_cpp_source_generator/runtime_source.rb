@@ -398,9 +398,12 @@ module BareRubyProt
           return value >= 0 ? (value >> 16) : -((-(int64_t)value) >> 16);
       }
 
+      /* The half is written as a 64-bit one, because a plain 1 << 15 is an int shift and
+         an int is 16 bits on a machine whose natural word is: the half would land in the
+         sign bit and be subtracted instead of added. */
       int32_t bareruby_fixed_mul(int32_t left, int32_t right) {
           int64_t product = (int64_t)left * (int64_t)right;
-          return bareruby_fixed_saturate((product + (1 << 15)) >> 16);
+          return bareruby_fixed_saturate((product + ((int64_t)1 << 15)) >> 16);
       }
 
       int32_t bareruby_fixed_div(int32_t left, int32_t right) {
@@ -442,8 +445,10 @@ module BareRubyProt
       #include <stdio.h>
       #include <stdlib.h>
 
+      /* long rather than int, because an int is 16 bits on a machine whose natural word
+         is, and printf reads back exactly the width its conversion names. */
       void bareruby_puts_int32(int32_t value) {
-          printf("%d\\n", (int)value);
+          printf("%ld\\n", (long)value);
       }
 
       void bareruby_puts_int64(int64_t value) {
@@ -471,6 +476,13 @@ module BareRubyProt
 
       static const uint32_t BARERUBY_FIXED_POWERS[6] = { 1u, 10u, 100u, 1000u, 10000u, 100000u };
 
+      /* One format per fraction width rather than a * taking the width as an argument:
+         the smallest printf a machine ships with reads the conversion and nothing else,
+         so a width that arrives as a value is a width that never arrives. */
+      static const char *const BARERUBY_FIXED_FORMATS[6] = {
+          "%s%lu.%lu", "%s%lu.%01lu", "%s%lu.%02lu", "%s%lu.%03lu", "%s%lu.%04lu", "%s%lu.%05lu"
+      };
+
       /* Shortest decimal that parses back to the same Q16.16 value. Five fraction
          digits always suffice, so try one digit first and stop at the first match. */
       const char *bareruby_fixed_to_s(int32_t value) {
@@ -487,16 +499,16 @@ module BareRubyProt
               }
               uint32_t restored = (uint32_t)((((uint64_t)digits << 16) + power / 2u) / power);
               if (restored == fraction) {
-                  snprintf(buffer, sizeof(buffer), "%s%u.%0*u",
-                           value < 0 ? "-" : "", (unsigned int)whole, length,
-                           (unsigned int)digits);
+                  snprintf(buffer, sizeof(buffer), BARERUBY_FIXED_FORMATS[length],
+                           value < 0 ? "-" : "", (unsigned long)whole,
+                           (unsigned long)digits);
                   return buffer;
               }
           }
 
-          snprintf(buffer, sizeof(buffer), "%s%u.%05u", value < 0 ? "-" : "",
-                   (unsigned int)whole,
-                   (unsigned int)(((uint64_t)fraction * 100000u + 32768u) >> 16));
+          snprintf(buffer, sizeof(buffer), "%s%lu.%05lu", value < 0 ? "-" : "",
+                   (unsigned long)whole,
+                   (unsigned long)(((uint64_t)fraction * 100000u + 32768u) >> 16));
           return buffer;
       }
 

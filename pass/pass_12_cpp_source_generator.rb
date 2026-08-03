@@ -6,6 +6,7 @@ require_relative "pass_12_cpp_source_generator/cpp_renderer"
 require_relative "../target/api/host/build"
 require_relative "../target/api/pico_sdk/build"
 require_relative "../target/api/stm32cube/build"
+require_relative "../target/api/arduino/build"
 
 module BareRubyProt
   module Pass

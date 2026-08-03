@@ -23,12 +23,14 @@
 # RISC-V. The three together are looked up: a composition nobody has run is not a target
 # yet, and saying one names nothing prints the ones that do.
 #
-#   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re, none
-#   api:      what it is called through.  host, pico_sdk, stm32cube
+#   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re,
+#                                 mega2560, none
+#   api:      what it is called through.  host, pico_sdk, stm32cube, arduino
 #   triple:   which instruction set, and what lies under it.
 #               thumbv6m-none-eabi           RP2040
 #               thumbv8m.main-none-eabihf    RP2350, Arm
 #               thumbv7em-none-eabihf        STM32F4
+#               avr-none                     AVR. The chip is named by the FQBN, not here
 #               x86_64-pc-linux              the machine doing the compiling
 #   name:     optional. The directory under build/ this entry lands in. Without it the
 #             directory is <machine>-<api>-<triple>, which is long because that is how
@@ -74,6 +76,14 @@ bareruby:
     #   options:
     #     cube_project: /path/to/F446_Sample
     #     configuration: Debug
+
+    # boards: takes serial ports here, because that is what a board reached through the
+    # Arduino core is written to over. With nothing here the one attached board this
+    # firmware was built for is found, which is what keeps a Pico on the next port from
+    # ever being a candidate.
+    # - machine: mega2560
+    #   api: arduino
+    #   triple: avr-none
 
     # Nothing is flashed, because the artifact is already on the machine that runs it.
     # - machine: none

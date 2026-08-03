@@ -167,7 +167,7 @@ module BareRubyProt
         "(#{operator}#{expression_text(operand)})"
       when :call
         name, arguments, = @lir.children_of(node)
-        "#{name}(#{arguments.map { |argument| expression_text(argument) }.join(', ')})"
+        "#{name}(#{call_arguments(name, arguments).join(', ')})"
       when :function_reference
         "&#{@lir.children_of(node)[0]}"
       when :cast
@@ -180,6 +180,31 @@ module BareRubyProt
       when :brace_init
         values, = @lir.children_of(node)
         "{ #{values.map { |value| expression_text(value) }.join(', ')} }"
+      end
+    end
+
+    # The functions whose declaration ends in an ellipsis, and how many arguments stand in
+    # front of it. Everything past that point is handed over without a parameter to be
+    # converted to, so it arrives at whatever width the machine gave it — and the format
+    # the value was paired with names a width rather than a language type. Widening here
+    # is what makes the two agree on a machine whose int is 16 bits and on one whose long
+    # is 64, from the one format string pass 5 wrote.
+    VARIADIC = {
+      bareruby_printf: 1,
+      bareruby_format: 3,
+      bareruby_string_format: 2,
+      bareruby_string_append_format: 2,
+      bareruby_uart_printf: 2
+    }.freeze
+
+    WIDENED = { int32: "long", int64: "long long" }.freeze
+
+    def call_arguments(name, arguments)
+      fixed = VARIADIC[name]
+      arguments.each_with_index.map do |argument, index|
+        text = expression_text(argument)
+        widening = WIDENED[@lir.value_type(argument)] if fixed && index >= fixed
+        widening ? "(#{widening})#{text}" : text
       end
     end
 

@@ -6,6 +6,7 @@ require_relative "machine"
 require_relative "api/host/binding"
 require_relative "api/pico_sdk/binding"
 require_relative "api/stm32cube/binding"
+require_relative "api/arduino/binding"
 
 module BareRubyProt
   # One machine the compiler produces artifacts for, and the roof over everything beside
@@ -67,7 +68,10 @@ module BareRubyProt
                                     api: PicoSdkBinding, machine: Machine::PICO2_W),
       "stm32-nucleo-f446re" =>
         new("stm32-nucleo-f446re", isa: Isa::CORTEX_M4F, substrate: Substrate::BARE_METAL,
-                                   api: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE)
+                                   api: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE),
+      "arduino-mega2560" =>
+        new("arduino-mega2560", isa: Isa::AVR, substrate: Substrate::BARE_METAL,
+                                api: ArduinoBinding, machine: Machine::MEGA2560)
     }.freeze
 
     # The full names are what the artifacts are named after and what the documents say.
@@ -77,7 +81,8 @@ module BareRubyProt
       "picow" => "raspberry-pi-pico-w",
       "pico2" => "raspberry-pi-pico2",
       "pico2w" => "raspberry-pi-pico2-w",
-      "f446" => "stm32-nucleo-f446re"
+      "f446" => "stm32-nucleo-f446re",
+      "mega" => "arduino-mega2560"
     }.freeze
 
     def self.[](name) = TABLE.fetch(ALIASES.fetch(name, name))
