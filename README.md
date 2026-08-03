@@ -322,7 +322,9 @@ one directory per API, each named for the version it is:
 │   ├── pico-sdk-2.3.0/
 │   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
 ├── arduino/
-│   └── arduino-cli-1.5.2-rc.1/
+│   ├── arduino-cli-1.5.2-rc.1/
+│   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
+│   └── downloads/
 └── stm32cube/
     ├── STM32CubeF4-1.28.3/             # HAL, CMSIS, startup files, linker scripts
     └── F446_Sample/                    # the CubeMX project this desk builds for
@@ -341,8 +343,12 @@ Its version is in its name for the same reason every other version here is.
 
 A desk that keeps its own copies elsewhere says so through the environment, and what is
 set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT_PATH`,
-`ARM_TOOLCHAIN_PATH`, and, for the Arduino core, an `arduino-cli` already on `PATH`.
-Toolchain output is shown only when a step fails.
+`ARM_TOOLCHAIN_PATH`, `ARDUINO_DIRECTORIES_DATA` and its two companions, and an
+`arduino-cli` already on `PATH`. Toolchain output is shown only when a step fails.
+
+What is not here is what the desk brings to any work at all: `ruby`, `make`, `cmake`,
+`git`. The line is what an artifact is made of — a cross compiler, an SDK, a board's
+libraries — against what does the making.
 
 The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
@@ -656,14 +662,19 @@ Two things are needed, neither of them needing `sudo`.
 mkdir -p .tools/arduino/arduino-cli-1.5.2-rc.1 && cd .tools/arduino/arduino-cli-1.5.2-rc.1
 curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
 tar xf arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+export ARDUINO_DIRECTORIES_DATA=$PWD/../data
 ./arduino-cli core install arduino:avr
 ```
 
-That is 37 MB for the command and 44 MB for the core, which brings avr-gcc, avr-libc and
-avrdude with it. `.tools/arduino/arduino-cli-1.5.2-rc.1` is where `bareruby` looks when
-the command is not already on `PATH`. The core does not land there: `arduino-cli` keeps
-it in `~/.arduino15`, which is the tool's own arrangement and not this repository's to
-move.
+That is 37 MB for the command and 381 MB for the core and the indexes it arrives with —
+avr-gcc, avr-libc and avrdude among them, which is to say the compiler that actually
+builds a sketch. Left alone `arduino-cli` files all of that under `~/.arduino15`, which
+would put the larger half of this API's toolchain outside the repository while the
+command driving it sat inside; `ARDUINO_DIRECTORIES_DATA` says otherwise, and `bareruby`
+passes the same thing on every build. `ARDUINO_DIRECTORIES_DOWNLOADS` and
+`ARDUINO_DIRECTORIES_USER` follow it, so nothing is left in a home directory. None of
+these carry a version, because `arduino-cli` keeps its own inside — one directory holds
+every core and tool version it has been asked for.
 
 What comes back is `bareruby_program.hex` and `bareruby_program.elf`, beside the sources
 they were made from rather than under whatever name the tool gave them.
