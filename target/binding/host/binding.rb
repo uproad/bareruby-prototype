@@ -2,17 +2,15 @@
 
 module BareRubyProt
   module HostBinding
-    PERIPHERAL = <<~CPP
+    # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
+    # share a file with one that cannot** — the declarations go with the gem, and an
+    # implementation left behind would have nothing to implement against.
+    GPIO = <<~CPP
       #include "bareruby_binding.h"
-
       #include <stdarg.h>
       #include <stdio.h>
       #include <stdlib.h>
       #include <string.h>
-
-      void bareruby_startup(void) {
-          fprintf(stderr, "startup()\\n");
-      }
 
       void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
           self->pin = pin;
@@ -43,6 +41,19 @@ module BareRubyProt
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
           fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
           handler();
+      }
+    CPP
+
+    PERIPHERAL = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      void bareruby_startup(void) {
+          fprintf(stderr, "startup()\\n");
       }
 
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
@@ -291,6 +302,7 @@ module BareRubyProt
       }
     CPP
 
+    GPIO_FILE = "bareruby_binding_gpio_host.cpp"
     PERIPHERAL_FILE = "bareruby_binding_host.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_host.cpp"
     I2C_FILE = "bareruby_binding_i2c_host.cpp"
@@ -325,6 +337,7 @@ module BareRubyProt
     ONBOARD_LED_NONE_FILE = "bareruby_binding_onboard_led_host_none.cpp"
 
     FILES = {
+      GPIO_FILE => GPIO,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -334,7 +347,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

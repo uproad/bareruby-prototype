@@ -582,8 +582,9 @@ module BareRubyProt
             infer_operator_call(name, receiver_tast, receiver_type, arguments, type_environment:, span:)
           elsif RECEIVER_ITERATOR_NAMES.include?(name)
             infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, type_environment:, span:)
-          elsif receiver_type.is_a?(Hash) && receiver_type[:class_name] == :GPIO && name == :on_interrupt
-            infer_gpio_interrupt_call(receiver_tast, arguments, block, type_environment:, span:)
+          elsif realtime_handler?(receiver_type, name)
+            infer_realtime_handler_call(receiver_type, receiver_tast, name, arguments, block,
+                                        type_environment:, span:)
           else
             infer_instance_method_call(receiver_tast, receiver_type, name, arguments, type_environment:, span:)
           end
@@ -922,12 +923,26 @@ module BareRubyProt
         @tast.create_call(receiver_tast, callee, arguments, nil, signature[:return_type], span)
       end
 
-      def infer_gpio_interrupt_call(receiver_tast, arguments, block, type_environment:, span:)
-        events = resolve_keywords(arguments, { edge: 0 }, type_environment:, span:).first
+      # A peripheral method whose declaration says its block becomes a realtime handler.
+      # **Which methods those are is the peripheral's answer, not a name known here** — the
+      # handler itself, the context it runs in and the checks it is subject to are the
+      # language's, and they are the same whatever hardware asked for one.
+      def realtime_handler?(receiver_type, name)
+        return false unless receiver_type.is_a?(Hash) && receiver_type[:class_name]
+        return false unless Peripheral.known?(receiver_type[:class_name])
+
+        Peripheral[receiver_type[:class_name]].block_of(name) == :realtime_handler
+      end
+
+      def infer_realtime_handler_call(receiver_type, receiver_tast, name, arguments, block,
+                                      type_environment:, span:)
+        signature = Peripheral[receiver_type[:class_name]].method_signature(name)
+        events = resolve_keywords(arguments, signature[:keywords] || { edge: 0 },
+                                  type_environment:, span:).first
         parameters, body = @bareruby_ast.children_of(block)
         typed_body = infer_body(body, type_environment: type_environment.without_locals)
         typed_block = @tast.create_block(parameters, typed_body, :Nil, span_of(block))
-        @tast.create_interrupt(receiver_tast, events, typed_block, :Nil, span)
+        @tast.create_interrupt(receiver_tast, events, typed_block, signature[:function], :Nil, span)
       end
 
       def infer_module_function_call(module_name, name, arguments, type_environment:, span:)

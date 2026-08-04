@@ -700,6 +700,33 @@ A gem is a build, not a checkout: **editing one changes nothing until it is buil
 installed again.** That is the whole difference between the two halves of `gems/` and the
 rest of this repository.
 
+`GPIO` left the same way, and cost two things I2C had not.
+
+**A block had to be declarable.** `GPIO#on_interrupt` takes a zero-argument block and turns
+it into a function running in the realtime context, and the compiler used to find that by
+looking for this class and this method **by name**, in two passes. The handler, the context
+and the checks over it are the language's and stay here; what is declared is only that this
+method's block becomes one:
+
+```ruby
+on_interrupt: { function: :bareruby_gpio_on_interrupt, parameter_types: %i[Int32],
+                keywords: { edge: 0 }, block: :realtime_handler }
+```
+
+One kind of block is declarable, because one kind exists. A second arrives with the second
+method that needs it.
+
+**Every binding's C++ had to be split.** `gpio`, `pwm`, `uart` and `adc` shared one
+translation unit that was always linked. **A peripheral that can be uninstalled cannot
+share a file with one that cannot** — remove the declarations and an implementation is left
+with nothing to implement against. Each binding now carries GPIO in a unit of its own, asked
+for by the same key mechanism I2C uses.
+
+That split is not only about removability. `samples/heartbeat.rb` lights the on-board LED
+and never touches a pin, and on the Mega 2560 it fell from **4190 B of flash to 3496 B**:
+694 B that were being linked for a class the program does not name. The Pico builds are
+unchanged, where `--gc-sections` was already dropping it.
+
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is

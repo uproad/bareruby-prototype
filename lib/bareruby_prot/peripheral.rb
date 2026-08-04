@@ -6,20 +6,7 @@ module BareRubyProt
   # behind its constructor and its methods. Which implementation those functions have is
   # the second stage's business; what a program may say to them is settled here.
   class Peripheral
-    # One-hot, matching PicoRuby, so that directions and pulls combine with | the way
-    # the standard guideline spells them.
     CLASSES = {
-      GPIO: {
-        struct: :bareruby_gpio_t,
-        constants: { IN: 1, OUT: 2, HIGH_Z: 4, PULL_UP: 8, PULL_DOWN: 16, OPEN_DRAIN: 32, EDGE_FALL: 4 },
-        constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
-        methods: {
-          write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
-          read: { function: :bareruby_gpio_read, parameter_types: [], return_type: :Int32 },
-          high?: { function: :bareruby_gpio_high, parameter_types: [], return_type: :Bool },
-          low?: { function: :bareruby_gpio_low, parameter_types: [], return_type: :Bool }
-        }
-      }
     }.freeze
 
     # The guideline returns a Float from read_voltage, but Fixed is the default
@@ -139,6 +126,13 @@ module BareRubyProt
     def constructor_keywords = @constructor[:keywords] || {}
 
     def method_signature(name) = @methods.fetch(name)
+
+    # **What a method does with a block, if it takes one.** The declaration form carries
+    # one kind — `:realtime_handler`, whose block becomes an independent function running
+    # in the realtime context — because one kind is what exists. A second arrives with the
+    # second method that needs it, and not before: a shape drawn from one example is a
+    # shape drawn again at the second.
+    def block_of(name) = @methods.dig(name, :block)
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, @struct)
 
