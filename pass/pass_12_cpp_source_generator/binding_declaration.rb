@@ -24,12 +24,6 @@ module BareRubyProt
       } bareruby_onboard_led_t;
 
       typedef struct {
-          int32_t id;
-          int32_t baud;
-          int32_t parity;
-      } bareruby_uart_t;
-
-      typedef struct {
           int32_t pin;
           int32_t channel;
       } bareruby_adc_t;
@@ -40,19 +34,6 @@ module BareRubyProt
       void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
       void bareruby_onboard_led_on(bareruby_onboard_led_t *self);
       void bareruby_onboard_led_off(bareruby_onboard_led_t *self);
-
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity);
-      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
-      void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
-      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
-      bareruby_string_t *bareruby_uart_read(
-          bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length);
-      bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena);
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self);
-      void bareruby_uart_flush(bareruby_uart_t *self);
-      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
-      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
 
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin);
       int32_t bareruby_adc_read(bareruby_adc_t *self);

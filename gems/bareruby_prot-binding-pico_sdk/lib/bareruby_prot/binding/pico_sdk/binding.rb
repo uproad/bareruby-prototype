@@ -51,6 +51,75 @@ module BareRubyProt
       }
     CPP
 
+    UART = <<~CPP
+      #include "bareruby_binding.h"
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+      #include "hardware/adc.h"
+      #include "hardware/clocks.h"
+      #include "hardware/gpio.h"
+      #include "hardware/pwm.h"
+      #include "hardware/uart.h"
+      #include "pico/stdlib.h"
+
+      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+          self->id = id;
+          self->baud = baud;
+          self->parity = parity;
+          uart_inst_t *port = (id == 0) ? uart0 : uart1;
+          uart_init(port, (uint)baud);
+          gpio_set_function((id == 0) ? 0u : 4u, GPIO_FUNC_UART);
+          gpio_set_function((id == 0) ? 1u : 5u, GPIO_FUNC_UART);
+      }
+
+      static uart_inst_t *bareruby_uart_port(const bareruby_uart_t *self) {
+          return (self->id == 0) ? uart0 : uart1;
+      }
+
+      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
+          size_t length = strlen(value);
+          uart_write_blocking(bareruby_uart_port(self), (const uint8_t *)value, length);
+          return (int32_t)length;
+      }
+
+      void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
+          uart_puts(bareruby_uart_port(self), value);
+          uart_putc(bareruby_uart_port(self), '\\n');
+      }
+
+      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
+          char payload[256];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          uart_puts(bareruby_uart_port(self), payload);
+      }
+
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return uart_is_readable(bareruby_uart_port(self)) ? 1 : 0;
+      }
+
+      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
+          return uart_is_readable(bareruby_uart_port(self));
+      }
+
+      void bareruby_uart_flush(bareruby_uart_t *self) {
+          uart_tx_wait_blocking(bareruby_uart_port(self));
+      }
+
+      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+          while (uart_is_readable(bareruby_uart_port(self))) {
+              (void)uart_getc(bareruby_uart_port(self));
+          }
+      }
+
+      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
+          uart_tx_wait_blocking(bareruby_uart_port(self));
+      }
+    CPP
+
     GPIO = <<~CPP
       #include "bareruby_binding.h"
       #include <stdarg.h>
@@ -131,61 +200,6 @@ module BareRubyProt
       }
 
 
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
-          self->parity = parity;
-          uart_inst_t *port = (id == 0) ? uart0 : uart1;
-          uart_init(port, (uint)baud);
-          gpio_set_function((id == 0) ? 0u : 4u, GPIO_FUNC_UART);
-          gpio_set_function((id == 0) ? 1u : 5u, GPIO_FUNC_UART);
-      }
-
-      static uart_inst_t *bareruby_uart_port(const bareruby_uart_t *self) {
-          return (self->id == 0) ? uart0 : uart1;
-      }
-
-      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
-          size_t length = strlen(value);
-          uart_write_blocking(bareruby_uart_port(self), (const uint8_t *)value, length);
-          return (int32_t)length;
-      }
-
-      void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
-          uart_puts(bareruby_uart_port(self), value);
-          uart_putc(bareruby_uart_port(self), '\\n');
-      }
-
-      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
-          char payload[256];
-          va_list arguments;
-          va_start(arguments, format);
-          vsnprintf(payload, sizeof(payload), format, arguments);
-          va_end(arguments);
-          uart_puts(bareruby_uart_port(self), payload);
-      }
-
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          return uart_is_readable(bareruby_uart_port(self)) ? 1 : 0;
-      }
-
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return uart_is_readable(bareruby_uart_port(self));
-      }
-
-      void bareruby_uart_flush(bareruby_uart_t *self) {
-          uart_tx_wait_blocking(bareruby_uart_port(self));
-      }
-
-      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
-          while (uart_is_readable(bareruby_uart_port(self))) {
-              (void)uart_getc(bareruby_uart_port(self));
-          }
-      }
-
-      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
-          uart_tx_wait_blocking(bareruby_uart_port(self));
-      }
 
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
           self->pin = pin;
@@ -338,6 +352,7 @@ module BareRubyProt
     # through pico-sdk, which spells them the same way whichever chip is underneath.
     # Only the board name handed to the SDK tells the two apart.
     PWM_FILE = "bareruby_binding_pwm_pico.cpp"
+    UART_FILE = "bareruby_binding_uart_pico.cpp"
     GPIO_FILE = "bareruby_binding_gpio_pico.cpp"
     PERIPHERAL_FILE = "bareruby_binding_pico.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_pico.cpp"
@@ -405,6 +420,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      UART_FILE => UART,
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
@@ -418,7 +434,7 @@ module BareRubyProt
     # of these modules and asks it the same things.
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

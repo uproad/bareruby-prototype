@@ -41,41 +41,6 @@ module BareRubyProt
           read_voltage: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
           read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
         }
-      },
-      UART: {
-        struct: :bareruby_uart_t,
-        constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4 },
-        constructor: {
-          function: :bareruby_uart_init,
-          parameter_types: %i[Int32],
-          keywords: { baud: 115_200, parity: 0 }
-        },
-        methods: {
-          # puts and write on a UART take the same printf expansion as the global puts.
-          write: {
-            function: :bareruby_uart_write, printf_function: :bareruby_uart_printf,
-            parameter_types: %i[String], return_type: :Int32
-          },
-          puts: {
-            function: :bareruby_uart_puts, printf_function: :bareruby_uart_printf,
-            parameter_types: %i[String], return_type: :Nil
-          },
-          read: { function: :bareruby_uart_read, parameter_types: %i[Int32], return_type: :arena_string },
-          gets: { function: :bareruby_uart_gets, parameter_types: [], return_type: :arena_string },
-          bytes_available: {
-            function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
-          },
-          can_read_line: {
-            function: :bareruby_uart_can_read_line, parameter_types: [], return_type: :Bool
-          },
-          flush: { function: :bareruby_uart_flush, parameter_types: [], return_type: :Nil },
-          clear_rx_buffer: {
-            function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :Nil
-          },
-          clear_tx_buffer: {
-            function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
-          }
-        }
       }
     }.freeze
 
@@ -94,6 +59,7 @@ module BareRubyProt
       @declaration = entry[:declaration]
       @required_name = entry[:required_name]
       @units = entry[:units] || {}
+      @variadic = entry[:variadic] || {}
     end
 
     # **Which translation unit a binding must supply, and how to tell it is needed.** The
@@ -116,6 +82,12 @@ module BareRubyProt
     # second method that needs it, and not before: a shape drawn from one example is a
     # shape drawn again at the second.
     def block_of(name) = @methods.dig(name, :block)
+
+    def variadic_from(name) = @variadic[name]
+
+    def string_answers
+      @methods.filter_map { |_name, one| one[:function] if one[:return_type] == :arena_string }
+    end
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, @struct)
 
@@ -143,6 +115,13 @@ module BareRubyProt
     def self.required_names = all.filter_map(&:required_name)
 
     def self.units_reached(low_ir) = all.flat_map { |one| one.units_reached(low_ir) }.uniq
+
+    # The functions that answer a variable-length string. A declaration already says so in
+    # its return type, so nothing has to be listed twice.
+    def self.string_answers = all.flat_map(&:string_answers)
+
+    def self.variadic_from(name) = all.filter_map { |one| one.variadic_from(name) }.first
+
 
     # Where a standard class declares itself. Nothing here says which ones exist — they
     # are found by looking rather than by naming, in every gem installed at the desk. The

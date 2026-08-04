@@ -40,18 +40,16 @@ module BareRubyProt
 
       # A program that keeps to static and fixed-capacity strings never links the string
       # runtime either, which costs stdio's vsnprintf on top of the region it allocates
-      # from. Receiving over UART or off the I2C bus answers a variable-length string, so
-      # those reach it without naming it.
+      # from. A peripheral call that answers a variable-length string reaches it without
+      # naming it — **and which calls those are is read off the declarations** rather than
+      # listed here, so a peripheral this side has never heard of is counted too.
       def builds_strings?
-        @lir.calls_prefixed?("bareruby_string_") ||
-          @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets, :bareruby_i2c_read)
+        @lir.calls_prefixed?("bareruby_string_") || @lir.calls?(*Peripheral.string_answers)
       end
 
       # Which way a machine's indicator is reached is the machine's own answer, given to
       # the binding beside it. Nothing here works it out.
       def onboard_led_of(target) = target.binding.machine(target.machine)
-
-      def receives_uart? = @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets)
 
 
 
@@ -85,7 +83,6 @@ module BareRubyProt
       def sources(target)
         binding = target.binding
         names = binding::ALWAYS + RuntimeSource::ALWAYS
-        names << binding::UART_RECEIVE_FILE if receives_uart?
         # What a peripheral needs is asked of the peripheral. It answers with keys of its
         # own choosing, and the binding says which file each key is — so a peripheral that
         # arrived from elsewhere is linked without this file, or the binding, knowing it.

@@ -732,6 +732,18 @@ implement a peripheral at all.** A NUCLEO board reached through the STM32Cube HA
 PWM, and now says so by having no file for that key rather than by an entry leading
 nowhere. What used to be a link error at the second stage is a refusal at the first.
 
+`UART` was the one that took two units rather than one — sending and receiving, because
+receiving answers a variable-length string and reaches the arena to do it. It also carried
+two things off that the compiler had been holding on its behalf: **which calls answer a
+variable-length string** (read off the declared return types now, rather than a list of
+function names), and **where a printf expansion's variable arguments begin** (a fact about
+that function's signature, so the function's own declaration says it).
+
+The Mega 2560 kept getting smaller as each class left the always-linked file:
+`samples/heartbeat.rb` went 4190 B → 3496 B → **2702 B of flash**, and 657 B → **186 B of
+SRAM** once `Serial` stopped being linked into a program that never prints. Roughly a third
+of the original build was machinery for classes the program does not name.
+
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is
