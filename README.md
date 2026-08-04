@@ -435,13 +435,13 @@ written empty, and filled in when that day comes.
 
 None of that is anything to look up, which is why it is asked for instead. Every entry has
 a machine, a name and a debug build, so those are asked by the command itself. What else a
-family needs — the path to a CubeMX project, how to optimize the build — is in
-[`target-catalog.yml`](target-catalog.yml), so a machine that does not exist yet is
-reached by adding to that file. It restates no composition: a family names targets, and
-their machine, binding and triple come from `target/target.rb`, where they already are.
-The machine that needs no hardware is offered first and the rest are alphabetical, so
-anything attaching later has one obvious place to go. `./bareruby target list` prints them
-all.
+family needs — the path to a CubeMX project, how to optimize the build — is in that
+family's own `family.yml`, beside the binding that can build it, so a machine that does not
+exist yet is reached by adding a binding rather than by editing a list. It restates no
+composition: a family names targets, and their machine, binding and triple come from the
+binding's `targets.rb`, where they already are. The machine that needs no hardware is
+offered first and the rest are alphabetical, so anything attaching later has one obvious
+place to go. `./bareruby target list` prints them all.
 
 [`target.yml.sample`](target.yml.sample) documents every field, for reading a file back
 once it exists.
@@ -625,9 +625,17 @@ fixed-point arithmetic — and the declarations every binding answers.
 What differs by what is being called sits under `target/binding/<binding>/`, one directory
 each: `binding.rb` implements those declarations in its own words, `build.rb` writes down
 what the second stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a
-machine. Those four are everything a binding owns, and they are the only files that change
-when a new one is added. Each names its own translation units, because the name a piece of
-C++ is written under belongs with that C++ and nowhere else.
+machine. Each names its own translation units, because the name a piece of C++ is written
+under belongs with that C++ and nowhere else.
+
+**Nothing outside that directory knows the binding is there.** Two more files finish it —
+`targets.rb`, which registers the machines it reaches and the compositions it can produce
+for them, and `family.yml`, which says how `target add` should offer them — and with those
+six the compiler names no binding at all. It finds them by looking: `target/target.rb`
+requires every `binding/*/targets.rb` it can see, and each one brings its own instruction
+sets, its own machines and its own entries in the table. **Adding a machine is adding a
+directory.** Taking one away is deleting one, and the compiler still builds for the
+machine doing the compiling, which is the only binding this side owns.
 
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
