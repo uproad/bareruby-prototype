@@ -32,16 +32,6 @@ module BareRubyProt
     }.freeze
 
     EXTRA = {
-      ADC: {
-        struct: :bareruby_adc_t,
-        constants: {},
-        constructor: { function: :bareruby_adc_init, parameter_types: %i[Int32] },
-        methods: {
-          read: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
-          read_voltage: { function: :bareruby_adc_read, parameter_types: [], return_type: :Fixed },
-          read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
-        }
-      }
     }.freeze
 
     # sleep waits from the moment it is called, so a loop drifts by however long its

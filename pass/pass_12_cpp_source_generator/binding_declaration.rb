@@ -23,21 +23,12 @@ module BareRubyProt
           int32_t state;
       } bareruby_onboard_led_t;
 
-      typedef struct {
-          int32_t pin;
-          int32_t channel;
-      } bareruby_adc_t;
-
       void bareruby_startup(void);
 
       void bareruby_onboard_led_init(bareruby_onboard_led_t *self);
       void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
       void bareruby_onboard_led_on(bareruby_onboard_led_t *self);
       void bareruby_onboard_led_off(bareruby_onboard_led_t *self);
-
-      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin);
-      int32_t bareruby_adc_read(bareruby_adc_t *self);
-      int32_t bareruby_adc_read_raw(bareruby_adc_t *self);
 
       void bareruby_machine_delay_us(int32_t microseconds);
       void bareruby_sleep(int32_t seconds);

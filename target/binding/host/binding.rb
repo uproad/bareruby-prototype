@@ -37,6 +37,30 @@ module BareRubyProt
       }
     CPP
 
+    ADC = <<~CPP
+      #include "bareruby_binding.h"
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+          self->pin = pin;
+          self->channel = pin - 26;
+          fprintf(stderr, "adc_init(pin=%d, channel=%d)\\n", (int)pin, (int)self->channel);
+      }
+
+      int32_t bareruby_adc_read(bareruby_adc_t *self) {
+          fprintf(stderr, "adc_read(pin=%d) -> 0\\n", (int)self->pin);
+          return 0;
+      }
+
+      int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+          fprintf(stderr, "adc_read_raw(pin=%d) -> 0\\n", (int)self->pin);
+          return 0;
+      }
+    CPP
+
     UART = <<~CPP
       #include "bareruby_binding.h"
       #include <stdarg.h>
@@ -157,21 +181,6 @@ module BareRubyProt
 
 
 
-      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
-          self->pin = pin;
-          self->channel = pin - 26;
-          fprintf(stderr, "adc_init(pin=%d, channel=%d)\\n", (int)pin, (int)self->channel);
-      }
-
-      int32_t bareruby_adc_read(bareruby_adc_t *self) {
-          fprintf(stderr, "adc_read(pin=%d) -> 0\\n", (int)self->pin);
-          return 0;
-      }
-
-      int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
-          fprintf(stderr, "adc_read_raw(pin=%d) -> 0\\n", (int)self->pin);
-          return 0;
-      }
 
       void bareruby_machine_delay_us(int32_t microseconds) {
           fprintf(stderr, "machine_delay_us(microseconds=%d)\\n", (int)microseconds);
@@ -321,6 +330,7 @@ module BareRubyProt
     CPP
 
     PWM_FILE = "bareruby_binding_pwm_host.cpp"
+    ADC_FILE = "bareruby_binding_adc_host.cpp"
     UART_FILE = "bareruby_binding_uart_host.cpp"
     GPIO_FILE = "bareruby_binding_gpio_host.cpp"
     PERIPHERAL_FILE = "bareruby_binding_host.cpp"
@@ -358,6 +368,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      ADC_FILE => ADC,
       UART_FILE => UART,
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
@@ -369,7 +380,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, adc: ADC_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 
