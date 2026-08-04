@@ -5,6 +5,38 @@ module BareRubyProt
     # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
     # share a file with one that cannot** — the declarations go with the gem, and an
     # implementation left behind would have nothing to implement against.
+    PWM = <<~CPP
+      #include "bareruby_binding.h"
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+          self->pin = pin;
+          self->slice = pin / 2;
+          self->frequency = frequency;
+          fprintf(stderr, "pwm_init(pin=%d, frequency=%d, duty=%d)\\n", (int)pin, (int)frequency, (int)duty);
+      }
+
+      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          self->frequency = frequency;
+          fprintf(stderr, "pwm_frequency(pin=%d, frequency=%d)\\n", (int)self->pin, (int)frequency);
+      }
+
+      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          fprintf(stderr, "pwm_period_us(pin=%d, period_us=%d)\\n", (int)self->pin, (int)period_us);
+      }
+
+      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+          fprintf(stderr, "pwm_duty(pin=%d, duty=%d)\\n", (int)self->pin, (int)duty);
+      }
+
+      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+          fprintf(stderr, "pwm_pulse_width_us(pin=%d, pulse_width_us=%d)\\n", (int)self->pin, (int)pulse_width_us);
+      }
+    CPP
+
     GPIO = <<~CPP
       #include "bareruby_binding.h"
       #include <stdarg.h>
@@ -56,29 +88,6 @@ module BareRubyProt
           fprintf(stderr, "startup()\\n");
       }
 
-      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
-          self->pin = pin;
-          self->slice = pin / 2;
-          self->frequency = frequency;
-          fprintf(stderr, "pwm_init(pin=%d, frequency=%d, duty=%d)\\n", (int)pin, (int)frequency, (int)duty);
-      }
-
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
-          self->frequency = frequency;
-          fprintf(stderr, "pwm_frequency(pin=%d, frequency=%d)\\n", (int)self->pin, (int)frequency);
-      }
-
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          fprintf(stderr, "pwm_period_us(pin=%d, period_us=%d)\\n", (int)self->pin, (int)period_us);
-      }
-
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
-          fprintf(stderr, "pwm_duty(pin=%d, duty=%d)\\n", (int)self->pin, (int)duty);
-      }
-
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
-          fprintf(stderr, "pwm_pulse_width_us(pin=%d, pulse_width_us=%d)\\n", (int)self->pin, (int)pulse_width_us);
-      }
 
       static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self, const char *text) {
           fprintf(stderr, "%s(id=%d, text=\\"", label, (int)self->id);
@@ -302,6 +311,7 @@ module BareRubyProt
       }
     CPP
 
+    PWM_FILE = "bareruby_binding_pwm_host.cpp"
     GPIO_FILE = "bareruby_binding_gpio_host.cpp"
     PERIPHERAL_FILE = "bareruby_binding_host.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_host.cpp"
@@ -338,6 +348,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -347,7 +358,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

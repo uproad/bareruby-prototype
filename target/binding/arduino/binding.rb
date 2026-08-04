@@ -11,6 +11,41 @@ module BareRubyProt
     # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
     # share a file with one that cannot** — the declarations go with the gem, and an
     # implementation left behind would have nothing to implement against.
+    PWM = <<~CPP
+      #include "bareruby_binding.h"
+      #include <Arduino.h>
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
+      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+          self->pin = pin;
+          self->slice = 0;
+          self->frequency = frequency;
+          pinMode((uint8_t)pin, OUTPUT);
+          bareruby_pwm_duty(self, duty);
+      }
+
+      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          self->frequency = frequency;
+      }
+
+      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          self->frequency = period_us > 0 ? (int32_t)(1000000 / period_us) : 0;
+      }
+
+      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+          analogWrite((uint8_t)self->pin, (int)(255 * duty / 100));
+      }
+
+      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+          int32_t period_us = self->frequency > 0 ? (int32_t)(1000000 / self->frequency) : 0;
+          analogWrite(
+              (uint8_t)self->pin,
+              period_us > 0 ? (int)(255 * pulse_width_us / period_us) : 0);
+      }
+    CPP
+
     GPIO = <<~CPP
       #include "bareruby_binding.h"
       #include <Arduino.h>
@@ -99,32 +134,6 @@ module BareRubyProt
           stderr = &bareruby_console;
       }
 
-      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
-          self->pin = pin;
-          self->slice = 0;
-          self->frequency = frequency;
-          pinMode((uint8_t)pin, OUTPUT);
-          bareruby_pwm_duty(self, duty);
-      }
-
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
-          self->frequency = frequency;
-      }
-
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          self->frequency = period_us > 0 ? (int32_t)(1000000 / period_us) : 0;
-      }
-
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
-          analogWrite((uint8_t)self->pin, (int)(255 * duty / 100));
-      }
-
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
-          int32_t period_us = self->frequency > 0 ? (int32_t)(1000000 / self->frequency) : 0;
-          analogWrite(
-              (uint8_t)self->pin,
-              period_us > 0 ? (int)(255 * pulse_width_us / period_us) : 0);
-      }
 
       /* This board carries four of them. Serial is the one on the USB bridge, which is
          why it is also the console, and 1 through 3 are the pin headers. */
@@ -352,6 +361,7 @@ module BareRubyProt
     # implementation serves all of them and only the board name handed to the build tells
     # them apart. That is the same shape the Pico boards have, one step wider: these
     # boards do not even share an instruction set.
+    PWM_FILE = "bareruby_binding_pwm_arduino.cpp"
     GPIO_FILE = "bareruby_binding_gpio_arduino.cpp"
     PERIPHERAL_FILE = "bareruby_binding_arduino.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_arduino.cpp"
@@ -389,6 +399,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -398,7 +409,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

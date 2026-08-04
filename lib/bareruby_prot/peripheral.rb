@@ -42,23 +42,6 @@ module BareRubyProt
           read_raw: { function: :bareruby_adc_read_raw, parameter_types: [], return_type: :Int32 }
         }
       },
-      PWM: {
-        struct: :bareruby_pwm_t,
-        constants: {},
-        constructor: {
-          function: :bareruby_pwm_init,
-          parameter_types: %i[Int32],
-          keywords: { frequency: 0, duty: 0 }
-        },
-        methods: {
-          frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Nil },
-          period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Nil },
-          duty: { function: :bareruby_pwm_duty, parameter_types: %i[Int32], return_type: :Nil },
-          pulse_width_us: {
-            function: :bareruby_pwm_pulse_width_us, parameter_types: %i[Int32], return_type: :Nil
-          }
-        }
-      },
       UART: {
         struct: :bareruby_uart_t,
         constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4 },
