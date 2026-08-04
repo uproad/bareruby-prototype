@@ -16,19 +16,7 @@ module BareRubyProt
 
       typedef void (*bareruby_interrupt_handler_t)(void);
 
-      /* The on-board LED has nothing the program needs to carry: where it is and how it
-         is driven belong to the board, which the binding already knows. The struct
-         exists so the instance has storage like every other peripheral. */
-      typedef struct {
-          int32_t state;
-      } bareruby_onboard_led_t;
-
       void bareruby_startup(void);
-
-      void bareruby_onboard_led_init(bareruby_onboard_led_t *self);
-      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
-      void bareruby_onboard_led_on(bareruby_onboard_led_t *self);
-      void bareruby_onboard_led_off(bareruby_onboard_led_t *self);
 
       void bareruby_machine_delay_us(int32_t microseconds);
       void bareruby_sleep(int32_t seconds);

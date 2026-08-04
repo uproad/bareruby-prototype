@@ -19,7 +19,7 @@ module BareRubyProt
     CHIP_DEFINE = "STM32F446xx"
 
     # Every build is asked for in the same words, and answers with what it needs of them.
-    def initialize(target, sources:, onboard_led: false, debug: false, exceptions: true)
+    def initialize(target, sources:, units: [], debug: false, exceptions: true)
       @target = target
       @sources = sources
       @exceptions = exceptions

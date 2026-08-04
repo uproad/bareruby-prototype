@@ -5,39 +5,12 @@ module BareRubyProt
   # the binding keeps its state in, the constants it publishes, and the binding functions
   # behind its constructor and its methods. Which implementation those functions have is
   # the second stage's business; what a program may say to them is settled here.
+  #
+  # **Not one of them is written here.** This file knows what a peripheral is made of and
+  # knows no peripheral — every class arrives from a gem installed at the desk, by calling
+  # `register`. What a program may say to hardware is settled by what is installed, and
+  # this is the only door.
   class Peripheral
-    CLASSES = {
-    }.freeze
-
-    # The guideline returns a Float from read_voltage, but Fixed is the default
-    # fractional type here, so the binding returns Fixed. Q16.16 resolves to 1/65536 V,
-    # finer than the 12-bit converter's least significant bit.
-    # The on-board LED is its own class rather than a GPIO with a known pin, because on
-    # a board that has one it is frequently not a GPIO at all — a Pico W drives its LED
-    # through the wireless chip, and GP25, where the plain Pico's LED sits, is that
-    # chip's select line instead. Sharing GPIO's interface would only hide that. Which
-    # board the program is being built for decides how the binding reaches it, so a
-    # program that blinks says nothing about the board it will run on.
-    ONBOARD = {
-      OnboardLED: {
-        struct: :bareruby_onboard_led_t,
-        constants: {},
-        constructor: { function: :bareruby_onboard_led_init, parameter_types: [] },
-        methods: {
-          write: { function: :bareruby_onboard_led_write, parameter_types: %i[Int32], return_type: :Nil },
-          on: { function: :bareruby_onboard_led_on, parameter_types: [], return_type: :Nil },
-          off: { function: :bareruby_onboard_led_off, parameter_types: [], return_type: :Nil }
-        }
-      }
-    }.freeze
-
-    EXTRA = {
-    }.freeze
-
-    # sleep waits from the moment it is called, so a loop drifts by however long its
-    # body takes. asleep waits from the moment the previous asleep returned, which is
-    # what a loop that has to keep a period needs.
-
     attr_reader :name, :struct, :declaration, :required_name
 
     def initialize(name, entry)
@@ -81,18 +54,12 @@ module BareRubyProt
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, @struct)
 
-    # What this side still carries. Everything here could leave the same way I2C did; the
-    # ones that have not are the ones nothing has asked to move yet.
-    CATALOG = CLASSES.merge(EXTRA, ONBOARD).freeze
-
     ALL = {}
 
     # A peripheral arrives by saying what it is, from wherever it happens to live. The
     # compiler holds no list of them — what a program may say to hardware is settled by
     # what is installed, and this is the only door.
     def self.register(name, entry) = ALL[name] = new(name, entry)
-
-    CATALOG.each { |name, entry| register(name, entry) }
 
     def self.[](name) = ALL.fetch(name)
 
