@@ -739,6 +739,10 @@ variable-length string** (read off the declared return types now, rather than a 
 function names), and **where a printf expansion's variable arguments begin** (a fact about
 that function's signature, so the function's own declaration says it).
 
+`ADC` went the same way, and needed nothing new: a table, a declaration, one unit. **That
+is the point at which the road was finished** — the third class through it asked no
+question the first two had not already answered.
+
 The Mega 2560 kept getting smaller as each class left the always-linked file:
 `samples/heartbeat.rb` went 4190 B → 3496 B → **2702 B of flash**, and 657 B → **186 B of
 SRAM** once `Serial` stopped being linked into a program that never prints. Roughly a third
