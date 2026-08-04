@@ -46,6 +46,32 @@ module BareRubyProt
       }
     CPP
 
+    ADC = <<~CPP
+      #include "bareruby_binding.h"
+      #include <Arduino.h>
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
+      /* The converter here is 10 bits against a 5 V reference, where a Pico's is 12 bits
+         against 3.3 V, and the channel is the analog input's own number rather than a
+         pin's distance from the first of them. read answers volts either way, which is
+         what keeps a program that reads a voltage from carrying the board's numbers. */
+      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+          self->pin = pin;
+          self->channel = pin;
+      }
+
+      int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+          return (int32_t)analogRead((uint8_t)self->channel);
+      }
+
+      int32_t bareruby_adc_read(bareruby_adc_t *self) {
+          int64_t raw = (int64_t)bareruby_adc_read_raw(self);
+          return (int32_t)((raw * 5000 * 65536) / (1023 * 1000));
+      }
+    CPP
+
     UART = <<~CPP
       #include "bareruby_binding.h"
       #include <Arduino.h>
@@ -210,23 +236,6 @@ module BareRubyProt
 
 
 
-      /* The converter here is 10 bits against a 5 V reference, where a Pico's is 12 bits
-         against 3.3 V, and the channel is the analog input's own number rather than a
-         pin's distance from the first of them. read answers volts either way, which is
-         what keeps a program that reads a voltage from carrying the board's numbers. */
-      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
-          self->pin = pin;
-          self->channel = pin;
-      }
-
-      int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
-          return (int32_t)analogRead((uint8_t)self->channel);
-      }
-
-      int32_t bareruby_adc_read(bareruby_adc_t *self) {
-          int64_t raw = (int64_t)bareruby_adc_read_raw(self);
-          return (int32_t)((raw * 5000 * 65536) / (1023 * 1000));
-      }
 
       /* delayMicroseconds takes an unsigned int, which is 16 bits here, and is accurate
          only well below its top. So a long wait is spent in whole milliseconds and the
@@ -371,6 +380,7 @@ module BareRubyProt
     # them apart. That is the same shape the Pico boards have, one step wider: these
     # boards do not even share an instruction set.
     PWM_FILE = "bareruby_binding_pwm_arduino.cpp"
+    ADC_FILE = "bareruby_binding_adc_arduino.cpp"
     UART_FILE = "bareruby_binding_uart_arduino.cpp"
     GPIO_FILE = "bareruby_binding_gpio_arduino.cpp"
     PERIPHERAL_FILE = "bareruby_binding_arduino.cpp"
@@ -409,6 +419,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      ADC_FILE => ADC,
       UART_FILE => UART,
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
@@ -420,7 +431,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, adc: ADC_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 
