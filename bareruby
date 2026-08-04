@@ -4,6 +4,18 @@
 require "English"
 require "fileutils"
 
+# Where a gem this checkout reaches for is kept, filed under the repository for the same
+# reason .tools/ is: what a run reaches for is the run's, and a checkout that has to be
+# told where its own bindings are has been left half-installed. A desk that installs them
+# the ordinary way is served too — this only adds a place to look, and never takes one away.
+# What this side publishes for a binding to require by name. Inside one tree a binding
+# reached it with a relative path; once one is packaged elsewhere that path leads nowhere,
+# and **what was a convenience becomes an interface**. This is where that interface lives.
+$LOAD_PATH.unshift(File.expand_path("lib", __dir__))
+
+GEMS = File.expand_path(".gems", __dir__)
+Gem.use_paths(Gem.dir, [*Gem.path, GEMS]) if Dir.exist?(GEMS)
+
 require_relative "compiler"
 require_relative "deployment"
 require_relative "catalog"

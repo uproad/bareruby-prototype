@@ -2,7 +2,7 @@
 
 require "json"
 
-require_relative "../toolchain"
+require "bareruby_prot/toolchain"
 require_relative "toolchain"
 
 module BareRubyProt
