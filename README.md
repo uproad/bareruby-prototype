@@ -727,6 +727,11 @@ and never touches a pin, and on the Mega 2560 it fell from **4190 B of flash to 
 694 B that were being linked for a class the program does not name. The Pico builds are
 unchanged, where `--gc-sections` was already dropping it.
 
+`PWM` followed, and answered a question the first two had not raised: **a binding need not
+implement a peripheral at all.** A NUCLEO board reached through the STM32Cube HAL has no
+PWM, and now says so by having no file for that key rather than by an entry leading
+nowhere. What used to be a link error at the second stage is a refusal at the first.
+
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is
