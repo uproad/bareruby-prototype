@@ -24,12 +24,6 @@ module BareRubyProt
       } bareruby_onboard_led_t;
 
       typedef struct {
-          int32_t pin;
-          int32_t slice;
-          int32_t frequency;
-      } bareruby_pwm_t;
-
-      typedef struct {
           int32_t id;
           int32_t baud;
           int32_t parity;
@@ -46,12 +40,6 @@ module BareRubyProt
       void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
       void bareruby_onboard_led_on(bareruby_onboard_led_t *self);
       void bareruby_onboard_led_off(bareruby_onboard_led_t *self);
-
-      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty);
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency);
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us);
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty);
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us);
 
       void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity);
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);

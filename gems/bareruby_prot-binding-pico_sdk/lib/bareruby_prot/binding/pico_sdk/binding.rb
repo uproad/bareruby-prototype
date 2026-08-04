@@ -5,6 +5,52 @@ module BareRubyProt
     # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
     # share a file with one that cannot** — the declarations go with the gem, and an
     # implementation left behind would have nothing to implement against.
+    PWM = <<~CPP
+      #include "bareruby_binding.h"
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+      #include "hardware/adc.h"
+      #include "hardware/clocks.h"
+      #include "hardware/gpio.h"
+      #include "hardware/pwm.h"
+      #include "hardware/uart.h"
+      #include "pico/stdlib.h"
+
+      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+          self->pin = pin;
+          self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
+          gpio_set_function((uint)pin, GPIO_FUNC_PWM);
+          bareruby_pwm_frequency(self, frequency);
+          bareruby_pwm_duty(self, duty);
+      }
+
+      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          self->frequency = frequency;
+          if (frequency <= 0) {
+              pwm_set_enabled((uint)self->slice, false);
+              return;
+          }
+          uint32_t divider = (clock_get_hz(clk_sys) / 1000000u);
+          pwm_set_clkdiv((uint)self->slice, (float)divider);
+          pwm_set_wrap((uint)self->slice, (uint16_t)((1000000u / (uint32_t)frequency) - 1u));
+          pwm_set_enabled((uint)self->slice, true);
+      }
+
+      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          bareruby_pwm_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
+      }
+
+      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+          uint16_t top = (uint16_t)pwm_hw->slice[self->slice].top;
+          pwm_set_gpio_level((uint)self->pin, (uint16_t)((uint32_t)top * (uint32_t)duty / 100u));
+      }
+
+      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+          pwm_set_gpio_level((uint)self->pin, (uint16_t)pulse_width_us);
+      }
+    CPP
+
     GPIO = <<~CPP
       #include "bareruby_binding.h"
       #include <stdarg.h>
@@ -84,38 +130,6 @@ module BareRubyProt
           stdio_init_all();
       }
 
-      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
-          self->pin = pin;
-          self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
-          gpio_set_function((uint)pin, GPIO_FUNC_PWM);
-          bareruby_pwm_frequency(self, frequency);
-          bareruby_pwm_duty(self, duty);
-      }
-
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
-          self->frequency = frequency;
-          if (frequency <= 0) {
-              pwm_set_enabled((uint)self->slice, false);
-              return;
-          }
-          uint32_t divider = (clock_get_hz(clk_sys) / 1000000u);
-          pwm_set_clkdiv((uint)self->slice, (float)divider);
-          pwm_set_wrap((uint)self->slice, (uint16_t)((1000000u / (uint32_t)frequency) - 1u));
-          pwm_set_enabled((uint)self->slice, true);
-      }
-
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          bareruby_pwm_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
-      }
-
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
-          uint16_t top = (uint16_t)pwm_hw->slice[self->slice].top;
-          pwm_set_gpio_level((uint)self->pin, (uint16_t)((uint32_t)top * (uint32_t)duty / 100u));
-      }
-
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
-          pwm_set_gpio_level((uint)self->pin, (uint16_t)pulse_width_us);
-      }
 
       void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
           self->id = id;
@@ -323,6 +337,7 @@ module BareRubyProt
     # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
     # through pico-sdk, which spells them the same way whichever chip is underneath.
     # Only the board name handed to the SDK tells the two apart.
+    PWM_FILE = "bareruby_binding_pwm_pico.cpp"
     GPIO_FILE = "bareruby_binding_gpio_pico.cpp"
     PERIPHERAL_FILE = "bareruby_binding_pico.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_pico.cpp"
@@ -390,6 +405,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -402,7 +418,7 @@ module BareRubyProt
     # of these modules and asks it the same things.
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 
