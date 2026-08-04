@@ -5,7 +5,7 @@
 # should have to go and look up. So they are not asked for. What is asked is the board, in
 # the words its own maker uses, and the three answers follow from that.
 #
-# Nothing here restates a composition. A family names targets, and the machine, api and
+# Nothing here restates a composition. A family names targets, and the machine, binding and
 # triple of each come from target/target.rb, where they already are. Adding a board here
 # once it exists there is adding a label and a question, not a second source of truth.
 #
@@ -44,7 +44,7 @@ bareruby:
             states and matches nothing in the other. An RP2350 reports one number for both.
             Given nothing, flashing prints the candidates with the serials they answer to
             at that moment, which is the one to pass.
-          hint_command: target/api/pico_sdk/flash.sh --list
+          hint_command: target/binding/pico_sdk/flash.sh --list
         - key: debug
           label: Debug firmware? The USB interface stays up, so it can be rewritten
             without holding BOOTSEL, and puts has somewhere to arrive
@@ -67,7 +67,7 @@ bareruby:
             that is read every build.
 
             Answer only when the desk keeps several projects there, or keeps its own
-            somewhere else. See target/api/stm32cube/setup.md.
+            somewhere else. See target/binding/stm32cube/setup.md.
         - key: options.configuration
           label: How to optimize this build
           kind: choice

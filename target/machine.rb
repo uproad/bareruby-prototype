@@ -17,12 +17,12 @@ module BareRubyProt
     #
     # What one SDK calls this board is a different question and is not answered here:
     # `pico_w` is the word pico-sdk wants for the same board this calls `:pico_w`, and a
-    # second SDK reaching it would want another. Those live in `api/<api>/machine/`.
+    # second SDK reaching it would want another. Those live in `binding/<binding>/machine/`.
     #
     # How a peripheral on this board is reached is not recorded here. It is not a fact
-    # about the board alone — the same indicator is `gpio_put` through one SDK and
-    # `HAL_GPIO_WritePin` through another — so it lives in the cell where the board and
-    # the API meet, under `api/<api>/machine/`.
+    # about the machine alone — the same indicator is `gpio_put` through one SDK and
+    # `HAL_GPIO_WritePin` through another — so it lives in the cell where the machine and
+    # the binding meet, under `binding/<binding>/machine/`.
     attr_reader :key, :chip
 
     def initialize(key, chip: nil)

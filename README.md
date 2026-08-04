@@ -182,7 +182,7 @@ Covered so far:
   (36644 B against 36700 B) and no RAM, which is the six format strings.
 
   What this core cannot be asked for is recorded in its
-  [README](target/api/arduino/README.md): PWM has a duty and no frequency, because
+  [README](target/binding/arduino/README.md): PWM has a duty and no frequency, because
   `analogWrite` picks one and offers no way to name another; the chip has pull-ups and no
   pull-downs; `%lld` is not implemented by this libc; and `begin` has no build here at
   all, because the core compiles with `-fno-exceptions` and this libc carries no
@@ -198,12 +198,12 @@ Covered so far:
   **Which implementation a board takes is written down, not worked out.** How a board's
   indicator is reached is not a fact about the board alone: the same LED is `gpio_put` and
   `PICO_DEFAULT_LED_PIN` through pico-sdk, and `HAL_GPIO_WritePin` and `LD2_Pin` through a
-  CubeMX project. Nor is it a fact about the API alone, because a Pico and a Pico W differ
+  CubeMX project. Nor is it a fact about the binding alone, because a Pico and a Pico W differ
   under the very same SDK — one has its LED on a pin and the other behind a radio. It is a
   fact about the two together, so it lives where the two meet:
 
   ```ruby
-  # target/api/pico_sdk/machine/pico_w.rb
+  # target/binding/pico_sdk/machine/pico_w.rb
   module PicoSdkBinding
     module PicoW
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
@@ -217,9 +217,9 @@ Covered so far:
   end
   ```
 
-  A board answers for itself, by naming what the API beside it already carries. Nothing is
+  A machine answers for itself, by naming what the binding beside it already carries. Nothing is
   worked out: `binding.rb` holds the C++ and the names, exactly as it does for GPIO and
-  UART, and there is no branch in it that decides which board gets which. A board an API
+  UART, and there is no branch in it that decides which board gets which. A machine a binding
   cannot reach has no file rather than a wrong answer, and a board that needs the radio's
   driver and its firmware blob linked says so itself rather than a build guessing from
   what it got. So the same six lines of Ruby reach every supported on-board LED. A board with no
@@ -304,14 +304,14 @@ cd bareruby-prototype
 | Verb | What it does | Reads `target.yml` |
 | --- | --- | --- |
 | `compile` | Ruby to C++, into `build/<composition>/` | no — without `--target` the target is the machine doing the compiling |
-| `build` | `compile`, then each API's toolchain, leaving the artifact beside its sources | yes |
+| `build` | `compile`, then each binding's toolchain, leaving the artifact beside its sources | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
-| `target add` | asks which board this is and writes it into `target.yml` | writes it |
-| `target list` | every board that can be targeted, by family | no |
+| `target add` | asks which machine this is and writes it into `target.yml` | writes it |
+| `target list` | every machine that can be targeted, by family | no |
 
 `build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
-one directory per API, each named for the version it is:
+one directory per binding, each named for the version it is:
 
 ```text
 .tools/
@@ -336,8 +336,8 @@ has to be told where its own SDK is has been left half-installed. The version is
 name because it is part of what a measurement means — moving from pico-sdk 1.5.1 to 2.3.0
 changed every figure recorded below.
 
-`common/` is for what more than one API reaches for, filed under the instruction set it
-serves rather than under an API that only half-owns it: the Pico boards and the NUCLEO are
+`common/` is for what more than one binding reaches for, filed under the instruction set it
+serves rather than under a binding that only half-owns it: the Pico boards and the NUCLEO are
 compiled by the same `arm-none-eabi-g++`, so it is neither `pico_sdk`'s nor `stm32cube`'s.
 Its version is in its name for the same reason every other version here is.
 
@@ -360,7 +360,7 @@ than of the project. It is not meant to be written by hand either — `./barerub
 add` asks, and writes the answer:
 
 ```
-Which board is it?
+Which machine is it?
   1) Raspberry Pi Pico, through pico-sdk
   2) ST NUCLEO, through the STM32Cube HAL
   3) This machine, with every peripheral traced instead of driven
@@ -378,7 +378,7 @@ and what it writes is an entry:
 bareruby:
   targets:
     - machine: pico
-      api: pico_sdk
+      binding: pico_sdk
       triple: thumbv6m-none-eabi
       debug: true
       boards:
@@ -386,8 +386,8 @@ bareruby:
 ```
 
 An entry always spells out all three parts of a composition, because none of them settles
-another. One board is reachable through more than one API — a NUCLEO board through
-STM32Cube or through STM32duino — and one board whose chip carries two instruction sets is
+another. One machine is reachable through more than one binding — a NUCLEO board through
+STM32Cube or through STM32duino — and one whose chip carries two instruction sets is
 built for either of them, as an RP2350 is for Arm or for RISC-V. `boards:` is a list
 because several identical boards take the same one artifact.
 
@@ -395,7 +395,7 @@ None of that is anything to look up, which is why it is asked for instead. What 
 in what order, and what else a family needs — the path to a CubeIDE project, the serial of
 an ST-LINK probe — is in [`target-catalog.yml`](target-catalog.yml) rather than in the
 command, so a board that does not exist yet is reached by adding to that file. It restates
-no composition: a family names targets, and their machine, API and triple come from
+no composition: a family names targets, and their machine, binding and triple come from
 `target/target.rb`, where they already are. `./bareruby target list` prints them all, and
 an entry that names nothing prints them too.
 
@@ -456,7 +456,7 @@ build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/
 build/mega2560-arduino-avr-none/
 ```
 
-It is `<machine>-<api>-<triple>`, and it is long because that is how much it takes to be
+It is `<machine>-<binding>-<triple>`, and it is long because that is how much it takes to be
 unique. The triple alone will not do: a Pico and a Pico W are both `thumbv6m-none-eabi` and
 their firmware is not the same — one drives its LED from a pin and the other through the
 radio, which brings a driver and a firmware blob with it. The board alone will not do
@@ -477,10 +477,10 @@ hands to it.
 Those two words are pico-sdk's, not the boards'. `PICO_BOARD` is what that SDK calls a
 board, and `PICO_PLATFORM` is not even the chip's name: an RP2350 answers to
 `rp2350-arm-s` or `rp2350-riscv` once which of its two instruction sets to build for is
-chosen. So they are kept where the board and the API meet rather than on the board:
+chosen. So they are kept where the machine and the binding meet rather than on the machine:
 
 ```ruby
-# target/api/pico_sdk/machine/pico2_w.rb
+# target/binding/pico_sdk/machine/pico2_w.rb
 def self.pico_board = "pico2_w"
 
 def self.pico_platform = "rp2350"
@@ -578,15 +578,15 @@ What is the same everywhere belongs to the last pass and sits beside it in
 `pass/pass_12_cpp_source_generator/`: the runtime proper — the arena, the strings, the
 fixed-point arithmetic — and the declarations every binding answers.
 
-What differs by the API being called sits under `target/api/<api>/`, one directory each:
-`binding.rb` implements those declarations in that API's own words, `build.rb` writes down
+What differs by what is being called sits under `target/binding/<binding>/`, one directory
+each: `binding.rb` implements those declarations in its own words, `build.rb` writes down
 what the second stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a
-machine. Those four are everything an API owns, and they are the only files that change
+machine. Those four are everything a binding owns, and they are the only files that change
 when a new one is added. Each names its own translation units, because the name a piece of
 C++ is written under belongs with that C++ and nowhere else.
 
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
-low-level IR; the API it is built for supplies the entry point and says whether output has
+low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is
 called `bareruby_program.cpp` instead, because this side does not name an entry point it
 does not own.
@@ -609,7 +609,7 @@ else, says which in `target.yml` — the same shape as an SDK path in the enviro
 
 ```yaml
     - machine: nucleo_f446re
-      api: stm32cube
+      binding: stm32cube
       triple: thumbv7em-none-eabihf
       options:
         configuration: Debug
@@ -632,7 +632,7 @@ nothing but the files it owns, and brings the linked ELF back to
 `build/<composition>/bareruby_program.elf` so that flashing needs to know nothing about
 how the Cube project arranges its output. `options.configuration` picks `-Og -g3` or
 `-O2`; `ARM_TOOLCHAIN_PATH` names a compiler kept somewhere other than `.tools/`.
-The binding's [README](target/api/stm32cube/README.md) records project preparation, the
+The binding's [README](target/binding/stm32cube/README.md) records project preparation, the
 ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
 
 `./bareruby flash --target=f446` writes that ELF over SWD with `STM32_Programmer_CLI`,
@@ -669,7 +669,7 @@ export ARDUINO_DIRECTORIES_DATA=$PWD/../data
 That is 37 MB for the command and 381 MB for the core and the indexes it arrives with —
 avr-gcc, avr-libc and avrdude among them, which is to say the compiler that actually
 builds a sketch. Left alone `arduino-cli` files all of that under `~/.arduino15`, which
-would put the larger half of this API's toolchain outside the repository while the
+would put the larger half of this binding's toolchain outside the repository while the
 command driving it sat inside; `ARDUINO_DIRECTORIES_DATA` says otherwise, and `bareruby`
 passes the same thing on every build. `ARDUINO_DIRECTORIES_DOWNLOADS` and
 `ARDUINO_DIRECTORIES_USER` follow it, so nothing is left in a home directory. None of
@@ -899,10 +899,10 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-target/api/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
-target/api/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
-target/api/pico_sdk/flash.sh path/to/other.uf2
-target/api/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
+target/binding/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
+target/binding/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
+target/binding/pico_sdk/flash.sh path/to/other.uf2
+target/binding/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
 ```
 
 The script locates boards by SCSI vendor `RPI` and by USB vendor `2e8a` rather than by a
@@ -974,7 +974,7 @@ Only the mount needs privileges. One line in `/etc/fstab` per board removes even
 /dev/disk/by-id/usb-RPI_RP2350_34319CF054AB3BD6-0:0-part1 /mnt/pico2 vfat noauto,user,umask=000 0 0
 ```
 
-`target/api/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
+`target/binding/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
 mount points are read back out of `/etc/fstab`, so they can be named anything as long as
 each is distinct.
 

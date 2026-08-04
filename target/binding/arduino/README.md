@@ -1,8 +1,8 @@
 # Arduino core binding
 
-The Arduino core is one API surface — `digitalWrite`, `Serial`, `Wire`, `analogRead` —
+The Arduino core is one surface to call — `digitalWrite`, `Serial`, `Wire`, `analogRead` —
 spread over boards that share no instruction set: AVR, SAMD, nRF52, RP2040 and ESP32.
-That is why the instruction set is named separately from the API: one `binding.rb`
+That is why the instruction set is named separately from the binding: one `binding.rb`
 serves all of them, and `machine/` carries what each board is called.
 
 The core owns `main` and calls `setup` and `loop`, so this binding supplies those rather

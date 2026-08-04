@@ -2,7 +2,7 @@
 
 Reserved. Nothing here is implemented yet.
 
-ESP-IDF is one API surface over the ESP32 family, whose members split across two
+ESP-IDF is one surface to call over the ESP32 family, whose members split across two
 instruction sets — Xtensa on ESP32/S2/S3 and RISC-V on C3/C6/H2 — so the binding is one
 file and the instruction set is named per target.
 

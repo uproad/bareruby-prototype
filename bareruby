@@ -7,14 +7,14 @@ require "fileutils"
 require_relative "compiler"
 require_relative "deployment"
 require_relative "catalog"
-require_relative "target/api/host/toolchain"
-require_relative "target/api/pico_sdk/toolchain"
-require_relative "target/api/stm32cube/toolchain"
-require_relative "target/api/arduino/toolchain"
-require_relative "target/api/host/flash"
-require_relative "target/api/pico_sdk/flash"
-require_relative "target/api/stm32cube/flash"
-require_relative "target/api/arduino/flash"
+require_relative "target/binding/host/toolchain"
+require_relative "target/binding/pico_sdk/toolchain"
+require_relative "target/binding/stm32cube/toolchain"
+require_relative "target/binding/arduino/toolchain"
+require_relative "target/binding/host/flash"
+require_relative "target/binding/pico_sdk/flash"
+require_relative "target/binding/stm32cube/flash"
+require_relative "target/binding/arduino/flash"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and
@@ -31,13 +31,13 @@ module BareRubyProt
         compile SOURCE.rb   Ruby to C++, into build/<composition>/.
                             Reads no configuration; without --target the target is the
                             machine doing the compiling.
-        build   SOURCE.rb   compile, then run each API's toolchain over what it produced,
+        build   SOURCE.rb   compile, then run each binding's toolchain over what it produced,
                             leaving the artifact beside its sources.
         flash               Write what build left onto the boards that take it.
         deploy  SOURCE.rb   build, then flash.
-        target add          Ask which board this is, and write the answer into
+        target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
-        target list         Every board that can be targeted, by family.
+        target list         Every machine that can be targeted, by family.
 
       Options:
         --target=NAME       Work on NAME, repeatable. Names and their short forms are in
@@ -93,7 +93,7 @@ module BareRubyProt
       done = planned.all? do |entry|
         compile_for([entry.target], debug: debug?(entry))
         place(entry)
-        entry.target.api.toolchain.run(directory_of(entry), options: entry.options)
+        entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
       end
       done ? 0 : 1
     end
@@ -107,7 +107,7 @@ module BareRubyProt
       return nothing if planned.empty?
 
       done = planned.all? do |entry|
-        entry.target.api.flash.run(directory_of(entry), boards: entry.boards,
+        entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
                                                         options: entry.options)
       end
       done ? 0 : 1

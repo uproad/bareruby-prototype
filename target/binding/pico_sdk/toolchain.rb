@@ -10,7 +10,7 @@ module BareRubyProt
   # inside it, so the images come up one level to sit beside the sources they were made
   # from — what a board is given should not be found by knowing how cmake arranges itself.
   module PicoSdkToolchain
-    # What this API is built with lives under the repository, one directory per API, and
+    # What this binding is built with lives under the repository, one directory each, and
     # each of them says which version it is. A version is not a detail here: moving from
     # 1.5.1 to 2.3.0 changed every size this repository has recorded, so a figure without
     # the version it was measured under says less than it appears to. A desk that keeps
@@ -21,7 +21,7 @@ module BareRubyProt
     # supported there, so there is no reason to keep a second checkout for it.
     #
     # The ARM toolchain is filed under common/ rather than here, because the STM32 boards
-    # are built by the same compiler — a thing two APIs reach for is not either one's.
+    # are built by the same compiler — a thing two bindings reach for is not either one's.
     # What it is common to is an instruction set, so that is the shelf it sits on.
     PATHS = {
       "PICO_SDK_PATH" => "pico_sdk/pico-sdk-2.3.0",

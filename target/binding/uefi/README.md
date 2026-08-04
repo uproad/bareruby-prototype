@@ -2,7 +2,7 @@
 
 Reserved. Nothing here is implemented yet.
 
-Firmware services are an API surface like any other: text output, timers and bus
+Firmware services are a surface to call like any other: text output, timers and bus
 protocols are reached by calling into the boot services table rather than a HAL. The
 firmware owns the entry point and calls `efi_main`, so this binding is entered from
 outside in the same way the STM32Cube and ESP-IDF ones are.
