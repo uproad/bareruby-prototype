@@ -663,6 +663,43 @@ was a convenience becomes an interface**: it lives in `lib/bareruby_prot/` now a
 required by name. Nothing else crossed that line — one file was the whole of what a
 binding needs from this side.
 
+### A class the language offers, from a gem
+
+`gems/bareruby_prot-stdlib-i2c/` is the other half of the same idea. **`I2C` is not a
+class this compiler knows.** What may be said to a bus, what those calls lower to, what
+the generated header must declare, and which translation unit a binding has to supply once
+it is reached — all four arrive from the gem, and nothing on this side mentions I2C.
+
+```sh
+cd gems/bareruby_prot-stdlib-i2c
+gem build bareruby_prot-stdlib-i2c.gemspec
+GEM_HOME=../../.gems gem install --local bareruby_prot-stdlib-i2c-0.0.1.gem
+```
+
+Uninstall it and `samples/i2c.rb` no longer compiles, the header no longer declares
+`bareruby_i2c_t`, and **everything else compiles exactly as it did**.
+
+The part worth keeping is how a peripheral and a binding agree without knowing each other.
+The peripheral names its own C functions and asks for a unit by a key of its own choosing;
+the binding says which file answers that key. Neither names the other, and the compiler
+holds neither list:
+
+```ruby
+units: { i2c: %i[bareruby_i2c_init bareruby_i2c_write bareruby_i2c_read],
+         i2c_read: %i[bareruby_i2c_read] }        # what the peripheral asks for
+
+UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE } # what the binding answers
+```
+
+**Both gems have to be installed for a program that uses a bus on a board to build**, and
+they meet only in the generated C++. `samples/i2c.rb` for `raspberry-pi-pico` is 49568 B
+of text and a 118272 B `.uf2`, built from a declaration in one gem and an implementation
+in another.
+
+A gem is a build, not a checkout: **editing one changes nothing until it is built and
+installed again.** That is the whole difference between the two halves of `gems/` and the
+rest of this repository.
+
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is
