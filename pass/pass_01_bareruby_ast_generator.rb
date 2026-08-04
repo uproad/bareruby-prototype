@@ -2,13 +2,22 @@
 
 require "prism"
 
+require "bareruby_prot/peripheral"
+
 require_relative "../ir/bareruby_ast"
 
 module BareRubyProt
   module Pass
     class BareRubyAstGenerator
       REQUIRE_NAMES = %i[require require_relative].freeze
-      BUILTIN_REQUIRES = %w[gpio uart pwm i2c spi adc machine].freeze
+      # A require of a peripheral is not a file to find: the class is built in, and saying
+      # so is how a program reads the same here as it does under an interpreter that would
+      # have had to load one. Which names those are is not a list this side keeps — each
+      # peripheral says its own, so one that arrived from elsewhere is required the same way.
+      BUILTIN_REQUIRES = %w[gpio uart pwm spi adc machine].freeze
+
+      def self.builtin_require?(name) = BUILTIN_REQUIRES.include?(name) ||
+                                        Peripheral.required_names.include?(name)
 
       attr_reader :result, :notices
 
@@ -174,7 +183,7 @@ module BareRubyProt
       # the second require of it is a no-op, which is also what makes a cycle harmless
       # rather than an error, since the compiler counts the top-level file as require #0.
       def expand_require(kind, target, node)
-        if kind == :require && BUILTIN_REQUIRES.include?(target)
+        if kind == :require && self.class.builtin_require?(target)
           @notices << "notice: require #{target.inspect} is unnecessary; it is built in."
           return []
         end

@@ -382,6 +382,12 @@ module BareRubyProt
 
     # Every binding answers the same questions with the same names, so a build picks one
     # of these modules and asks it the same things.
+    # What a peripheral asks for by key, this binding answers with a file. The key is the
+    # peripheral's word and the file is this side's, so neither has to know the other.
+    UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+
+    def self.unit(key) = UNITS.fetch(key)
+
     ALWAYS = [PERIPHERAL_FILE].freeze
 
     # Reaching the radio's indicator is a driver and a firmware blob rather than a
