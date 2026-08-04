@@ -748,6 +748,26 @@ The Mega 2560 kept getting smaller as each class left the always-linked file:
 SRAM** once `Serial` stopped being linked into a program that never prints. Roughly a third
 of the original build was machinery for classes the program does not name.
 
+`OnboardLED` went last and was the one that did not fit. Every other class asks a binding
+for a file; this one has no single file to ask for, because the same indicator is a pin on
+one board and a radio on another. **So the key resolves to a question rather than a name**
+— the binding answers `:onboard_led` by asking the cell where that machine and it meet, and
+that cell was already there, saying which C++ this board's LED needs and which library it
+drags in. Nothing about the mechanism is specific to indicators: a unit whose file the
+machine decides is now expressible, and this is the first one.
+
+With it gone, **the compiler holds no peripheral at all.** `Peripheral` went from 156 lines
+to 93 and is a registry with nothing registered in it until a gem arrives:
+
+```
+bareruby_prot-stdlib-gpio     bareruby_prot-stdlib-pwm    bareruby_prot-stdlib-adc
+bareruby_prot-stdlib-uart     bareruby_prot-stdlib-i2c    bareruby_prot-stdlib-onboard_led
+```
+
+Uninstall all six and the compiler still builds every program that keeps to the language —
+integers, classes, arrays, strings, arenas, `puts`, `sleep`. What it can no longer do is
+name a piece of hardware, because nothing installed has told it that hardware exists.
+
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
 anywhere to go — and for a machine whose `main` is owned by someone else, the file is
