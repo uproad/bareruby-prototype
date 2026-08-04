@@ -41,11 +41,6 @@ module BareRubyProt
       } bareruby_uart_t;
 
       typedef struct {
-          int32_t id;
-          int32_t frequency;
-      } bareruby_i2c_t;
-
-      typedef struct {
           int32_t pin;
           int32_t channel;
       } bareruby_adc_t;
@@ -84,13 +79,6 @@ module BareRubyProt
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency);
-      int32_t bareruby_i2c_write(
-          bareruby_i2c_t *self, int32_t address, const char *bytes, int32_t length);
-      bareruby_string_t *bareruby_i2c_read(
-          bareruby_i2c_t *self, bareruby_arena_t *arena, int32_t address, int32_t length,
-          const char *outputs, int32_t output_length);
-
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin);
       int32_t bareruby_adc_read(bareruby_adc_t *self);
       int32_t bareruby_adc_read_raw(bareruby_adc_t *self);
@@ -111,6 +99,19 @@ module BareRubyProt
 
     HEADER_FILE = "bareruby_binding.h"
 
-    FILES = { HEADER_FILE => HEADER }.freeze
+    # The declarations a peripheral brought with it are spliced in before the guard closes.
+    # A peripheral that is not installed declares nothing, and a binding that implements it
+    # anyway has nothing to implement against — which is the point: **the header says what
+    # this build knows about, and nothing else.**
+    CLOSING = "#ifdef __cplusplus"
+
+    def self.header
+      registered = Peripheral.declarations
+      return HEADER if registered.empty?
+
+      HEADER.sub(CLOSING, "#{registered.join("\n")}\n#{CLOSING}")
+    end
+
+    def self.files = { HEADER_FILE => header }
   end
 end

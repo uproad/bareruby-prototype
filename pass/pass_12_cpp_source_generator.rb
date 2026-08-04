@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "bareruby_prot/peripheral"
+
 require_relative "pass_12_cpp_source_generator/runtime_source"
 require_relative "pass_12_cpp_source_generator/binding_declaration"
 require_relative "pass_12_cpp_source_generator/cpp_renderer"
@@ -18,7 +20,7 @@ module BareRubyProt
       end
 
       def run
-        @result = RuntimeSource::FILES.merge(BindingDeclaration::FILES)
+        @result = RuntimeSource::FILES.merge(BindingDeclaration.files)
         @targets.each { |target| @result.merge!(target.binding::FILES) }
         @targets.each { |target| @result.merge!(target_sources(target)) }
 
@@ -51,9 +53,7 @@ module BareRubyProt
 
       def receives_uart? = @lir.calls?(:bareruby_uart_read, :bareruby_uart_gets)
 
-      def uses_i2c? = @lir.calls_prefixed?("bareruby_i2c_")
 
-      def reads_i2c? = @lir.calls?(:bareruby_i2c_read)
 
       # Each target owns a directory named after itself, holding the entry point, the
       # record of how it is built, and — for a board — the build system that does it.
@@ -86,8 +86,10 @@ module BareRubyProt
         binding = target.binding
         names = binding::ALWAYS + RuntimeSource::ALWAYS
         names << binding::UART_RECEIVE_FILE if receives_uart?
-        names << binding::I2C_FILE if uses_i2c?
-        names << binding::I2C_READ_FILE if reads_i2c?
+        # What a peripheral needs is asked of the peripheral. It answers with keys of its
+        # own choosing, and the binding says which file each key is — so a peripheral that
+        # arrived from elsewhere is linked without this file, or the binding, knowing it.
+        names += Peripheral.units_reached(@lir).map { |key| binding.unit(key) }
         names << onboard_led_of(target).onboard_led_file if lights_onboard_led?
         names << RuntimeSource::ARENA_FILE if allocates?
         names << RuntimeSource::STRING_FILE if builds_strings?

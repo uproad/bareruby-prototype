@@ -429,6 +429,12 @@ module BareRubyProt
       I2C_READ_FILE => I2C_READ,
       ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN
     }.freeze
+    # What a peripheral asks for by key, this binding answers with a file. The key is the
+    # peripheral's word and the file is this side's, so neither has to know the other.
+    UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+
+    def self.unit(key) = UNITS.fetch(key)
+
     ALWAYS = [PERIPHERAL_FILE].freeze
 
 

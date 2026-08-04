@@ -106,19 +106,6 @@ module BareRubyProt
             function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
           }
         }
-      },
-      I2C: {
-        struct: :bareruby_i2c_t,
-        constants: {},
-        constructor: {
-          function: :bareruby_i2c_init,
-          parameter_types: %i[Int32],
-          keywords: { frequency: 100_000 }
-        },
-        methods: {
-          write: { function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32 },
-          read: { function: :bareruby_i2c_read, parameter_types: [], return_type: :arena_string }
-        }
       }
     }.freeze
 
@@ -126,7 +113,7 @@ module BareRubyProt
     # body takes. asleep waits from the moment the previous asleep returned, which is
     # what a loop that has to keep a period needs.
 
-    attr_reader :name, :struct
+    attr_reader :name, :struct, :declaration, :required_name
 
     def initialize(name, entry)
       @name = name
@@ -134,7 +121,16 @@ module BareRubyProt
       @constants = entry[:constants]
       @constructor = entry[:constructor]
       @methods = entry[:methods]
+      @declaration = entry[:declaration]
+      @required_name = entry[:required_name]
+      @units = entry[:units] || {}
     end
+
+    # **Which translation unit a binding must supply, and how to tell it is needed.** The
+    # peripheral names its own C functions, because they are its own; the binding says
+    # what file answers a key, because the file is its own. Neither has to know the other
+    # to agree, and a peripheral nobody installed asks for nothing.
+    def units_reached(low_ir) = @units.select { |_key, functions| low_ir.calls?(*functions) }.keys
 
     def constant(name) = @constants.fetch(name)
 
@@ -146,11 +142,39 @@ module BareRubyProt
 
     def instance_type(typed_ast) = typed_ast.create_instance_type(@name, @struct)
 
+    # What this side still carries. Everything here could leave the same way I2C did; the
+    # ones that have not are the ones nothing has asked to move yet.
     CATALOG = CLASSES.merge(EXTRA, ONBOARD).freeze
-    ALL = CATALOG.to_h { |name, entry| [name, new(name, entry)] }.freeze
+
+    ALL = {}
+
+    # A peripheral arrives by saying what it is, from wherever it happens to live. The
+    # compiler holds no list of them — what a program may say to hardware is settled by
+    # what is installed, and this is the only door.
+    def self.register(name, entry) = ALL[name] = new(name, entry)
+
+    CATALOG.each { |name, entry| register(name, entry) }
 
     def self.[](name) = ALL.fetch(name)
 
     def self.known?(name) = ALL.key?(name)
+
+    def self.all = ALL.values
+
+    def self.declarations = all.filter_map(&:declaration)
+
+    def self.required_names = all.filter_map(&:required_name)
+
+    def self.units_reached(low_ir) = all.flat_map { |one| one.units_reached(low_ir) }.uniq
+
+    # Where a standard class declares itself. Nothing here says which ones exist — they
+    # are found by looking rather than by naming, in every gem installed at the desk. The
+    # ones this side still carries are above; the ones that have left are indistinguishable
+    # from them once loaded.
+    INSTALLED = "bareruby_prot/stdlib/*.rb"
+
+    def self.load_installed = Gem.find_files(INSTALLED).sort.each { |one| require one }
   end
 end
+
+BareRubyProt::Peripheral.load_installed

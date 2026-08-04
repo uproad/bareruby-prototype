@@ -2,7 +2,7 @@
 
 require_relative "../ir/typed_ast"
 require_relative "pass_05_type_inferrer/class_definition"
-require_relative "pass_05_type_inferrer/peripheral"
+require "bareruby_prot/peripheral"
 require_relative "pass_05_type_inferrer/binding_function"
 require_relative "pass_05_type_inferrer/type_union"
 require_relative "pass_05_type_inferrer/type_environment"
