@@ -631,11 +631,37 @@ under belongs with that C++ and nowhere else.
 **Nothing outside that directory knows the binding is there.** Two more files finish it —
 `targets.rb`, which registers the machines it reaches and the compositions it can produce
 for them, and `family.yml`, which says how `target add` should offer them — and with those
-six the compiler names no binding at all. It finds them by looking: `target/target.rb`
-requires every `binding/*/targets.rb` it can see, and each one brings its own instruction
-sets, its own machines and its own entries in the table. **Adding a machine is adding a
-directory.** Taking one away is deleting one, and the compiler still builds for the
-machine doing the compiling, which is the only binding this side owns.
+six the compiler names no binding at all. It finds them by looking, and it looks in two
+places: beside itself, and among the gems installed at the desk. **A binding does not know
+which of the two it is in.**
+
+`gems/bareruby_prot-binding-pico_sdk/` is one that has left. It is a gem, built and
+installed like any other, and the four Raspberry Pi Pico machines arrive with it:
+
+```sh
+cd gems/bareruby_prot-binding-pico_sdk
+gem build bareruby_prot-binding-pico_sdk.gemspec
+GEM_HOME=../../.gems gem install --local bareruby_prot-binding-pico_sdk-0.0.1.gem
+```
+
+`.gems/` sits under the repository for the same reason `.tools/` does, and is gitignored
+for the same reason too. A desk that installs it the ordinary way is served as well; this
+only adds a place to look. **Uninstall it and the Pico machines are gone from
+`target list`, while everything else still compiles** — which is what an add-on being an
+add-on means.
+
+Packaging one asked two questions that a single tree never had to answer.
+
+**Where the SDK is.** `toolchain.rb` reached for `.tools/` by walking up out of its own
+directory, which works only while it is part of the checkout. It is found from where the
+command was run instead. An SDK is a gigabyte of somebody else's release; it belongs to
+the desk, not to the gem that asks for it.
+
+**What the compiler owes a binding.** Every binding reached the shared second-stage runner
+with a relative path. Once one is packaged elsewhere that path leads nowhere, and **what
+was a convenience becomes an interface**: it lives in `lib/bareruby_prot/` now and is
+required by name. Nothing else crossed that line — one file was the whole of what a
+binding needs from this side.
 
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output has
