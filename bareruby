@@ -7,14 +7,6 @@ require "fileutils"
 require_relative "compiler"
 require_relative "deployment"
 require_relative "catalog"
-require_relative "target/binding/host/toolchain"
-require_relative "target/binding/pico_sdk/toolchain"
-require_relative "target/binding/stm32cube/toolchain"
-require_relative "target/binding/arduino/toolchain"
-require_relative "target/binding/host/flash"
-require_relative "target/binding/pico_sdk/flash"
-require_relative "target/binding/stm32cube/flash"
-require_relative "target/binding/arduino/flash"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and

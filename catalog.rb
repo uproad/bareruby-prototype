@@ -12,8 +12,8 @@ module BareRubyProt
   #
   # It asks for a machine rather than a board because not every one of them is a board:
   # this desk itself is an entry, with every peripheral traced instead of driven. What to
-  # ask is data, in target-catalog.yml, so a machine that does not exist yet is reached by
-  # adding to that file rather than to this one.
+  # ask is data, in each binding's own family.yml, so a machine that does not exist yet is
+  # reached by adding a binding rather than by editing a list here.
   #
   # **What is on screen is the entry itself, in the words the file will use** — not a list
   # of questions that produces one afterwards, but the entry, being written. A composition
@@ -21,7 +21,38 @@ module BareRubyProt
   # when a single choice fills them in. The questions ride above it on one line, so the
   # answer being given is never far from the thing it is being given to.
   class Catalog
-    FILE = File.expand_path("target-catalog.yml", __dir__)
+    # A family arrives with the binding that can build it, beside the four files that
+    # binding already owns. Nothing here lists them.
+    #
+    #   key       what the family is called where one has to be named
+    #   label     what it is called on screen. The family's own name and nothing more —
+    #             what it is reached through is one of the three the composition already
+    #             spells out, and repeating it only makes the reader carry it twice.
+    #   targets   the target names it offers, in the order they are offered
+    #   asks      what it needs beyond the machine, the name and the debug build, which
+    #             every entry has and which `target add` asks for itself. Each one takes:
+    #
+    #               key           where the answer goes. `options.` prefixes go under it.
+    #               label         the question.
+    #               kind          text | path | list | choice
+    #               choices       for kind: choice.
+    #               optional      true to let an empty answer skip the key entirely.
+    #               hint          shown under the question.
+    #               hint_command  run, and its output shown under the question.
+    #
+    # Which boards are attached is not among them. It is not knowable when an entry is made
+    # — a serial is read off the machine in front of you, and an RP2040 answers with a
+    # different one in BOOTSEL than while running — and it is not needed until two machines
+    # of one chip are attached at once, which flashing detects and prints the candidates
+    # for. `boards:` is written empty and filled in when that day comes.
+    DECLARATIONS = File.expand_path("target/binding/*/family.yml", __dir__)
+
+    # The one that needs no hardware comes first, because it is the only family that is
+    # always there — everything else is a machine somebody went out and bought, and in time
+    # each will arrive on its own rather than from here. The rest are alphabetical, so a
+    # name is found by looking where it would be, and so anything attaching later has one
+    # obvious place to go: below.
+    OWN = "host"
 
     DIM = "\e[2m"
     BOLD = "\e[1m"
@@ -43,7 +74,11 @@ module BareRubyProt
     # field is laid out empty and filled in when flashing says which one it needs.
     UNASKED = { "boards" => [] }.freeze
 
-    def self.families = YAML.safe_load_file(FILE).dig("bareruby", "families") || []
+    def self.families
+      found = Dir.glob(DECLARATIONS).map { |one| YAML.safe_load_file(one) }
+      own, rest = found.partition { |one| one["key"] == OWN }
+      own + rest.sort_by { |one| one["label"] }
+    end
 
     def self.list
       families.each do |family|

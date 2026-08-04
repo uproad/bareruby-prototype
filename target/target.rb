@@ -3,10 +3,6 @@
 require_relative "isa"
 require_relative "substrate"
 require_relative "machine"
-require_relative "binding/host/binding"
-require_relative "binding/pico_sdk/binding"
-require_relative "binding/stm32cube/binding"
-require_relative "binding/arduino/binding"
 
 module BareRubyProt
   # One machine the compiler produces artifacts for, and the roof over everything beside
@@ -24,11 +20,17 @@ module BareRubyProt
   #   machine   — what the artifact runs on, and what can be reached there
   #
   # One binding serves machines that share no instruction set, one machine is reachable
-  # through more than one of them, and an instruction set says nothing about whether an operating
-  # system is underneath it. Naming the four separately is what keeps a machine whose
-  # instruction set is WebAssembly, and a desktop whose peripherals are all stubs, from
-  # each needing a kind of their own. Nothing is inferred here: a target that leaves an
-  # answer out is a target nobody has decided about yet.
+  # through more than one of them, and an instruction set says nothing about whether an
+  # operating system is underneath it. Naming the four separately is what keeps a machine
+  # whose instruction set is WebAssembly, and a desktop whose peripherals are all stubs,
+  # from each needing a kind of their own. Nothing is inferred here: a target that leaves
+  # an answer out is a target nobody has decided about yet.
+  #
+  # **No target is written here.** This file knows how a target is put together and knows
+  # nothing about any particular one — every composition arrives from the binding that can
+  # produce it, by calling `register`. What is left is the shape of the thing and a table
+  # that fills itself, which is what lets a machine be taught to this compiler without the
+  # compiler being taught about the machine.
   class Target
     OPTION_PREFIX = "--target="
     DEFAULT_NAMES = ["host"].freeze
@@ -44,46 +46,22 @@ module BareRubyProt
     end
 
     # Where the artifacts land. Three of the four answers are spelled out, because three
-    # of them can differ while the rest agree: one machine reached through two bindings, and
-    # one machine built for either of the two instruction sets its chip carries, are different
-    # firmware that must not overwrite each other. The substrate is left out because the
-    # triple already carries it. It is a long name, and that length is the information.
+    # of them can differ while the rest agree: one machine reached through two bindings,
+    # and one machine built for either of the two instruction sets its chip carries, are
+    # different firmware that must not overwrite each other. The substrate is left out
+    # because the triple already carries it. It is long, and that length is the information.
     def directory = "#{@machine.key}-#{@binding.key}-#{@isa.triple}"
 
-    TABLE = {
-      "host" =>
-        new("host", isa: Isa::COMPILING, substrate: Substrate::HOSTED,
-                    binding: HostBinding, machine: Machine::NONE),
-      "raspberry-pi-pico" =>
-        new("raspberry-pi-pico", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                 binding: PicoSdkBinding, machine: Machine::PICO),
-      "raspberry-pi-pico-w" =>
-        new("raspberry-pi-pico-w", isa: Isa::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
-                                   binding: PicoSdkBinding, machine: Machine::PICO_W),
-      "raspberry-pi-pico2" =>
-        new("raspberry-pi-pico2", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                  binding: PicoSdkBinding, machine: Machine::PICO2),
-      "raspberry-pi-pico2-w" =>
-        new("raspberry-pi-pico2-w", isa: Isa::CORTEX_M33, substrate: Substrate::BARE_METAL,
-                                    binding: PicoSdkBinding, machine: Machine::PICO2_W),
-      "stm32-nucleo-f446re" =>
-        new("stm32-nucleo-f446re", isa: Isa::CORTEX_M4F, substrate: Substrate::BARE_METAL,
-                                   binding: Stm32CubeBinding, machine: Machine::NUCLEO_F446RE),
-      "arduino-mega2560" =>
-        new("arduino-mega2560", isa: Isa::AVR, substrate: Substrate::BARE_METAL,
-                                binding: ArduinoBinding, machine: Machine::MEGA2560)
-    }.freeze
+    TABLE = {}
 
     # The full names are what the artifacts are named after and what the documents say.
-    # These are for typing at a prompt, and earn their place by being short.
-    ALIASES = {
-      "pico" => "raspberry-pi-pico",
-      "picow" => "raspberry-pi-pico-w",
-      "pico2" => "raspberry-pi-pico2",
-      "pico2w" => "raspberry-pi-pico2-w",
-      "f446" => "stm32-nucleo-f446re",
-      "mega" => "arduino-mega2560"
-    }.freeze
+    # A short form is for typing at a prompt, and earns its place by being short.
+    ALIASES = {}
+
+    def self.register(name, isa:, substrate:, binding:, machine:, short: nil)
+      ALIASES[short] = name if short
+      TABLE[name] = new(name, isa: isa, substrate: substrate, binding: binding, machine: machine)
+    end
 
     def self.[](name) = TABLE.fetch(ALIASES.fetch(name, name))
 
@@ -95,5 +73,14 @@ module BareRubyProt
       names = DEFAULT_NAMES if names.empty?
       names.map { |name| self[name] }.uniq
     end
+
+    # Where a binding declares itself. Nothing here says which bindings exist — they are
+    # found by looking rather than by naming, which is what lets one be added without this
+    # file changing, and what a load path would do for one kept somewhere else entirely.
+    DECLARATIONS = File.expand_path("binding/*/targets.rb", __dir__)
+
+    def self.load_bindings = Dir.glob(DECLARATIONS).sort.each { |one| require one }
   end
 end
+
+BareRubyProt::Target.load_bindings

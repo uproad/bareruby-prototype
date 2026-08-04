@@ -1,0 +1,9 @@
+# What `bareruby target add` offers for this binding, and what it needs beyond a machine.
+key: pico
+label: Raspberry Pi Pico
+targets:
+  - raspberry-pi-pico
+  - raspberry-pi-pico-w
+  - raspberry-pi-pico2
+  - raspberry-pi-pico2-w
+asks: []

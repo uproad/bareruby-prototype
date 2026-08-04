@@ -1,0 +1,18 @@
+# What `bareruby target add` offers for this binding, and what it needs beyond a machine.
+key: stm32
+label: ST NUCLEO
+targets:
+  - stm32-nucleo-f446re
+asks:
+  - key: options.cube_project
+    label: Path to the CubeMX project this is built in
+    kind: path
+    optional: true
+    hint: Leave empty unless this desk keeps more than one, or keeps its own elsewhere.
+  - key: options.configuration
+    label: How to optimize this build
+    kind: choice
+    choices:
+      - Debug
+      - Release
+    optional: true

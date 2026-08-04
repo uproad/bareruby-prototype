@@ -10,6 +10,10 @@ module BareRubyProt
   # is, how a variadic argument promotes, and whether a 32-bit integer is the natural one.
   # An eight-bit machine and a machine whose instruction set is WebAssembly are both
   # reached by naming a different triple, not by adding a kind of target.
+  #
+  # Only the machine doing the compiling is named here. Every other triple arrives with
+  # the binding that reaches machines running it — an instruction set nothing here can be
+  # built for is not this side's to know.
   class Isa
     attr_reader :triple
 
@@ -18,15 +22,5 @@ module BareRubyProt
     # The machine doing the compiling names itself, because a hosted build is not one
     # machine: the same source compiled on another desk is another triple entirely.
     COMPILING = new(RbConfig::CONFIG["host"])
-
-    CORTEX_M0PLUS = new("thumbv6m-none-eabi")
-    CORTEX_M33 = new("thumbv8m.main-none-eabihf")
-    CORTEX_M4F = new("thumbv7em-none-eabihf")
-
-    # The first instruction set here whose natural word is not 32 bits: an int is 16 bits
-    # and a pointer is 16 bits, while an int32_t is a long. The triple names no chip,
-    # because it does not settle one — an ATmega328P and an ATmega2560 are both this, and
-    # which of them a build is for is said with -mmcu= further down.
-    AVR = new("avr-none")
   end
 end
