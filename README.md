@@ -353,51 +353,95 @@ libraries — against what does the making.
 The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
 
-### Saying which boards are here
+### Saying which machines are here
 
-`target.yml` is not tracked, because which boards are attached is true of a desk rather
-than of the project. It is not meant to be written by hand either — `./bareruby target
-add` asks, and writes the answer:
+`target.yml` is not tracked, because which machines are at a desk is true of the desk
+rather than of the project. It is not meant to be written by hand either — `./bareruby
+target add` asks, and writes the answer.
+
+**What is on screen is the entry itself, in the words the file will use** — not a list of
+questions that produces one afterwards, but the entry, being written:
 
 ```
-Which machine is it?
-  1) Raspberry Pi Pico, through pico-sdk
-  2) ST NUCLEO, through the STM32Cube HAL
-  3) This machine, with every peripheral traced instead of driven
-1-3> 1
+    - name:    (machine-pico_sdk-triple)
+      machine: pending
+      binding: pico_sdk
+      triple:  pending
+      debug:   pending
+      boards:  []
 
-Which one?
-  1) raspberry-pi-pico
-  2) raspberry-pi-pico-w
-  …
+  [›] machine  [ ] name  [ ] debug  [ ] confirm
+
+  Which machine?
+
+      family                machine
+
+      none                  raspberry-pi-pico
+      Arduino               raspberry-pi-pico-w
+    › Raspberry Pi Pico     raspberry-pi-pico2
+      ST NUCLEO             raspberry-pi-pico2-w
+
+  ↑↓ move   →  machines   ^C cancel
 ```
 
-and what it writes is an entry:
+A composition is three answers rather than one, and that is only visible when all three
+are in view as a single choice fills them in. **A field is settled the moment every
+candidate still in play agrees on it**: every machine in this family is reached through
+pico-sdk, so the binding is answered before any machine is named. A family holding one
+machine settles all three at once. It is a count of what the answers still allow rather
+than a rule about families — a family reached two ways stops settling a binding, with
+nothing here to change.
+
+Families stand to the left of the machines they hold, and moving right steps into them.
+**Choosing a family is a move rather than an answer**: it names no field of the entry, so
+answering it would be a transition that settles nothing.
+
+Dim means one thing throughout — nobody has said this yet — whether it is a value the
+cursor is resting on, a name being typed, or a field nothing has reached. Escape goes back
+everywhere, which leaves the arrows to mean only movement, and going back un-answers the
+question it lands on and everything after it: the screen says the same thing on the way
+back as it does on the way in.
+
+What it writes is an entry:
 
 ```yaml
 bareruby:
   targets:
-    - machine: pico
+    - name: pico
+      machine: pico
       binding: pico_sdk
       triple: thumbv6m-none-eabi
-      debug: true
-      boards:
-        - E6625888179C592E
+      debug: false
+      boards: []
 ```
 
-An entry always spells out all three parts of a composition, because none of them settles
-another. One machine is reachable through more than one binding — a NUCLEO board through
-STM32Cube or through STM32duino — and one whose chip carries two instruction sets is
-built for either of them, as an RP2350 is for Arm or for RISC-V. `boards:` is a list
-because several identical boards take the same one artifact.
+**Every field is written, whether or not it says anything.** Reading an entry tolerates a
+missing `debug`, but that is a kindness to a file written by hand rather than a reason for
+one written by a command to leave it out — an entry should read the same way to everyone
+who opens it, without a default anybody has to already know.
 
-None of that is anything to look up, which is why it is asked for instead. What is asked,
-in what order, and what else a family needs — the path to a CubeIDE project, the serial of
-an ST-LINK probe — is in [`target-catalog.yml`](target-catalog.yml) rather than in the
-command, so a board that does not exist yet is reached by adding to that file. It restates
-no composition: a family names targets, and their machine, binding and triple come from
-`target/target.rb`, where they already are. `./bareruby target list` prints them all, and
-an entry that names nothing prints them too.
+An empty name writes the composition, which is long and unmistakable. Tab fills in the
+machine's own name instead, which is short and what most people would have typed; when
+that is taken, the binding is added if it tells the two apart and letters follow if it
+does not — letters rather than numbers, because these machines are numbered and `pico_2`
+sits one character away from a different board. A name another entry already holds is
+refused: the name is the directory the artifacts land in.
+
+**`boards:` is not asked for.** It is not knowable when an entry is made — a serial is
+read off the machine in front of you, and an RP2040 answers with a different one in
+BOOTSEL than while running — and it is not needed until two machines carrying one chip are
+attached at once, which flashing detects and prints the candidates for. The field is
+written empty, and filled in when that day comes.
+
+None of that is anything to look up, which is why it is asked for instead. Every entry has
+a machine, a name and a debug build, so those are asked by the command itself. What else a
+family needs — the path to a CubeMX project, how to optimize the build — is in
+[`target-catalog.yml`](target-catalog.yml), so a machine that does not exist yet is
+reached by adding to that file. It restates no composition: a family names targets, and
+their machine, binding and triple come from `target/target.rb`, where they already are.
+The machine that needs no hardware is offered first and the rest are alphabetical, so
+anything attaching later has one obvious place to go. `./bareruby target list` prints them
+all.
 
 [`target.yml.sample`](target.yml.sample) documents every field, for reading a file back
 once it exists.
