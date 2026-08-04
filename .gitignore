@@ -11,3 +11,6 @@
 # Which boards are on this desk is a fact about a desk, not about the project.
 # Copy target.yml.sample to start one.
 /target.yml
+
+# Gems this checkout reaches for, installed here rather than into the desk.
+/.gems/

@@ -2,7 +2,7 @@
 
 require "fileutils"
 
-require_relative "../toolchain"
+require "bareruby_prot/toolchain"
 require_relative "build"
 
 module BareRubyProt

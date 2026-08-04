@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../toolchain"
+require "bareruby_prot/toolchain"
 
 module BareRubyProt
   # One g++ invocation, which the manifest already spells out in full. The compiling

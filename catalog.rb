@@ -45,7 +45,8 @@ module BareRubyProt
     # different one in BOOTSEL than while running — and it is not needed until two machines
     # of one chip are attached at once, which flashing detects and prints the candidates
     # for. `boards:` is written empty and filled in when that day comes.
-    DECLARATIONS = File.expand_path("target/binding/*/family.yml", __dir__)
+    INSIDE = File.expand_path("target/binding/*/family.yml", __dir__)
+    INSTALLED = "bareruby_prot/binding/*/family.yml"
 
     # The one that needs no hardware comes first, because it is the only family that is
     # always there — everything else is a machine somebody went out and bought, and in time
@@ -75,7 +76,8 @@ module BareRubyProt
     UNASKED = { "boards" => [] }.freeze
 
     def self.families
-      found = Dir.glob(DECLARATIONS).map { |one| YAML.safe_load_file(one) }
+      here = Dir.glob(INSIDE) + Gem.find_files(INSTALLED)
+      found = here.map { |one| YAML.safe_load_file(one) }
       own, rest = found.partition { |one| one["key"] == OWN }
       own + rest.sort_by { |one| one["label"] }
     end

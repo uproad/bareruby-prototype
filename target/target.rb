@@ -76,10 +76,19 @@ module BareRubyProt
 
     # Where a binding declares itself. Nothing here says which bindings exist — they are
     # found by looking rather than by naming, which is what lets one be added without this
-    # file changing, and what a load path would do for one kept somewhere else entirely.
-    DECLARATIONS = File.expand_path("binding/*/targets.rb", __dir__)
+    # file changing.
+    #
+    # **Two places are looked in, and a binding does not know which one it is in.** One is
+    # beside this file, where the binding this side owns lives. The other is every gem
+    # installed at the desk, under the same path — that is how a machine arrives from
+    # somewhere this repository has never heard of. The glob is the whole of the
+    # difference between the two.
+    INSIDE = File.expand_path("binding/*/targets.rb", __dir__)
+    INSTALLED = "bareruby_prot/binding/*/targets.rb"
 
-    def self.load_bindings = Dir.glob(DECLARATIONS).sort.each { |one| require one }
+    def self.declarations = (Dir.glob(INSIDE) + Gem.find_files(INSTALLED)).sort
+
+    def self.load_bindings = declarations.each { |one| require one }
   end
 end
 
