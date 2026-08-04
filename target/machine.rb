@@ -30,16 +30,17 @@ module BareRubyProt
       @chip = chip
     end
 
+    TABLE = {}
+
+    # A machine arrives with a binding that reaches it, and one machine can be reached by
+    # more than one — so registering a key that is already there answers the machine that
+    # is already there. Which binding named it first is not a fact about the machine.
+    def self.register(key, chip: nil) = TABLE[key] ||= new(key, chip: chip)
+
     # The machine doing the compiling has no peripheral to reach, so every binding call
     # lands on a stub. It is still a machine, and saying so keeps the hosted target from
     # being a shape of its own. The same answer serves a target that runs in a sandbox
     # rather than on a board.
     NONE = new(:none)
   end
-end
-
-# One board to a file, so that adding a board is adding a file rather than editing a list
-# every board already in the table has to be read past.
-Dir.children(File.expand_path("machine", __dir__)).sort.each do |entry|
-  require_relative "machine/#{entry}"
 end

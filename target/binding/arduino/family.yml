@@ -1,0 +1,6 @@
+# What `bareruby target add` offers for this binding, and what it needs beyond a machine.
+key: arduino
+label: Arduino
+targets:
+  - arduino-mega2560
+asks: []
