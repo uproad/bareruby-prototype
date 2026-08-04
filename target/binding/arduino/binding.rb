@@ -46,6 +46,80 @@ module BareRubyProt
       }
     CPP
 
+    UART = <<~CPP
+      #include "bareruby_binding.h"
+      #include <Arduino.h>
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
+      /* This board carries four of them. Serial is the one on the USB bridge, which is
+         why it is also the console, and 1 through 3 are the pin headers. */
+      static HardwareSerial *bareruby_uart_port(const bareruby_uart_t *self) {
+          switch (self->id) {
+          case 1: return &Serial1;
+          case 2: return &Serial2;
+          case 3: return &Serial3;
+          default: return &Serial;
+          }
+      }
+
+      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+          self->id = id;
+          self->baud = baud;
+          self->parity = parity;
+          uint8_t configuration = SERIAL_8N1;
+          if (parity == 1) {
+              configuration = SERIAL_8E1;
+          } else if (parity == 2) {
+              configuration = SERIAL_8O1;
+          }
+          bareruby_uart_port(self)->begin((unsigned long)baud, configuration);
+      }
+
+      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
+          size_t length = strlen(value);
+          bareruby_uart_port(self)->write((const uint8_t *)value, length);
+          return (int32_t)length;
+      }
+
+      void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
+          (void)bareruby_uart_write(self, value);
+          bareruby_uart_port(self)->write((uint8_t)'\\n');
+      }
+
+      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
+          char payload[128];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          (void)bareruby_uart_write(self, payload);
+      }
+
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_port(self)->available();
+      }
+
+      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
+          return bareruby_uart_port(self)->available() > 0;
+      }
+
+      void bareruby_uart_flush(bareruby_uart_t *self) {
+          bareruby_uart_port(self)->flush();
+      }
+
+      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+          while (bareruby_uart_port(self)->available() > 0) {
+              (void)bareruby_uart_port(self)->read();
+          }
+      }
+
+      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
+          bareruby_uart_port(self)->flush();
+      }
+    CPP
+
     GPIO = <<~CPP
       #include "bareruby_binding.h"
       #include <Arduino.h>
@@ -135,71 +209,6 @@ module BareRubyProt
       }
 
 
-      /* This board carries four of them. Serial is the one on the USB bridge, which is
-         why it is also the console, and 1 through 3 are the pin headers. */
-      static HardwareSerial *bareruby_uart_port(const bareruby_uart_t *self) {
-          switch (self->id) {
-          case 1: return &Serial1;
-          case 2: return &Serial2;
-          case 3: return &Serial3;
-          default: return &Serial;
-          }
-      }
-
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
-          self->parity = parity;
-          uint8_t configuration = SERIAL_8N1;
-          if (parity == 1) {
-              configuration = SERIAL_8E1;
-          } else if (parity == 2) {
-              configuration = SERIAL_8O1;
-          }
-          bareruby_uart_port(self)->begin((unsigned long)baud, configuration);
-      }
-
-      int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
-          size_t length = strlen(value);
-          bareruby_uart_port(self)->write((const uint8_t *)value, length);
-          return (int32_t)length;
-      }
-
-      void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
-          (void)bareruby_uart_write(self, value);
-          bareruby_uart_port(self)->write((uint8_t)'\\n');
-      }
-
-      void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
-          char payload[128];
-          va_list arguments;
-          va_start(arguments, format);
-          vsnprintf(payload, sizeof(payload), format, arguments);
-          va_end(arguments);
-          (void)bareruby_uart_write(self, payload);
-      }
-
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          return (int32_t)bareruby_uart_port(self)->available();
-      }
-
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return bareruby_uart_port(self)->available() > 0;
-      }
-
-      void bareruby_uart_flush(bareruby_uart_t *self) {
-          bareruby_uart_port(self)->flush();
-      }
-
-      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
-          while (bareruby_uart_port(self)->available() > 0) {
-              (void)bareruby_uart_port(self)->read();
-          }
-      }
-
-      void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
-          bareruby_uart_port(self)->flush();
-      }
 
       /* The converter here is 10 bits against a 5 V reference, where a Pico's is 12 bits
          against 3.3 V, and the channel is the analog input's own number rather than a
@@ -362,6 +371,7 @@ module BareRubyProt
     # them apart. That is the same shape the Pico boards have, one step wider: these
     # boards do not even share an instruction set.
     PWM_FILE = "bareruby_binding_pwm_arduino.cpp"
+    UART_FILE = "bareruby_binding_uart_arduino.cpp"
     GPIO_FILE = "bareruby_binding_gpio_arduino.cpp"
     PERIPHERAL_FILE = "bareruby_binding_arduino.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_arduino.cpp"
@@ -399,6 +409,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      UART_FILE => UART,
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
@@ -409,7 +420,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

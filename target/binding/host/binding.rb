@@ -37,57 +37,12 @@ module BareRubyProt
       }
     CPP
 
-    GPIO = <<~CPP
+    UART = <<~CPP
       #include "bareruby_binding.h"
       #include <stdarg.h>
       #include <stdio.h>
       #include <stdlib.h>
       #include <string.h>
-
-      void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
-          self->pin = pin;
-          self->params = params;
-          fprintf(stderr, "gpio_init(pin=%d, params=%d)\\n", (int)pin, (int)params);
-      }
-
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
-          fprintf(stderr, "gpio_write(pin=%d, value=%d)\\n", (int)self->pin, (int)value);
-      }
-
-      int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_read(pin=%d) -> 0\\n", (int)self->pin);
-          return 0;
-      }
-
-      bool bareruby_gpio_high(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_high(pin=%d) -> false\\n", (int)self->pin);
-          return false;
-      }
-
-      bool bareruby_gpio_low(bareruby_gpio_t *self) {
-          fprintf(stderr, "gpio_low(pin=%d) -> true\\n", (int)self->pin);
-          return true;
-      }
-
-      void bareruby_gpio_on_interrupt(
-          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
-          fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
-          handler();
-      }
-    CPP
-
-    PERIPHERAL = <<~CPP
-      #include "bareruby_binding.h"
-
-      #include <stdarg.h>
-      #include <stdio.h>
-      #include <stdlib.h>
-      #include <string.h>
-
-      void bareruby_startup(void) {
-          fprintf(stderr, "startup()\\n");
-      }
-
 
       static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self, const char *text) {
           fprintf(stderr, "%s(id=%d, text=\\"", label, (int)self->id);
@@ -147,6 +102,60 @@ module BareRubyProt
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
           fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
       }
+    CPP
+
+    GPIO = <<~CPP
+      #include "bareruby_binding.h"
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
+          self->pin = pin;
+          self->params = params;
+          fprintf(stderr, "gpio_init(pin=%d, params=%d)\\n", (int)pin, (int)params);
+      }
+
+      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+          fprintf(stderr, "gpio_write(pin=%d, value=%d)\\n", (int)self->pin, (int)value);
+      }
+
+      int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
+          fprintf(stderr, "gpio_read(pin=%d) -> 0\\n", (int)self->pin);
+          return 0;
+      }
+
+      bool bareruby_gpio_high(bareruby_gpio_t *self) {
+          fprintf(stderr, "gpio_high(pin=%d) -> false\\n", (int)self->pin);
+          return false;
+      }
+
+      bool bareruby_gpio_low(bareruby_gpio_t *self) {
+          fprintf(stderr, "gpio_low(pin=%d) -> true\\n", (int)self->pin);
+          return true;
+      }
+
+      void bareruby_gpio_on_interrupt(
+          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
+          fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
+          handler();
+      }
+    CPP
+
+    PERIPHERAL = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      void bareruby_startup(void) {
+          fprintf(stderr, "startup()\\n");
+      }
+
+
 
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
           self->pin = pin;
@@ -312,6 +321,7 @@ module BareRubyProt
     CPP
 
     PWM_FILE = "bareruby_binding_pwm_host.cpp"
+    UART_FILE = "bareruby_binding_uart_host.cpp"
     GPIO_FILE = "bareruby_binding_gpio_host.cpp"
     PERIPHERAL_FILE = "bareruby_binding_host.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_host.cpp"
@@ -348,6 +358,7 @@ module BareRubyProt
 
     FILES = {
       GPIO_FILE => GPIO,
+      UART_FILE => UART,
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
@@ -358,7 +369,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

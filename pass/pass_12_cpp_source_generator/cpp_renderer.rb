@@ -193,14 +193,17 @@ module BareRubyProt
       bareruby_printf: 1,
       bareruby_format: 3,
       bareruby_string_format: 2,
-      bareruby_string_append_format: 2,
-      bareruby_uart_printf: 2
+      bareruby_string_append_format: 2
     }.freeze
 
     WIDENED = { int32: "long", int64: "long long" }.freeze
 
+    # A peripheral may have one of its own, and says so in its declaration — the position
+    # is a fact about that function's signature, which is the peripheral's to state.
+    def variadic_from(name) = VARIADIC[name] || Peripheral.variadic_from(name)
+
     def call_arguments(name, arguments)
-      fixed = VARIADIC[name]
+      fixed = variadic_from(name)
       arguments.each_with_index.map do |argument, index|
         text = expression_text(argument)
         widening = WIDENED[@lir.value_type(argument)] if fixed && index >= fixed
