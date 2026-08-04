@@ -25,7 +25,7 @@ module BareRubyProt
     # it, which the toolchain copies in with everything else this program reached for.
     SKETCH_TEXT = "// The program is in #{ArduinoBinding::PROGRAM_FILE}, beside this file.\n"
 
-    def initialize(target, sources:, onboard_led: false, debug: false, exceptions: true)
+    def initialize(target, sources:, units: [], debug: false, exceptions: true)
       @target = target
       @sources = sources
     end

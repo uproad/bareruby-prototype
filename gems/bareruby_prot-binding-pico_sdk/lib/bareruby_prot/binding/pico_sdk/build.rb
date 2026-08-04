@@ -14,10 +14,10 @@ module BareRubyProt
     ENTRY = "int main(void) {\n    bareruby_startup();\n    bareruby_main();\n    for (;;) {\n" \
             "        bareruby_sleep_ms(1000);\n    }\n}\n"
 
-    def initialize(target, sources:, onboard_led:, debug:, exceptions:)
+    def initialize(target, sources:, units:, debug:, exceptions:)
       @target = target
       @sources = sources
-      @onboard_led = onboard_led
+      @units = units
       @debug = debug
       @exceptions = exceptions
     end
@@ -55,7 +55,7 @@ module BareRubyProt
     # not a tax on every build for that board. What a board needs linked is the cell's
     # answer, not this file's.
     def libraries
-      return SDK_LIBRARIES unless @onboard_led
+      return SDK_LIBRARIES unless @units.include?(:onboard_led)
 
       SDK_LIBRARIES + PicoSdkBinding.machine(@target.machine).onboard_led_libraries
     end

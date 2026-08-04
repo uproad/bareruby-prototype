@@ -9,7 +9,7 @@ module BareRubyProt
     ENTRY = "int main(void) {\n    bareruby_main();\n    return 0;\n}\n"
 
     # Every build is asked for in the same words, and answers with what it needs of them.
-    def initialize(target, sources:, onboard_led: false, debug: false, exceptions: true)
+    def initialize(target, sources:, units: [], debug: false, exceptions: true)
       @target = target
       @sources = sources.join(" ")
     end

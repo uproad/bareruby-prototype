@@ -29,8 +29,6 @@ module BareRubyProt
 
       # A program that never lights the LED links none of this, which matters most on a
       # wireless board: reaching that LED means uploading the radio's firmware.
-      def lights_onboard_led? = @lir.calls_prefixed?("bareruby_onboard_led_")
-
       # Only a program that raises needs the throw translation unit linked.
       def throws? = @lir.calls?(:bareruby_throw)
 
@@ -46,10 +44,6 @@ module BareRubyProt
       def builds_strings?
         @lir.calls_prefixed?("bareruby_string_") || @lir.calls?(*Peripheral.string_answers)
       end
-
-      # Which way a machine's indicator is reached is the machine's own answer, given to
-      # the binding beside it. Nothing here works it out.
-      def onboard_led_of(target) = target.binding.machine(target.machine)
 
 
 
@@ -72,7 +66,7 @@ module BareRubyProt
       # so which binding a target calls is the whole of the choice made here.
       def build_of(target)
         target.binding.build.new(target, sources: sources(target),
-                                     onboard_led: lights_onboard_led?,
+                                     units: Peripheral.units_reached(@lir),
                                      debug: @debug, exceptions: @exceptions)
       end
 
@@ -86,8 +80,7 @@ module BareRubyProt
         # What a peripheral needs is asked of the peripheral. It answers with keys of its
         # own choosing, and the binding says which file each key is — so a peripheral that
         # arrived from elsewhere is linked without this file, or the binding, knowing it.
-        names += Peripheral.units_reached(@lir).map { |key| binding.unit(key) }
-        names << onboard_led_of(target).onboard_led_file if lights_onboard_led?
+        names += Peripheral.units_reached(@lir).map { |key| binding.unit(key, target.machine) }
         names << RuntimeSource::ARENA_FILE if allocates?
         names << RuntimeSource::STRING_FILE if builds_strings?
         # Arena exhaustion is reported through bareruby_throw even when the Ruby program

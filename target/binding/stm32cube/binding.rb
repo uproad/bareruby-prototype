@@ -457,9 +457,16 @@ module BareRubyProt
     }.freeze
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { onboard_led: :onboard_led_file, gpio: GPIO_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
-    def self.unit(key) = UNITS.fetch(key)
+    # A unit is usually one file. **Some are the machine's answer instead** — an
+    # indicator is reached through a pin on one board and through a radio on another, so
+    # the key resolves to a question rather than a name, and the cell beside this file
+    # answers it.
+    def self.unit(key, machine)
+      found = UNITS.fetch(key)
+      found.is_a?(Symbol) ? machine(machine).public_send(found) : found
+    end
 
     ALWAYS = [PERIPHERAL_FILE].freeze
 
