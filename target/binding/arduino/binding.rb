@@ -8,32 +8,15 @@ module BareRubyProt
     # where a Pico only has one in a debug firmware.
     CONSOLE_BAUD = 115_200
 
-    PERIPHERAL = <<~CPP
+    # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
+    # share a file with one that cannot** — the declarations go with the gem, and an
+    # implementation left behind would have nothing to implement against.
+    GPIO = <<~CPP
       #include "bareruby_binding.h"
-
       #include <Arduino.h>
-
       #include <stdarg.h>
       #include <stdio.h>
       #include <string.h>
-
-      /* printf writes to a stream, and on this libc there is no stream until one is made.
-         The console is the board's USB-serial bridge, and both of the runtime's channels
-         are pointed at it: fd1 is what puts reaches and fd2 is where a panic says so. */
-      static int bareruby_console_put(char byte, FILE *stream) {
-          (void)stream;
-          Serial.write((uint8_t)byte);
-          return 0;
-      }
-
-      static FILE bareruby_console;
-
-      void bareruby_startup(void) {
-          Serial.begin(#{CONSOLE_BAUD});
-          fdev_setup_stream(&bareruby_console, bareruby_console_put, NULL, _FDEV_SETUP_WRITE);
-          stdout = &bareruby_console;
-          stderr = &bareruby_console;
-      }
 
       static bareruby_interrupt_handler_t bareruby_gpio_interrupt_handler;
 
@@ -87,6 +70,35 @@ module BareRubyProt
          into the duty it would be at the frequency that was asked for — which is right
          only if the core happened to choose that one. Reaching a servo means writing the
          chip's timer registers, and that is no longer this core's vocabulary. */
+    CPP
+
+    PERIPHERAL = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <Arduino.h>
+
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
+      /* printf writes to a stream, and on this libc there is no stream until one is made.
+         The console is the board's USB-serial bridge, and both of the runtime's channels
+         are pointed at it: fd1 is what puts reaches and fd2 is where a panic says so. */
+      static int bareruby_console_put(char byte, FILE *stream) {
+          (void)stream;
+          Serial.write((uint8_t)byte);
+          return 0;
+      }
+
+      static FILE bareruby_console;
+
+      void bareruby_startup(void) {
+          Serial.begin(#{CONSOLE_BAUD});
+          fdev_setup_stream(&bareruby_console, bareruby_console_put, NULL, _FDEV_SETUP_WRITE);
+          stdout = &bareruby_console;
+          stderr = &bareruby_console;
+      }
+
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
           self->pin = pin;
           self->slice = 0;
@@ -340,6 +352,7 @@ module BareRubyProt
     # implementation serves all of them and only the board name handed to the build tells
     # them apart. That is the same shape the Pico boards have, one step wider: these
     # boards do not even share an instruction set.
+    GPIO_FILE = "bareruby_binding_gpio_arduino.cpp"
     PERIPHERAL_FILE = "bareruby_binding_arduino.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_arduino.cpp"
     I2C_FILE = "bareruby_binding_i2c_arduino.cpp"
@@ -375,6 +388,7 @@ module BareRubyProt
     ONBOARD_LED_PIN_FILE = "bareruby_binding_onboard_led_arduino_pin.cpp"
 
     FILES = {
+      GPIO_FILE => GPIO,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -384,7 +398,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 

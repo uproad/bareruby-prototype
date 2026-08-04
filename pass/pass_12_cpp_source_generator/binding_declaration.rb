@@ -14,11 +14,6 @@ module BareRubyProt
       extern "C" {
       #endif
 
-      typedef struct {
-          int32_t pin;
-          int32_t params;
-      } bareruby_gpio_t;
-
       typedef void (*bareruby_interrupt_handler_t)(void);
 
       /* The on-board LED has nothing the program needs to carry: where it is and how it
@@ -46,14 +41,6 @@ module BareRubyProt
       } bareruby_adc_t;
 
       void bareruby_startup(void);
-
-      void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value);
-      int32_t bareruby_gpio_read(bareruby_gpio_t *self);
-      bool bareruby_gpio_high(bareruby_gpio_t *self);
-      bool bareruby_gpio_low(bareruby_gpio_t *self);
-      void bareruby_gpio_on_interrupt(
-          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler);
 
       void bareruby_onboard_led_init(bareruby_onboard_led_t *self);
       void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value);
@@ -99,17 +86,22 @@ module BareRubyProt
 
     HEADER_FILE = "bareruby_binding.h"
 
-    # The declarations a peripheral brought with it are spliced in before the guard closes.
+    # The declarations a peripheral brought with it go **last**, after everything this side
+    # declares. They may use a type named here — a handler's signature does — while nothing
+    # here can use a type of theirs, so the order is not a preference but the only one that
+    # compiles. The guard opens with `extern "C" {` and closes with `}`, and it is the
+    # closing pair that this lands in front of.
+    #
     # A peripheral that is not installed declares nothing, and a binding that implements it
     # anyway has nothing to implement against — which is the point: **the header says what
     # this build knows about, and nothing else.**
-    CLOSING = "#ifdef __cplusplus"
+    CLOSING = /^\#ifdef __cplusplus\n\}\n/
 
     def self.header
       registered = Peripheral.declarations
       return HEADER if registered.empty?
 
-      HEADER.sub(CLOSING, "#{registered.join("\n")}\n#{CLOSING}")
+      HEADER.sub(CLOSING) { |closing| "#{registered.join("\n\n")}\n\n#{closing}" }
     end
 
     def self.files = { HEADER_FILE => header }

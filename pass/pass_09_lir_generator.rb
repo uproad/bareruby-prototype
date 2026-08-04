@@ -93,11 +93,14 @@ module BareRubyProt
         @binding_storage.scope = previous
       end
 
+      # The handler, the realtime context it carries and the checks that follow (pass 11)
+      # are the language's. **What is registered with is the node's to say** — it arrived
+      # from the peripheral's declaration and is not a name known here.
       def lower_interrupt(node)
-        receiver, events, block, = @tast.children_of(node)
+        receiver, events, block, function, = @tast.children_of(node)
         handler_name = :"bareruby_interrupt_handler_#{@interrupt_functions.length}"
         parameters, body, = @tast.children_of(block)
-        raise "GPIO#on_interrupt requires a zero-argument block" unless parameters.empty?
+        raise "a realtime handler takes a zero-argument block" unless parameters.empty?
 
         receiver_statements, receiver_expression = lower_expression(receiver)
         events_statements, events_expression = lower_expression(events)
@@ -108,7 +111,7 @@ module BareRubyProt
 
         receiver_statements + events_statements + [@lir.create_expression(
           @lir.create_call(
-            :bareruby_gpio_on_interrupt,
+            function,
             [@lir.reference_to(receiver_expression), events_expression, @lir.create_function_reference(handler_name)], :void
           )
         )]

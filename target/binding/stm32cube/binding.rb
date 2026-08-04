@@ -2,13 +2,14 @@
 
 module BareRubyProt
   module Stm32CubeBinding
-    PERIPHERAL = <<~CPP
+    # GPIO in its own translation unit. **A peripheral that can be uninstalled cannot
+    # share a file with one that cannot** — the declarations go with the gem, and an
+    # implementation left behind would have nothing to implement against.
+    GPIO = <<~CPP
       #include "bareruby_binding.h"
-
       #include <stdarg.h>
       #include <stdio.h>
       #include <string.h>
-
       #include "main.h"
       #include "usart.h"
 
@@ -88,6 +89,17 @@ module BareRubyProt
       bool bareruby_gpio_low(bareruby_gpio_t *self) {
           return bareruby_gpio_read(self) == 0;
       }
+    CPP
+
+    PERIPHERAL = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <string.h>
+
+      #include "main.h"
+      #include "usart.h"
 
       static UART_HandleTypeDef *bareruby_uart_port(const bareruby_uart_t *self) {
           if (self->id != 0) {
@@ -387,6 +399,7 @@ module BareRubyProt
       }
     CPP
 
+    GPIO_FILE = "bareruby_binding_gpio_stm32.cpp"
     PERIPHERAL_FILE = "bareruby_binding_stm32.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_stm32.cpp"
     I2C_FILE = "bareruby_binding_i2c_stm32.cpp"
@@ -423,6 +436,7 @@ module BareRubyProt
     ONBOARD_LED_PIN_FILE = "bareruby_binding_onboard_led_stm32cube_pin.cpp"
 
     FILES = {
+      GPIO_FILE => GPIO,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
       I2C_FILE => I2C,
@@ -431,7 +445,7 @@ module BareRubyProt
     }.freeze
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { gpio: GPIO_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     def self.unit(key) = UNITS.fetch(key)
 
