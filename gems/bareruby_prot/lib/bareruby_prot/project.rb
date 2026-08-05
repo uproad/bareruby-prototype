@@ -22,11 +22,18 @@ module BareRubyProt
   # compiler is another gem and knows nothing about projects. It writes beside where it
   # was run, and being stood in the right place is all it needs to be told.
   module Project
-    # `new` is the one command with no project to stand in, because it is what makes one.
-    ROOTLESS = %w[new].freeze
+    # **The commands that need a project, named rather than the ones that do not.** Listing
+    # the exceptions puts the harmful answer on the default: `new` makes a project and
+    # cannot be standing in one, printing the usage needs nothing at all, and a misspelt
+    # command is neither — all three would be asked for a root they have no reason to have,
+    # and the first thing anyone types after installing is one of them. Named this way
+    # round, a command that is not on this list is simply run where it was typed.
+    # `target add` writes into the project and `target list` reads the gems that are
+    # installed, so the verb is not enough to answer for both and the pair is named.
+    ROOTED = ["compile", "build", "flash", "deploy", "init", "target add"].freeze
 
     def self.stand(arguments)
-      return if ROOTLESS.include?(arguments.first)
+      return if (ROOTED & [arguments.first, arguments.take(2).join(" ")]).empty?
 
       # Named before the ground moves. A source given relative to where it was typed means
       # that place, not the root the next line steps to.
