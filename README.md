@@ -213,7 +213,7 @@ Covered so far:
   fact about the two together, so it lives where the two meet:
 
   ```ruby
-  # target/binding/pico_sdk/machine/pico_w.rb
+  # gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico_w.rb
   module PicoSdkBinding
     module PicoW
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
@@ -602,7 +602,7 @@ board, and `PICO_PLATFORM` is not even the chip's name: an RP2350 answers to
 chosen. So they are kept where the machine and the binding meet rather than on the machine:
 
 ```ruby
-# target/binding/pico_sdk/machine/pico2_w.rb
+# gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico2_w.rb
 def self.pico_board = "pico2_w"
 
 def self.pico_platform = "rp2350"
@@ -714,10 +714,11 @@ six the compiler names no binding at all. It finds them by looking, and it looks
 places: beside itself, and among the gems installed at the desk. **A binding does not know
 which of the two it is in.**
 
-`gems/bareruby_prot-binding-pico_sdk/` and `gems/bareruby_prot-binding-arduino/` are two
-that have left. They are gems, built and installed like any other, and the machines they
-reach arrive with them — four Raspberry Pi Pico boards from the one, `arduino-mega2560`
-from the other:
+`gems/bareruby_prot-binding-pico_sdk/`, `gems/bareruby_prot-binding-arduino/` and
+`gems/bareruby_prot-binding-stm32cube/` are three that have left. They are gems, built and
+installed like any other, and the machines they reach arrive with them — four Raspberry Pi
+Pico boards from the first, `arduino-mega2560` from the second, `stm32-nucleo-f446re` from
+the third:
 
 ```sh
 cd gems/bareruby_prot-binding-pico_sdk
@@ -753,6 +754,23 @@ bindings do not resemble each other. This one's second stage is not a file list 
 sketch directory that `toolchain.rb` gathers, and its board is written to over a serial
 port `flash.rb` asks `arduino-cli` to identify. Neither arrangement needed anything of
 the compiler that the first had not already asked for.
+
+**The third found the other half of the first question.** `.tools/` was one thing a
+binding had been reaching for by walking up out of its own directory; the STM32Cube bridge
+reached for a second, and it is not the desk's — `cube.sh` picked up the generated headers
+from `build/` at the top of the checkout, which is the *first stage's output from this very
+run*. A gem cannot walk up to that either. They are found from the target's own directory
+now, one level up, which is the same place the source list already reaches the shared
+translation units at. **The correction is not a workaround: a build should find what it
+produced from what it produced, and reaching the checkout root for it was only ever
+right by accident.**
+
+The NUCLEO build comes out byte for byte identical across the move — 5416 B of text and
+1644 B of bss for `samples/heartbeat.rb`, the same ELF — and this is the binding with the
+most to travel: a bash bridge that synchronizes into a project this repository does not
+own, a header that project includes, and the two prose files that say how to prepare it.
+All of them are in the gem, because a desk that installs this binding cannot use it until
+it has read them.
 
 One edge is worth knowing. `target.yml` records a composition, not a gem, so uninstalling
 a binding a recorded target names leaves that record pointing at nothing. The run stops
@@ -911,7 +929,7 @@ nothing but the files it owns, and brings the linked ELF back to
 `build/<composition>/bareruby_program.elf` so that flashing needs to know nothing about
 how the Cube project arranges its output. `options.configuration` picks `-Og -g3` or
 `-O2`; `ARM_TOOLCHAIN_PATH` names a compiler kept somewhere other than `.tools/`.
-The binding's [README](target/binding/stm32cube/README.md) records project preparation, the
+The binding's [README](gems/bareruby_prot-binding-stm32cube/README.md) records project preparation, the
 ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
 
 `./bareruby flash --target=f446` writes that ELF over SWD with `STM32_Programmer_CLI`,
@@ -1178,10 +1196,10 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-target/binding/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
-target/binding/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
-target/binding/pico_sdk/flash.sh path/to/other.uf2
-target/binding/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh path/to/other.uf2
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
 ```
 
 The script locates boards by SCSI vendor `RPI` and by USB vendor `2e8a` rather than by a
@@ -1253,7 +1271,7 @@ Only the mount needs privileges. One line in `/etc/fstab` per board removes even
 /dev/disk/by-id/usb-RPI_RP2350_34319CF054AB3BD6-0:0-part1 /mnt/pico2 vfat noauto,user,umask=000 0 0
 ```
 
-`target/binding/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
+`gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
 mount points are read back out of `/etc/fstab`, so they can be named anything as long as
 each is distinct.
 
