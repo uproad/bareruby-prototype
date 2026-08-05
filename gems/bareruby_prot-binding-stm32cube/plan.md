@@ -15,6 +15,14 @@ board 追加・上書きと provenance 記録、LED 非搭載ボードの compil
 確認した。CubeF4 `Projects/` 全21ボードへの拡大は、この3枚の実機確認の後に
 manifest 追加だけで行う。
 
+`bareruby init stm32` も入った（2026-08-06、ecosystem 側 cli.rb への変更を承認の
+うえ）。project 層の雛形（`.yml.sample`、全 field 注釈付き）を
+`config/stm32cube/{boards,devices}/` へ書く。`.sample` のままでは build の
+`*.yml` glob に掛からず、rename した瞬間から他の manifest と同じ検証を受ける。
+CLI 側は dispatch のみで、何を書くかは binding の `init`（`Stm32CubeInit`）が
+答える — `toolchain`/`flash` と同じ受け渡しである。board 雛形・device 雛形とも
+rename して実ビルドが通ること、冪等（既存 skip）を確認した。
+
 未完了なのは物理ボードを必要とする確認と、ecosystem 側の2変更である。
 
 - [ ] 新しいOpenOCD backendでF446REへ書き込み、verify/resetを確認する。
@@ -23,7 +31,8 @@ manifest 追加だけで行う。
 - [ ] ローカルcommitをpushした後、GitHub Actions matrixの初回成功を確認する。
 - [ ] ecosystem 側: `bareruby install` を追加し、Catalog が family.yml の静的
       `targets:` ではなく登録済み Target から一覧を導くようにする。後者が済むまで、
-      project 層のボードはビルドできるが `target list` に現れない。
+      project 層のボードはビルドできるが `target list` に現れない。install は
+      `init` と同じ穴（CLI → binding の hook）で通せる。
 
 旧CubeIDE/CubeMX経路は削除済みであるため、実機確認で問題が出た場合もboard/device
 recordまたは生成器を修正し、外部Cubeプロジェクトへ戻さない。

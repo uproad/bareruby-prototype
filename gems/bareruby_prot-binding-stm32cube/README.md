@@ -35,8 +35,9 @@ lets one binding serve every board.
 | `stm32-f4discovery` | `f4disco` | STM32F4DISCOVERY | STM32F407VG |
 
 A board this table does not carry is a YAML file in your project's
-`config/stm32cube/boards/` — see [setup.md](setup.md). On one key the project's file
-wins over the gem's, and the build manifest records which layer answered.
+`config/stm32cube/boards/` — `./bareruby init stm32` writes a commented template
+there, and [setup.md](setup.md) walks through filling it in. On one key the project's
+file wins over the gem's, and the build manifest records which layer answered.
 
 ## Workflow
 

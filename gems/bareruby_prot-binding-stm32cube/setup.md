@@ -42,8 +42,15 @@ Ruby kept in a private directory goes on `PATH` first.
 
 ## Describing a board of your own
 
-A custom board is a YAML file in your project, not an edit to this gem. Put it under
-`config/stm32cube/boards/` and it becomes a target:
+A custom board is a YAML file in your project, not an edit to this gem. `init` writes
+commented templates into the directories a build already reads:
+
+```sh
+./bareruby init stm32
+```
+
+Rename `config/stm32cube/boards/my_board.yml.sample` to `<key>.yml` — the `.sample`
+suffix is what keeps a template from being a target — and edit it into the board:
 
 ```yaml
 # config/stm32cube/boards/my_board.yml
