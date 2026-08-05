@@ -10,7 +10,9 @@ device: stm32f446retx
 # is a claim.
 clock:
   source: hsi
-  pll: { m: 16, n: 336, p: 4, q: 2 }
+  # The F446 carries the R divider, so its struct asks for a value even while nothing
+  # runs from it.
+  pll: { m: 16, n: 336, p: 4, q: 2, r: 2 }
   ahb_divider: 1
   apb1_divider: 2
   apb2_divider: 1
