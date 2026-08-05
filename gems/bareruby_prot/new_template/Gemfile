@@ -30,6 +30,6 @@ path "__GEMS__" do
   # The boards. Uncomment the one on this desk and run `bundle install`; `bareruby target
   # add` can offer it from then on. More than one may be uncommented.
   # gem "bareruby_prot-binding-pico_sdk"   # Raspberry Pi Pico, Pico W, Pico 2, Pico 2 W
-  # gem "bareruby_prot-binding-stm32cube"  # ST NUCLEO-F446RE
+  # gem "bareruby_prot-binding-stm32cube"  # STM32: NUCLEO-F446RE/F401RE, F4DISCOVERY, or yours
   # gem "bareruby_prot-binding-arduino"    # Arduino Mega 2560
 end
