@@ -1,0 +1,35 @@
+# ST NUCLEO-F401RE. Same board family as the F446 Nucleo, different silicon under it —
+# which is exactly what it is here to prove: the same wiring described twice must not
+# require the build to be described twice.
+key: nucleo_f401re
+name: stm32-nucleo-f401re
+short: f401
+family: stm32f4
+device: stm32f401retx
+# 84 MHz from HSI — this chip's ceiling. The same PLL arithmetic as the F446 profile,
+# landing inside a VCO window that starts at 192 MHz where the F446's starts at 100.
+clock:
+  source: hsi
+  pll: { m: 16, n: 336, p: 4, q: 7 }
+  ahb_divider: 1
+  apb1_divider: 2
+  apb2_divider: 1
+  regulator_scale: 2
+led:
+  pin: PA5
+  active_high: true
+uart:
+  - id: 0
+    instance: USART2
+    tx: { pin: PA2, af: 7 }
+    rx: { pin: PA3, af: 7 }
+    stdout: true
+i2c:
+  - id: 1
+    instance: I2C1
+    scl: { pin: PB8, af: 4 }
+    sda: { pin: PB9, af: 4 }
+probe:
+  openocd:
+    interface: stlink
+    target: stm32f4x

@@ -1,112 +1,55 @@
 # STM32 platform
 
-See [setup.md](setup.md) for required software and CubeMX project generation.
-See [build.md](build.md) for build, flash, execution, serial, and troubleshooting steps.
+STM32 boards, built from this repository's own description of them. No STM32CubeIDE, no
+CubeMX, no ST account, no external project: the build compiles ST's HAL and CMSIS from a
+pinned checkout, generates everything board-specific, and links with a pinned GCC.
 
-This binding keeps the STM32 ownership boundary explicit without committing an
-STM32Cube project:
+See [setup.md](setup.md) for the one-time install and for describing a board of your
+own. See [build.md](build.md) for build, flash, serial and troubleshooting.
+[readme_jp.md](readme_jp.md) is the guide in Japanese, from `new` to a blinking LED.
 
-- CubeMX owns the `.ioc` file, clock tree, pin mux, HAL initialization, startup,
-  linker script, and the project metadata.
-- BareRuby pass 12 owns the generated application, runtime, and HAL wrappers.
-- The second stage copies only the translation units the Ruby program reached for into
-  the Cube project, and links them against the HAL with the ARM GNU toolchain the
-  freestanding boards already use. STM32CubeIDE is not involved.
+The name `stm32cube` means the STM32Cube HAL — the library — not the IDE that shares
+its branding. The IDE plays no part here.
 
-The first target expects a NUCLEO-F446RE project that configures LD2, USART2 on PA2/PA3,
-and I2C1 on PB8/PB9. USART2 is connected to the board's ST-LINK virtual COM port. I2C1
-is configured without internal pulls, so the bus requires external pull-up resistors.
+## Three layers
+
+Everything board-specific lives in data, split by what kind of fact it is:
+
+- **Family** (`family/stm32f4.rb`): what is true of every STM32F4 — where the HAL sits,
+  how a clock profile becomes code, the DWT delay, the linker layout. A new family
+  (F0, F7) is a sibling of this file, answering the same questions.
+- **Device** (`data/stm32f4/devices/*.yml`): what is true of one MCU — memory regions,
+  startup file, core and FPU, GPIO ports, clock limits.
+- **Board** (`data/stm32f4/boards/*.yml`): what one board wires to it — the LED, the
+  virtual COM port, the I2C pins, the clock profile, the probe.
+
+The generated `bareruby_board.h/.c` adapter is the boundary: the binding's C speaks
+logical ids (`bareruby_board_uart(0)`) and never a HAL handle's name, which is what
+lets one binding serve every board.
+
+## Boards
+
+| target | short | board | MCU |
+| --- | --- | --- | --- |
+| `stm32-nucleo-f446re` | `f446` | NUCLEO-F446RE | STM32F446RE |
+| `stm32-nucleo-f401re` | `f401` | NUCLEO-F401RE | STM32F401RE |
+| `stm32-f4discovery` | `f4disco` | STM32F4DISCOVERY | STM32F407VG |
+
+A board this table does not carry is a YAML file in your project's
+`config/stm32cube/boards/` — `./bareruby init stm32` writes a commented template
+there, and [setup.md](setup.md) walks through filling it in. On one key the project's
+file wins over the gem's, and the build manifest records which layer answered.
 
 ## Workflow
 
-1. Install Ruby, the ARM toolchain and the HAL, put a Cube project under
-   `.tools/stm32cube/`, and add the preserved CubeMX entry hook described in
-   [setup.md](setup.md).
-2. Run `./bareruby build --target=f446` as described in [build.md](build.md). It
-   generates the application, synchronizes only `bareruby_*` files, writes the makefile,
-   and links the ELF.
-3. Write the ELF with STM32CubeProgrammer, then observe LD2 or USART2 as appropriate for
-   the selected sample.
+```sh
+# once per desk
+gems/bareruby_prot-binding-stm32cube/lib/bareruby_prot/binding/stm32cube/install.sh
 
-## Changing the Cube configuration
+# then, as for every other board
+./bareruby build samples/heartbeat.rb --target=f446
+./bareruby deploy samples/heartbeat.rb --target=f446
+```
 
-Open the `.ioc` file in STM32CubeMX, change the pins or peripherals, and generate code
-normally. The integration in `main.c` is in CubeMX `USER CODE` sections, so regeneration
-preserves both the `bareruby_entry.h` include and the call made after all `MX_*_Init`
-functions.
-
-Build again after regeneration. The current NUCLEO-F446RE binding expects
-`LD2_GPIO_Port`, `LD2_Pin`, `huart2`, and `hi2c1`. If those names change, its pass-12
-STM32 wrapper must change with them.
-
-## Current binding contract
-
-| BareRuby call | F446 implementation |
-| --- | --- |
-| `OnboardLED` | LD2 on PA5 through HAL GPIO |
-| `GPIO` | HAL GPIO, encoded as `port_index * 16 + pin`; PA0 is 0, PB0 is 16, PC13 is 45 |
-| `UART.new(0, ...)` | `huart2`, blocking transmit and receive |
-| global `puts` | newlib `_write` through USART2 |
-| `I2C.new(1, ...)` | `hi2c1`, blocking master transfers |
-| `sleep`, `sleep_ms`, `asleep` | HAL tick |
-| `Machine.delay_us` | Cortex-M4 DWT cycle counter |
-
-I2C direct reads and reads with one-byte or two-byte register addresses are
-implemented. HAL memory reads provide the repeated-start transaction for the latter
-two forms. Longer output prefixes on a read are rejected instead of silently changing
-the transaction. PWM, ADC, and GPIO interrupts are not part of this first STM32 slice.
-
-The generated LED, UART receive, and I2C firmware translation units have been compiled
-and linked against a user-owned STM32F4 HAL project. SWD programming, LD2, and USART2
-output have been exercised on a physical NUCLEO-F446RE; I2C has been linked but not
-verified on hardware. Those hardware runs predate the move off STM32CubeIDE and were
-built by its headless builder; the current second stage has been verified by building,
-not by flashing. The Cube project itself is deliberately not committed here.
-
-## Sample compatibility notes
-
-The lists below describe whether each top-level program under `samples/` works unchanged
-with the current NUCLEO-F446RE binding and the documented `--no-exceptions` build. Text
-written with `puts` is sent through USART2. I2C samples still require the corresponding
-external devices and pull-up resistors.
-
-Supported samples:
-
-- `heartbeat.rb` — blinks the board's LD2 through `OnboardLED`.
-- `uart_receive.rb` — reads from USART2 through `UART.new(0, ...)`.
-- `i2c.rb` — uses the configured I2C1 peripheral.
-- `array.rb` — uses platform-independent fixed-capacity arrays.
-- `definite_assignment.rb` — uses platform-independent optional-value semantics.
-- `features.rb` — uses control flow, strings, symbols, and USART2 output.
-- `fixed.rb` — uses platform-independent Q16.16 arithmetic and USART2 output.
-- `implicit_return.rb` — uses platform-independent method return semantics.
-- `nilable.rb` — uses optional values and arena-backed strings.
-- `object.rb` — uses platform-independent objects and references.
-- `require.rb` — expands `require_lib.rb` and `require_helper.rb`; those two files are
-  support files rather than standalone samples.
-- `string.rb` — uses arena-backed strings and USART2 output.
-
-Samples not yet supported unchanged:
-
-- `blink.rb` — uses Pico GPIO 25 instead of `OnboardLED`; on STM32 the number encodes
-  PB9, not the NUCLEO LD2 pin.
-- `logger.rb` — UART is supported, but its Pico button pin 14 maps to STM32 PA14/SWCLK
-  and must be changed to a suitable input; the NUCLEO user button on PC13 is encoded as
-  pin 45.
-- `interrupt.rb` — the STM32 GPIO interrupt wrapper is not implemented.
-- `servo.rb` — the STM32 PWM wrapper is not implemented.
-- `adc.rb` — the STM32 ADC and PWM wrappers are not implemented.
-- `asleep.rb` — timing and GPIO are supported, but the STM32 ADC wrapper is missing and
-  its GPIO numbers are Pico-specific.
-- `avs.rb` — requires the missing STM32 ADC and PWM wrappers and board-specific pin
-  mapping.
-- `tenji.rb` — requires the missing STM32 ADC and PWM wrappers and board-specific pin
-  mapping.
-- `tenji_int.rb` — requires the missing STM32 ADC and PWM wrappers and board-specific
-  pin mapping.
-- `m25.rb` — uses `begin`/`rescue`; the documented STM32 build disables C++ exceptions.
-- `arena.rb` — tests exception-based arena recovery; the documented STM32 build disables
-  C++ exceptions.
-
-Clean links have been verified for representative programs from each supported
-runtime/peripheral group: `heartbeat.rb`, `string.rb`, `uart_receive.rb`, and `i2c.rb`.
+`build` writes the ELF, map and manifest into `build/<composition>/`. `flash` writes it
+through OpenOCD over the board's ST-LINK: write, verify, reset.

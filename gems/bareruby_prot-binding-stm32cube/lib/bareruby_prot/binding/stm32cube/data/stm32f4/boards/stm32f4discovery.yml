@@ -1,0 +1,40 @@
+# STM32F4DISCOVERY (STM32F407VG). Everything the Nucleos take for granted is different
+# here: a real crystal instead of the ST-LINK's clock, the LED on port D, and a virtual
+# COM port that exists only on the DISC1 revision.
+key: stm32f4discovery
+name: stm32-f4discovery
+short: f4disco
+family: stm32f4
+device: stm32f407vgtx
+# The classic 168 MHz profile from the 8 MHz crystal.
+clock:
+  source: hse-crystal
+  hse_hz: 8000000
+  pll: { m: 8, n: 336, p: 2, q: 7 }
+  ahb_divider: 1
+  apb1_divider: 4
+  apb2_divider: 2
+  regulator_scale: 1
+led:
+  # LD4, the green one of the four. A program that wants the others reaches them as GPIO.
+  pin: PD12
+  active_high: true
+uart:
+  # PA2/PA3 reach the ST-LINK virtual COM port on the DISC1 revision (MB997D). On older
+  # revisions the same pins stand free on the header, so the build is identical and only
+  # where the bytes arrive differs.
+  - id: 0
+    instance: USART2
+    tx: { pin: PA2, af: 7 }
+    rx: { pin: PA3, af: 7 }
+    stdout: true
+i2c:
+  # The audio DAC's bus, on the expansion header. External pull-ups on board.
+  - id: 1
+    instance: I2C1
+    scl: { pin: PB6, af: 4 }
+    sda: { pin: PB9, af: 4 }
+probe:
+  openocd:
+    interface: stlink
+    target: stm32f4x

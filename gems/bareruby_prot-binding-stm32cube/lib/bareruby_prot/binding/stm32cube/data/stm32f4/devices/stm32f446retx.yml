@@ -1,0 +1,38 @@
+# STM32F446RETx — the MCU on NUCLEO-F446RE. Facts of the silicon and the package,
+# never of any board: how a pin is wired is a board manifest's answer.
+key: stm32f446retx
+family: stm32f4
+part: STM32F446RET6
+define: STM32F446xx
+core: cortex-m4
+fpu: fpv4-sp-d16
+float_abi: hard
+startup: startup_stm32f446xx.s
+# Regions stay separate even where they are adjacent, because bus reach and DMA
+# visibility differ between them on other members of this family — one merged RAM is
+# the mistake the F7's DTCM makes expensive.
+memory:
+  - name: FLASH
+    kind: flash
+    origin: 0x08000000
+    size: 512K
+    role: code
+  - name: RAM
+    kind: ram
+    origin: 0x20000000
+    size: 128K
+    role: main
+# The ports this package bonds out. The chip's header defines more; a pin on a port
+# not listed here is a request the adapter refuses.
+gpio_ports: [A, B, C, D, H]
+uarts: [USART1, USART2, USART3, UART4, UART5, USART6]
+i2cs: [I2C1, I2C2, I2C3]
+clock:
+  hsi_hz: 16000000
+  max_sysclk_hz: 180000000
+  max_apb1_hz: 45000000
+  max_apb2_hz: 90000000
+  vco_in_hz: [1000000, 2000000]
+  vco_out_hz: [100000000, 432000000]
+  # One flash wait state per this many Hz of HCLK, at the 2.7–3.6 V the boards run at.
+  flash_wait_hz: 30000000

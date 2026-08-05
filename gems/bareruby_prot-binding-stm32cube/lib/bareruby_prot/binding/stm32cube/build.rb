@@ -1,64 +1,60 @@
 # frozen_string_literal: true
 
+require_relative "manifests"
+require_relative "adapter"
+require_relative "family/stm32f4"
+
 module BareRubyProt
-  # The CubeMX project owns reset, clocks, peripheral initialization, the linker script
-  # and the startup file. BareRuby contributes C++ translation units entered from main.c
-  # after CubeMX has initialized every configured peripheral, and links the two together
-  # with the same ARM GNU toolchain every other bare-metal target here is built by.
+  # The whole of one firmware, written into the target's own build directory: the board
+  # adapter, the HAL configuration, the linker script and the Makefile that compiles
+  # startup, CMSIS, the pinned HAL sources and the generated units with the pinned GCC.
+  # Nothing is copied into an external project, because there is none — the repository
+  # owns reset, clocks and main now, and CubeMX is not part of the answer.
   class Stm32CubeBuild
+    # The program owns main. The board adapter brings HAL and the clock up, the program
+    # runs, and a board has nowhere to return to, so it idles.
     ENTRY = <<~CPP
-      extern "C" void bareruby_entry(void) {
+      extern "C" void bareruby_board_start(void);
+      int main(void) {
+          bareruby_board_start();
           bareruby_startup();
           bareruby_main();
+          for (;;) {
+          }
       }
     CPP
 
-    # One board, so these are written where they are used rather than asked of a machine
-    # that has no second answer to give.
-    MCU = "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
-    CHIP_DEFINE = "STM32F446xx"
-
-    # Every build is asked for in the same words, and answers with what it needs of them.
     def initialize(target, sources:, units: [], debug: false, exceptions: true)
       @target = target
       @sources = sources
+      @debug = debug
       @exceptions = exceptions
+      @board = Stm32CubeBinding::Manifests.board(target.machine.key)
+      @device = @board.device
+      @family = Stm32CubeBinding::FAMILIES.fetch(@board.family)
+      @clock = @family.clock(@board)
     end
 
-    def files = {
-      "manifest.txt" => manifest,
-      "source-list.txt" => source_list,
-      "Makefile" => makefile
-    }
+    def files
+      {
+        "manifest.txt" => manifest,
+        "Makefile" => makefile,
+        "bareruby_program.ld" => @family.linker_script(@device),
+        @family::HAL_CONF_FILE => @family.hal_conf(@board)
+      }.merge(Stm32CubeBinding::Adapter.new(@board).files)
+    end
 
-    # USART2 is the board's configured stdout channel. Its _write bridge is supplied by
-    # the STM32 binding, so global puts calls remain observable in this build.
-    def stdout? = true
+    # puts goes where a desk can watch. Whether there is such a place is the board's
+    # answer: a board without a stdout UART drops the calls at the first stage.
+    def stdout? = !@board.stdout_uart.nil?
 
     def entry = ENTRY
 
-    # The second stage consumes this list instead of copying every generated unit.
-    # Keeping the selection made by pass 12 preserves the feature-based link boundary:
-    # an application that does not receive over UART or use I2C does not compile those
-    # bindings into its firmware.
-    def source_list = "#{@sources.join("\n")}\n"
+    def mcu_options
+      options = "-mcpu=#{@device.core} -mthumb"
+      return options if @device.fpu == "none"
 
-    def manifest
-      <<~MANIFEST
-        target = #{@target.name}
-        board = #{@target.machine.key}
-        triple = #{@target.isa.triple}
-        chip = #{@target.machine.chip}
-        toolchain = arm-none-eabi-g++
-        language_standard = gnu++14
-        compile_options = #{cxx_options}
-        cube_project = user-supplied CubeMX project
-        generated_sources = #{@sources.join(' ')}
-        stdout_channel = USART2
-        exceptions = #{@exceptions ? 'enabled' : 'disabled'}
-        artifact = bareruby_program.elf
-        build_command = make -j
-      MANIFEST
+      "#{options} -mfpu=#{@device.fpu} -mfloat-abi=#{@device.float_abi}"
     end
 
     # -fno-use-cxa-atexit keeps a static destructor from registering with a runtime that
@@ -67,41 +63,57 @@ module BareRubyProt
       "-std=gnu++14 -fno-rtti -fno-use-cxa-atexit#{@exceptions ? '' : ' -fno-exceptions'}"
     end
 
-    # What the project is built by. CubeMX generates sources rather than a build, and the
-    # build it names — STM32CubeIDE — is an Eclipse application that cannot be had without
-    # an ST account, so the units it would have compiled are compiled here instead: the
-    # same sources, the same linker script, the same startup file, and the toolchain this
-    # repository already keeps for the other bare-metal boards.
-    #
-    # The sources are gathered by pattern rather than listed, because which of them exist
-    # is the project's answer and pass 12's, not this file's — a program that reaches for
-    # no I2C leaves no I2C unit in Core/Src for this to find.
+    # What was built, from what, and from which layer each description came — the
+    # record flashing and every later question reads instead of working it out again.
+    def manifest
+      stdout = @board.stdout_uart
+      <<~MANIFEST
+        target = #{@target.name}
+        board = #{@target.machine.key}
+        triple = #{@target.isa.triple}
+        chip = #{@target.machine.chip}
+        family = #{@board.family}
+        device = #{@device.key}
+        board_source = #{Stm32CubeBinding::Manifests.provenance(@board)}
+        device_source = #{Stm32CubeBinding::Manifests.provenance(@device)}
+        toolchain = arm-none-eabi-g++
+        language_standard = gnu++14
+        mcu_options = #{mcu_options}
+        compile_options = #{cxx_options}
+        clock = #{@clock.summary}
+        generated_sources = #{@sources.join(' ')}
+        stdout_channel = #{stdout ? stdout.instance : 'none'}
+        debug = #{@debug ? 'enabled' : 'disabled'}
+        exceptions = #{@exceptions ? 'enabled' : 'disabled'}
+        openocd_interface = #{@board.openocd['interface']}
+        openocd_target = #{@board.openocd['target']}
+        artifact = bareruby_program.elf
+        build_command = make -j
+      MANIFEST
+    end
+
+    # Everything is found by basename through VPATH: the HAL and startup inside the
+    # pinned checkout the second stage names as CUBE, the shared binding units one
+    # directory up, the generated board files beside the Makefile. Debug against
+    # release is decided here, at generation, so the Makefile holds one truth.
     def makefile
       <<~MAKE
-        # Generated by the first stage. Run from inside the CubeMX project.
+        # Generated by the first stage. The second stage provides TOOLCHAIN and CUBE.
         TOOLCHAIN ?= arm-none-eabi
+        CUBE ?= $(error CUBE is not set: the second stage names the pinned STM32Cube checkout)
         CC   = $(TOOLCHAIN)-gcc
         CXX  = $(TOOLCHAIN)-g++
         SIZE = $(TOOLCHAIN)-size
 
-        CONFIGURATION ?= Debug
-        BUILD = $(CONFIGURATION)
-        ARTIFACT = $(BUILD)/bareruby_program.elf
+        BUILD = out
+        ARTIFACT = bareruby_program.elf
 
-        MCU = #{MCU}
+        MCU = #{mcu_options}
+        OPTIMIZATION = #{@debug ? '-Og -g3' : '-O2'}
 
-        # Release is what a board keeps; Debug is what a probe can still follow.
-        ifeq ($(CONFIGURATION),Release)
-        OPTIMIZATION = -O2
-        else
-        OPTIMIZATION = -Og -g3
-        endif
-
-        DEFINES  = -DUSE_HAL_DRIVER -D#{CHIP_DEFINE}
-        INCLUDES = -ICore/Inc \\
-                   -IDrivers/STM32F4xx_HAL_Driver/Inc \\
-                   -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \\
-                   -IDrivers/CMSIS/Include
+        DEFINES  = -DUSE_HAL_DRIVER -D#{@device.define}
+        INCLUDES = -I. -I.. \\
+        #{include_lines}
 
         COMMON   = $(MCU) $(DEFINES) $(INCLUDES) $(OPTIMIZATION) -Wall \\
                    -ffunction-sections -fdata-sections
@@ -109,20 +121,19 @@ module BareRubyProt
         CXXFLAGS = $(COMMON) #{cxx_options}
         ASFLAGS  = $(MCU) $(OPTIMIZATION) -x assembler-with-cpp
 
-        # The project carries exactly one linker script, and which one it is, is the
-        # board's answer rather than a name this can predict.
-        LDSCRIPT = $(wildcard *.ld)
-        LDFLAGS  = $(MCU) -T$(LDSCRIPT) -specs=nano.specs -specs=nosys.specs \\
+        LDFLAGS  = $(MCU) -Tbareruby_program.ld -specs=nano.specs -specs=nosys.specs \\
                    -Wl,--gc-sections -Wl,-Map=$(BUILD)/bareruby_program.map \\
                    -static -Wl,--start-group -lc -lm -Wl,--end-group
 
-        # A template is an alternative to a file the project already provides, so it is
-        # not compiled. Everything else in the HAL is, and the linker drops what no call
-        # reaches.
-        HAL_SOURCES = $(filter-out %_template.c,$(wildcard Drivers/STM32F4xx_HAL_Driver/Src/*.c))
-        C_SOURCES   = $(wildcard Core/Src/*.c) $(HAL_SOURCES)
-        CXX_SOURCES = $(wildcard Core/Src/*.cpp)
-        AS_SOURCES  = $(wildcard Core/Startup/*.s)
+        VPATH = .. \\
+                $(CUBE)/#{@family::HAL_SOURCE_DIRECTORY} \\
+                $(CUBE)/#{File.dirname(@family::SYSTEM_SOURCE)} \\
+                $(CUBE)/#{@family::STARTUP_DIRECTORY}
+
+        C_SOURCES   = bareruby_board.c #{File.basename(@family::SYSTEM_SOURCE)} \\
+        #{hal_lines}
+        CXX_SOURCES = #{cxx_names.join(" \\\n              ")}
+        AS_SOURCES  = #{@device.startup}
 
         OBJECTS = $(addprefix $(BUILD)/,$(C_SOURCES:.c=.o) $(CXX_SOURCES:.cpp=.o) $(AS_SOURCES:.s=.o))
 
@@ -142,12 +153,25 @@ module BareRubyProt
 
         # Linked by the C++ driver, which is what brings in the runtime the generated
         # units are compiled against.
-        $(ARTIFACT): $(OBJECTS)
+        $(ARTIFACT): $(OBJECTS) bareruby_program.ld
         \t$(CXX) $(OBJECTS) $(LDFLAGS) -o $@
         \t$(SIZE) $@
 
         .PHONY: all
       MAKE
     end
+
+    def include_lines
+      @family::INCLUDE_DIRECTORIES.map { |directory| "           -I$(CUBE)/#{directory}" }
+                                  .join(" \\\n")
+    end
+
+    def hal_lines
+      @family::HAL_SOURCES.map { |source| "              #{source}" }.join(" \\\n")
+    end
+
+    # The units pass 12 chose, by basename: VPATH already knows the shared ones sit one
+    # directory up, and keeping the selection preserves the feature-based link boundary.
+    def cxx_names = @sources.map { |source| File.basename(source) }
   end
 end

@@ -1,0 +1,38 @@
+# STM32F407VGTx — the MCU on STM32F4DISCOVERY. The 100-pin package brings ports the
+# Nucleos do not have, and the chip brings a RAM the DMA cannot see: CCM stays a
+# region of its own, placed by name and never merged into the main RAM.
+key: stm32f407vgtx
+family: stm32f4
+part: STM32F407VGT6
+define: STM32F407xx
+core: cortex-m4
+fpu: fpv4-sp-d16
+float_abi: hard
+startup: startup_stm32f407xx.s
+memory:
+  - name: FLASH
+    kind: flash
+    origin: 0x08000000
+    size: 1024K
+    role: code
+  - name: RAM
+    kind: ram
+    origin: 0x20000000
+    size: 128K
+    role: main
+  - name: CCMRAM
+    kind: ram
+    origin: 0x10000000
+    size: 64K
+    role: ccm
+gpio_ports: [A, B, C, D, E, H]
+uarts: [USART1, USART2, USART3, UART4, UART5, USART6]
+i2cs: [I2C1, I2C2, I2C3]
+clock:
+  hsi_hz: 16000000
+  max_sysclk_hz: 168000000
+  max_apb1_hz: 42000000
+  max_apb2_hz: 84000000
+  vco_in_hz: [1000000, 2000000]
+  vco_out_hz: [100000000, 432000000]
+  flash_wait_hz: 30000000

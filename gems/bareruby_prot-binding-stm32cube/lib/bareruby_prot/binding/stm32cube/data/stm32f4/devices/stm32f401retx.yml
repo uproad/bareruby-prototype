@@ -1,0 +1,33 @@
+# STM32F401RETx — the MCU on NUCLEO-F401RE. The interesting differences from the
+# F446 are the ones this build must survive: less RAM, a lower ceiling, and a VCO
+# that refuses to run below 192 MHz.
+key: stm32f401retx
+family: stm32f4
+part: STM32F401RET6
+define: STM32F401xE
+core: cortex-m4
+fpu: fpv4-sp-d16
+float_abi: hard
+startup: startup_stm32f401xe.s
+memory:
+  - name: FLASH
+    kind: flash
+    origin: 0x08000000
+    size: 512K
+    role: code
+  - name: RAM
+    kind: ram
+    origin: 0x20000000
+    size: 96K
+    role: main
+gpio_ports: [A, B, C, D, H]
+uarts: [USART1, USART2, USART6]
+i2cs: [I2C1, I2C2, I2C3]
+clock:
+  hsi_hz: 16000000
+  max_sysclk_hz: 84000000
+  max_apb1_hz: 42000000
+  max_apb2_hz: 84000000
+  vco_in_hz: [1000000, 2000000]
+  vco_out_hz: [192000000, 432000000]
+  flash_wait_hz: 30000000

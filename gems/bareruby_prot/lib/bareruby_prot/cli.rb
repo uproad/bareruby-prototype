@@ -25,6 +25,8 @@ module BareRubyProt
 
         new NAME            Write a project that builds unedited. Uncomment a board in
                             its Gemfile to reach one.
+        init FAMILY         Write FAMILY's config templates into this project, every
+                            field explained in place. Renaming a .sample makes it real.
         compile SOURCE.rb   Ruby to C++, into build/<composition>/.
                             Reads no configuration; without --target the target is the
                             machine doing the compiling.
@@ -58,6 +60,7 @@ module BareRubyProt
     def run
       case @command
       when "new" then Scaffold.run(@arguments)
+      when "init" then init
       when "compile" then compile
       when "build" then build
       when "flash" then flash
@@ -73,6 +76,28 @@ module BareRubyProt
       when "list" then Catalog.list
       else usage
       end
+    end
+
+    # `bareruby init stm32`. What is written is the binding's to say — a family knows
+    # what its projects keep in config/ and this side does not — so the command is
+    # dispatch: find the family, find its binding, hand over. A binding with no init is
+    # a family whose projects keep nothing, which is an answer rather than an error.
+    def init
+      family = Catalog.families.find { |one| one["key"] == @arguments[0] }
+      return families_are unless family
+
+      offered = Target[family["targets"].first].binding
+      unless offered.respond_to?(:init)
+        puts "bareruby: a #{family['key']} project keeps no configuration — nothing to write."
+        return 0
+      end
+      offered.init.run
+    end
+
+    def families_are
+      warn "bareruby: say which family to set up: " \
+           "#{Catalog.families.map { |one| one['key'] }.join(', ')}"
+      1
     end
 
     def compile

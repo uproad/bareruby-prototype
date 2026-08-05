@@ -1,27 +1,36 @@
 # frozen_string_literal: true
 
-module BareRubyProt
-  # An ST-LINK reaches the chip over SWD rather than presenting a volume to copy onto, so
-  # what identifies a board here is the probe's serial rather than the board's own. With
-  # one probe attached there is nothing to say.
-  #
-  # This path has never been run: it is written from what STM32CubeProgrammer documents,
-  # and the firmware that has reached a board was flashed by hand.
-  module Stm32CubeFlash
-    PROGRAMMER = "STM32_Programmer_CLI"
-    HOME_INSTALL = "~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/STM32_Programmer_CLI"
+require "yaml"
 
+require "bareruby_prot/toolchain"
+
+module BareRubyProt
+  # OpenOCD over the ST-LINK: write, verify, reset. The probe and the target script are
+  # the build manifest's answer — recorded when the firmware was made, so flashing needs
+  # nothing but the directory. An ST-LINK reaches the chip over SWD rather than
+  # presenting a volume, so what identifies a board here is the probe's serial; with one
+  # probe attached there is nothing to say.
+  module Stm32CubeFlash
     def self.run(directory, boards:, options: {})
       image = File.join(directory, "bareruby_program.elf")
-      ports = boards.empty? ? ["port=SWD"] : boards.map { |board| "port=SWD sn=#{board}" }
-      ports.all? { |port| system(programmer, "-c", port, "-w", image, "-rst") }
+      interface = Toolchain.recorded(directory, "openocd_interface")
+      target = Toolchain.recorded(directory, "openocd_target")
+      serials = boards.empty? ? [nil] : boards
+      serials.all? do |serial|
+        system(openocd, *(serial ? ["-c", "adapter serial #{serial}"] : []),
+               "-f", "interface/#{interface}.cfg",
+               "-f", "target/#{target}.cfg",
+               "-c", "program #{image} verify reset exit")
+      end
     end
 
-    def self.programmer
-      return ENV["STM32_PROGRAMMER_CLI"] if ENV["STM32_PROGRAMMER_CLI"]
+    # The pinned xPack OpenOCD from the lock, unless the desk names its own.
+    def self.openocd
+      return ENV["OPENOCD"] if ENV["OPENOCD"]
 
-      home = File.expand_path(HOME_INSTALL)
-      File.executable?(home) ? home : PROGRAMMER
+      File.join(Stm32CubeToolchain::TOOLS,
+                Stm32CubeToolchain::LOCK.dig("common", "openocd", "directory"),
+                "bin", "openocd")
     end
   end
 end
