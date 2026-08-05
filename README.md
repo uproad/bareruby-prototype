@@ -282,6 +282,26 @@ Covered so far:
   held, so the body is two stores to the SIO and nothing else. Per write: **~14 ns, about
   1.75 cycles**.
 
+  **The second chip answers the same question differently, and that is the more
+  interesting result.** A Pico 2 W runs the same program with the same 26 pins: 469
+  instructions a sweep become 68, and it goes from **263.6–270.0 kHz to 1.29–1.47 MHz —
+  about five times**, not ten. The RP2350's write is one `mcrr` to the GPIO coprocessor
+  rather than two stores to the SIO, and its out-of-line callee is six instructions where
+  the RP2040's is nine, so there was less call to remove in the first place.
+
+  What is left once it is removed is what differs. Per instruction the RP2040 costs the
+  same before and after — 1.35 cycles against 1.16–1.33 — while the **RP2350 goes from
+  1.20 to 1.60**. Its LTO'd loop is 52 `mcrr` out of 68 instructions where the baseline
+  was 52 out of 469: at 11% of the path the coprocessor write was hidden among ordinary
+  instructions, and at 76% it is the path. It costs about **2 cycles against the RP2040's
+  1.75**, so a 20% higher clock buys nothing here and **both chips land on the same
+  681–778 ns sweep**. That attribution is inferred from the two measurements rather than
+  measured on its own.
+
+  Which is the shape of the answer worth keeping: removing the calls moves the floor to
+  wherever the hardware's own cost is, and where that floor sits is a fact about the chip
+  that only appears once everything above it is gone.
+
   **Only the units this build generated are given to it.** Asking it of the whole target
   drags in the SDK's sources, and pico-sdk reaches its own stdio through `-Wl,--wrap`: a
   wrapper nothing calls in the IR is dropped before the linker makes the reference that
@@ -295,7 +315,8 @@ Covered so far:
   It costs nothing anywhere else: `blink` 30580 → 30372 B of text, `fixed` 41256 → 40936,
   `interrupt` 32012 → 31804, `avs` 32492 → 32448. Two grow — `tenji_int` 32228 → 32336
   and `i2c` 93760 → 94336 — which is inlining trading size for speed where a call was
-  worth removing. The host build takes it too, because one `g++` invocation is still not
+  worth removing. On the RP2350 the same sample goes 29596 → 29252. The host build takes
+  it too, because one `g++` invocation is still not
   one translation unit: all 24 host programs print byte-for-byte what they printed
   before.
 
