@@ -8,20 +8,19 @@
 Gem::Specification.new do |spec|
   spec.name = "bareruby_prot-binding-stm32cube"
   spec.version = "0.0.1"
-  spec.summary = "Reaches ST NUCLEO boards through a CubeMX project and the STM32Cube HAL."
+  spec.summary = "Reaches STM32 boards through the STM32Cube HAL, from manifests this gem carries."
   spec.authors = ["uproad"]
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0"
 
-  # The C++ lives in the Ruby as heredocs, but the bridge that synchronizes a build into a
-  # CubeMX project is a script, the header that project includes is a header, and the
-  # family this binding offers is a file. A gem carries only what it lists.
+  # The C lives in the Ruby as heredocs, but the device and board manifests are data,
+  # the installer is a script, and the linker layout is a template. A gem carries only
+  # what it lists, and this binding is mostly what it describes.
   #
-  # The prose travels too. This is the one binding that cannot work until the desk has
-  # prepared a project by hand, and what to prepare is the whole of setup.md.
-  # The gemspec ships inside the gem: a project written by `new` reads these gems from
-  # where they are, and to bundler a directory with no gemspec in it is not a gem.
-  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml,h}"] +
+  # The prose travels too. The gemspec ships inside the gem: a project written by `new`
+  # reads these gems from where they are, and to bundler a directory with no gemspec in
+  # it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml,erb}"] +
                ["README.md", "setup.md", "build.md"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
