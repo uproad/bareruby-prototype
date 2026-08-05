@@ -844,6 +844,13 @@ working tree or from `.gems/bin/bareruby` with nothing but installed gems on the
 `reserved/` holds the notes for three bindings that do not exist yet — ESP-IDF, UEFI and
 WASI. They were filed under a binding directory that no longer has anywhere to be.
 
+**No gem here exists only to depend on others.** The distribution this is a rehearsal for
+has meta gems — one that pulls in every standard class, one per machine that pulls in the
+recommended way to reach it — and none of them are built here. A gem whose whole content
+is a dependency list changes what a `Gemfile` has to say and changes nothing a run does,
+so building one would demonstrate nothing this repository is for. Every gem under `gems/`
+carries something that runs.
+
 ### A class the language offers, from a gem
 
 `gems/bareruby_prot-stdlib-i2c/` is the other half of the same idea. **`I2C` is not a
