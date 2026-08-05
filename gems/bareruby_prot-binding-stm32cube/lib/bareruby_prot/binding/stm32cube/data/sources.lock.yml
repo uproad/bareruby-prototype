@@ -1,0 +1,63 @@
+# Every external thing a build reaches for: where it comes from, which version it is,
+# and where it lands under the project's .tools/. install.sh reads this file and nothing
+# else downloads — a build that finds a dependency missing names the install command and
+# stops, so the local build and CI are fed the same inputs.
+#
+# Nothing here says `latest`. Archives are pinned by release and SHA-256; repositories by
+# tag and commit. The xPack binaries are community builds rather than Arm's own releases,
+# which is part of why the hash is not optional.
+#
+# common/ is shared across instruction sets and families; families/ is fetched only for
+# the families the desk actually builds.
+common:
+  arm_gcc:
+    github: xpack-dev-tools/arm-none-eabi-gcc-xpack
+    release: v13.2.1-1.1
+    directory: common/arm/xpack-arm-none-eabi-gcc-13.2.1-1.1
+    archives:
+      linux-x64:
+        file: xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-x64.tar.gz
+        sha256: 1252a8cafe9237de27a765376697230368eec21db44dc3f1edeb8d838dabd530
+      linux-arm64:
+        file: xpack-arm-none-eabi-gcc-13.2.1-1.1-linux-arm64.tar.gz
+        sha256: ab7f75d95ead0b1efb7432e7f034f9575cc3d23dc1b03d41af1ec253486d19de
+      darwin-x64:
+        file: xpack-arm-none-eabi-gcc-13.2.1-1.1-darwin-x64.tar.gz
+        sha256: 1ecc0fd6c31020aff702204f51459b4b00ff0d12b9cd95e832399881d819aa57
+      darwin-arm64:
+        file: xpack-arm-none-eabi-gcc-13.2.1-1.1-darwin-arm64.tar.gz
+        sha256: d4ce0de062420daab140161086ba017642365977e148d20f55a8807b1eacd703
+  openocd:
+    github: xpack-dev-tools/openocd-xpack
+    release: v0.12.0-7
+    directory: stm32cube/xpack-openocd-0.12.0-7
+    archives:
+      linux-x64:
+        file: xpack-openocd-0.12.0-7-linux-x64.tar.gz
+        sha256: 94b3790983beaf8ed57e646c0620dd66d705fddae03d290823a6ed3b439468d6
+      linux-arm64:
+        file: xpack-openocd-0.12.0-7-linux-arm64.tar.gz
+        sha256: db73a3ab91c556ecec2405a7e02d404b11139df6aba1031cad94a7e6766d06cc
+      darwin-x64:
+        file: xpack-openocd-0.12.0-7-darwin-x64.tar.gz
+        sha256: 668ad25350103a4357e11629ec833eae5982e973889ce25bad0c2963e37fa8bf
+      darwin-arm64:
+        file: xpack-openocd-0.12.0-7-darwin-arm64.tar.gz
+        sha256: 667342c086984f3e5a55b4e0d5f711add13fb04de040fca493303000e6c19327
+families:
+  stm32f4:
+    # One release and its submodule commits move as a set. Updating one of them to
+    # anything the release did not pin is how CMSIS and the HAL drift apart.
+    cube:
+      github: STMicroelectronics/STM32CubeF4
+      tag: v1.28.3
+      commit: 94cae6e83f00e276a11957e7833c01ac3d0bd7af
+      directory: stm32cube/STM32CubeF4-1.28.3
+      submodules:
+        Drivers/CMSIS/Device/ST/STM32F4xx: 3c77349ce04c8af401454cc51f85ea9a50e34fc1
+        Drivers/STM32F4xx_HAL_Driver: b6f0ed3829f3829eb358a2e7417d80bba1a42db7
+    # Read by the update tooling when manifests are regenerated, never by a build.
+    open_pin_data:
+      github: STMicroelectronics/STM32_open_pin_data
+      commit: 7d1f1514ed5583ec5007ad91236b4e1d377295b1
+      directory: stm32cube/STM32_open_pin_data-7d1f1514
