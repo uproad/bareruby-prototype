@@ -20,9 +20,19 @@ STM32CubeIDE も CubeMX も ST のアカウントも要りません。
 ## 0. 準備するもの
 
 - Linux または WSL2（Windows の場合）
-- Ruby 4.x（`ruby --version` で確認）
+- Ruby 4.x
 - git と curl
 - 対応ボードと、データ通信できる USB ケーブル
+
+Ruby はこのチェックアウトが `.tools/ruby/bin` に持っているものが使えます。ただし
+シェルは PATH 上のコマンドしか見つけないので、まず教えます:
+
+```sh
+export PATH="$PWD/.tools/ruby/bin:$PATH"   # チェックアウトの root で
+```
+
+`ruby --version` が `ruby 4.x` を返せば準備完了です。シェルを開くたびに打ちたく
+なければ、同じ行を絶対パスにして `~/.bashrc` に追記してください。
 
 ## 1. プロジェクトを作る
 
