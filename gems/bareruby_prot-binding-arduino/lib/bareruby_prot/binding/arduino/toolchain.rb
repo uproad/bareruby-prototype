@@ -16,7 +16,11 @@ module BareRubyProt
   # What comes back is left where cmake's is: beside the sources it was made from, under a
   # name that does not carry how the tool arranges itself.
   module ArduinoToolchain
-    TOOLS = File.expand_path("../../../.tools/arduino", __dir__)
+    # **It is found from where the command was run rather than from where this file is.**
+    # A binding that is not part of the checkout cannot reach out of its own directory and
+    # expect to land in one — a core is somebody else's release, downloaded to the desk,
+    # and belongs to the desk rather than to the gem that asks for it.
+    TOOLS = File.expand_path(".tools/arduino", Dir.pwd)
 
     # arduino-cli installs itself wherever it is unpacked, so it is unpacked under the
     # repository, beside the version it is — a core's output is the version of the tool
