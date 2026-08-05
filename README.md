@@ -697,22 +697,23 @@ Most of the C++ that lands in `build/` is carried by this repository rather than
 line by line by the compiler, and where a piece of it lives says who it belongs to.
 
 What is the same everywhere belongs to the last pass and sits beside it in
-`pass/pass_12_cpp_source_generator/`: the runtime proper — the arena, the strings, the
-fixed-point arithmetic — and the declarations every binding answers.
+`lib/bareruby_prot/pass/pass_12_cpp_source_generator/` inside the compiler gem: the runtime
+proper — the arena, the strings, the fixed-point arithmetic — and the declarations every
+binding answers.
 
-What differs by what is being called sits in one directory per binding, whether that is
-`target/binding/<binding>/` here or the same path inside a gem: `binding.rb` implements
-those declarations in its own words, `build.rb` writes down what the second stage is,
-`toolchain.rb` runs it, and `flash.rb` puts the result on a machine. Each names its own
-translation units, because the name a piece of C++ is written under belongs with that C++
-and nowhere else.
+What differs by what is being called sits in one directory per binding,
+`lib/bareruby_prot/binding/<binding>/` inside whichever gem carries it: `binding.rb`
+implements those declarations in its own words, `build.rb` writes down what the second
+stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a machine. Each names
+its own translation units, because the name a piece of C++ is written under belongs with
+that C++ and nowhere else.
 
 **Nothing outside that directory knows the binding is there.** Two more files finish it —
 `targets.rb`, which registers the machines it reaches and the compositions it can produce
 for them, and `family.yml`, which says how `target add` should offer them — and with those
-six the compiler names no binding at all. It finds them by looking, and it looks in two
-places: beside itself, and among the gems installed at the desk. **A binding does not know
-which of the two it is in.**
+six the compiler names no binding at all. It finds them by looking, in every gem installed
+at the desk, under one path. **The binding that needs no hardware is found the same way as
+the rest**, because the compiler is a gem too and beside itself *is* where a gem lives.
 
 `gems/bareruby_prot-binding-pico_sdk/`, `gems/bareruby_prot-binding-arduino/` and
 `gems/bareruby_prot-binding-stm32cube/` are three that have left. They are gems, built and
@@ -741,8 +742,8 @@ the desk, not to the gem that asks for it.
 
 **What the compiler owes a binding.** Every binding reached the shared second-stage runner
 with a relative path. Once one is packaged elsewhere that path leads nowhere, and **what
-was a convenience becomes an interface**: it lives in `lib/bareruby_prot/` now and is
-required by name. Nothing else crossed that line — one file was the whole of what a
+was a convenience becomes an interface**: it is published under `bareruby_prot/` now and
+is required by name. Nothing else crossed that line — one file was the whole of what a
 binding needs from this side.
 
 **Packaging the second asked neither of them again.** One line of the Arduino binding
@@ -776,6 +777,72 @@ One edge is worth knowing. `target.yml` records a composition, not a gem, so uni
 a binding a recorded target names leaves that record pointing at nothing. The run stops
 and says which composition went missing, and every other target builds once the entry is
 removed or the gem is back.
+
+### The compiler and the ecosystem, from two gems
+
+There is nothing left at the top of this repository that runs. Everything that does is a
+gem under `gems/`, and the two that are not add-ons are the two halves of the tool itself:
+
+| gem | what it is | what it holds |
+| --- | --- | --- |
+| `bareruby_prot-compiler` | the first stage | every pass, the intermediate representations, the language runtime, the vocabulary a composition is spelled in, and the one binding that needs no hardware |
+| `bareruby_prot` | everything after it | the one executable, what a desk is (`target.yml`), `target add`, starting a second stage, flashing |
+
+The line between them is the line between the two stages. **That was already the rule, and
+it was already being kept — what changed is that breaking it now means reaching across a
+gem boundary rather than typing a relative path.** It can still be done. It cannot be done
+quietly.
+
+`./bareruby` at the top is not the command. It reads the two gems out of the working tree,
+adds `.gems/` as a place to look, and then runs the executable the ecosystem gem ships, so
+that a checkout cannot drift from what a user gets.
+
+Running wholly from installed gems is the same commands through a binstub, and produces
+the same artifacts. This is also the only check that catches a `spec.files` that misses a
+file — nothing that runs from the working tree can:
+
+```sh
+(cd gems/bareruby_prot-compiler && gem build *.gemspec &&
+ GEM_HOME=../../.gems gem install --local bareruby_prot-compiler-0.0.1.gem)
+(cd gems/bareruby_prot && gem build *.gemspec &&
+ GEM_HOME=../../.gems gem install --local bareruby_prot-0.0.1.gem)
+
+GEM_HOME=$PWD/.gems .gems/bin/bareruby build samples/heartbeat.rb --target=mega
+```
+
+**What each side reached for by knowing where it was.** The pattern the bindings found
+turned out to be the whole story here too, and every remaining case was the same mistake:
+
+- `build/` and `dump/`, the compiler's own output, were found beside `compiler.rb`. A
+  compiler that is a gem would have written a program's C++ into the installed gem.
+- `target.yml`, the desk's record, was found beside `deployment.rb`. This one is worth
+  dwelling on: a gem looking beside itself finds no file, and *no file is the ordinary
+  case*. So nothing failed. `bareruby build --target=arduino-mega2560` exited zero and put
+  its artifact under the composition's name instead of the name the desk had given it,
+  and only a byte-comparison against the previous build caught it. **A path that is wrong
+  is loud; a path that is wrong where an empty answer is legal is silent.**
+- `ref.rb`, the default source, was found beside the executable.
+
+All three are found from where the command was run now, which is what they always meant.
+
+**Looking in every gem means looking in copies of one.** A checkout that carries a gem in
+its working tree and has the same gem installed finds the same binding twice, and loading
+both redefines every constant in it — `host` did exactly this the moment the compiler
+became a gem that could also be installed. A binding is identified by the name of the
+directory its declaration sits in, and the first one found wins; the load path is searched
+before the installed gems, so a working tree beats a copy of itself.
+
+**Which bindings there are is asked once.** `target add` used to glob for `family.yml` on
+its own, which meant two searches that had to agree about what a binding is and where one
+may live. The compiler already answers that question, so the family a binding offers is
+read from beside the declaration it answered with.
+
+Nothing about a build changed. `samples/heartbeat.rb` produces the same `.hex` on the Mega
+2560 and the same ELF on the NUCLEO as before either gem existed, whether built from the
+working tree or from `.gems/bin/bareruby` with nothing but installed gems on the path.
+
+`reserved/` holds the notes for three bindings that do not exist yet — ESP-IDF, UEFI and
+WASI. They were filed under a binding directory that no longer has anywhere to be.
 
 ### A class the language offers, from a gem
 
