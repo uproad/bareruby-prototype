@@ -59,7 +59,7 @@ module BareRubyProt
 
     def run
       case @command
-      when "new" then Scaffold.run(@arguments)
+      when "new" then @arguments.first ? Scaffold.run(@arguments) : usage
       when "init" then init
       when "compile" then compile
       when "build" then build
