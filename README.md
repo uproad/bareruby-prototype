@@ -714,10 +714,11 @@ six the compiler names no binding at all. It finds them by looking, and it looks
 places: beside itself, and among the gems installed at the desk. **A binding does not know
 which of the two it is in.**
 
-`gems/bareruby_prot-binding-pico_sdk/` and `gems/bareruby_prot-binding-arduino/` are two
-that have left. They are gems, built and installed like any other, and the machines they
-reach arrive with them — four Raspberry Pi Pico boards from the one, `arduino-mega2560`
-from the other:
+`gems/bareruby_prot-binding-pico_sdk/`, `gems/bareruby_prot-binding-arduino/` and
+`gems/bareruby_prot-binding-stm32cube/` are three that have left. They are gems, built and
+installed like any other, and the machines they reach arrive with them — four Raspberry Pi
+Pico boards from the first, `arduino-mega2560` from the second, `stm32-nucleo-f446re` from
+the third:
 
 ```sh
 cd gems/bareruby_prot-binding-pico_sdk
@@ -753,6 +754,23 @@ bindings do not resemble each other. This one's second stage is not a file list 
 sketch directory that `toolchain.rb` gathers, and its board is written to over a serial
 port `flash.rb` asks `arduino-cli` to identify. Neither arrangement needed anything of
 the compiler that the first had not already asked for.
+
+**The third found the other half of the first question.** `.tools/` was one thing a
+binding had been reaching for by walking up out of its own directory; the STM32Cube bridge
+reached for a second, and it is not the desk's — `cube.sh` picked up the generated headers
+from `build/` at the top of the checkout, which is the *first stage's output from this very
+run*. A gem cannot walk up to that either. They are found from the target's own directory
+now, one level up, which is the same place the source list already reaches the shared
+translation units at. **The correction is not a workaround: a build should find what it
+produced from what it produced, and reaching the checkout root for it was only ever
+right by accident.**
+
+The NUCLEO build comes out byte for byte identical across the move — 5416 B of text and
+1644 B of bss for `samples/heartbeat.rb`, the same ELF — and this is the binding with the
+most to travel: a bash bridge that synchronizes into a project this repository does not
+own, a header that project includes, and the two prose files that say how to prepare it.
+All of them are in the gem, because a desk that installs this binding cannot use it until
+it has read them.
 
 One edge is worth knowing. `target.yml` records a composition, not a gem, so uninstalling
 a binding a recorded target names leaves that record pointing at nothing. The run stops
