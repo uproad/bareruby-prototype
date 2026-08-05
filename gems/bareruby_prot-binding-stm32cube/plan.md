@@ -1,27 +1,29 @@
 # STM32F4 汎用ビルド基盤 実装計画
 
-## 実装状況（2026-08-04）
+## 実装状況（2026-08-05）
 
-ソフトウェア実装は完了している。固定installer、standalone project生成、汎用binding、
-ST upstream照合、OpenOCD backend、文書、GitHub Actions matrixを追加した。さらに
-STM32CubeF4 1.28.3の`Projects/`にある組み込み向け19ディレクトリを、複数実ボードを
-表す2ディレクトリを展開した21ボード定義で網羅した。ホスト専用`WIN32`は対象外である。
+「3. 配置と manifest の二層探索」の gem 配置で、F0/F7 を前提にした F4 実装が
+このブランチに入った。固定 installer（sources.lock.yml + install.sh）、family 層
+（clock 生成器・linker template・HAL 構成）、device/board manifest とその二層探索、
+生成 board adapter、manifest 駆動の `targets.rb`、OpenOCD backend、文書を持つ。
+旧 CubeIDE/CubeMX 経路（cube.sh、machine/、bareruby_entry.h、外部 project）は
+削除済みである。
 
-ローカルでは21ボードすべてで周辺機能非依存プログラムをclean linkし、公式データから
-安全なLED出力を確定できる20ボードでheartbeatをclean linkした。8種のNUCLEOでは
-UART/I2Cサンプルもclean link済みである。STM32446E-EVALの公式IOCはラベル付きLEDを
-入力としているため、同ボードだけは`OnboardLED`を公開せず、使用時にコンパイルを拒否する。
+ボードは NUCLEO-F446RE、NUCLEO-F401RE、STM32F4DISCOVERY の3枚から始める。3枚とも
+heartbeat / uart_receive / i2c が clean link し（release と debug）、project 層の
+board 追加・上書きと provenance 記録、LED 非搭載ボードの compile-time 拒否も動作を
+確認した。CubeF4 `Projects/` 全21ボードへの拡大は、この3枚の実機確認の後に
+manifest 追加だけで行う。
 
-未完了なのは、gem 配置への移設と、物理ボードを必要とする確認である。実装は gem 化
-以前のリポジトリ配置を前提に書かれたため、「3. 配置と manifest の二層探索」の形へ
-移す作業が先行する。
+未完了なのは物理ボードを必要とする確認と、ecosystem 側の2変更である。
 
-- [ ] 実装を「3. 配置と manifest の二層探索」の gem 配置へ移し、`targets.rb` を
-      manifest 駆動へ変える。
 - [ ] 新しいOpenOCD backendでF446REへ書き込み、verify/resetを確認する。
 - [ ] F446REでLD2、USART2、外付けI2Cデバイスを確認する。
 - [ ] 利用可能な追加F4ボードでLED、クロック、UART/I2C配線を実機確認する。
 - [ ] ローカルcommitをpushした後、GitHub Actions matrixの初回成功を確認する。
+- [ ] ecosystem 側: `bareruby install` を追加し、Catalog が family.yml の静的
+      `targets:` ではなく登録済み Target から一覧を導くようにする。後者が済むまで、
+      project 層のボードはビルドできるが `target list` に現れない。
 
 旧CubeIDE/CubeMX経路は削除済みであるため、実機確認で問題が出た場合もboard/device
 recordまたは生成器を修正し、外部Cubeプロジェクトへ戻さない。
