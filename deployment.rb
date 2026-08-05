@@ -2,7 +2,7 @@
 
 require "yaml"
 
-require_relative "target/target"
+require "bareruby_prot/target/target"
 
 module BareRubyProt
   # What is true of this desk rather than of the project: which of the checked

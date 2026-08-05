@@ -78,15 +78,22 @@ module BareRubyProt
     # found by looking rather than by naming, which is what lets one be added without this
     # file changing.
     #
-    # **Two places are looked in, and a binding does not know which one it is in.** One is
-    # beside this file, where the binding this side owns lives. The other is every gem
-    # installed at the desk, under the same path — that is how a machine arrives from
-    # somewhere this repository has never heard of. The glob is the whole of the
-    # difference between the two.
-    INSIDE = File.expand_path("binding/*/targets.rb", __dir__)
-    INSTALLED = "bareruby_prot/binding/*/targets.rb"
+    # **There is one place, and the binding this side owns is not privileged in it.** While
+    # the compiler was a tree rather than a gem, host lived beside this file and everything
+    # else lived where a gem lives, and the two had to be looked for separately. Now that
+    # this side is a gem too, beside itself *is* where a gem lives: host is found by the
+    # same glob that finds a Pico, from the same path, with nothing to tell them apart.
+    DECLARATIONS = "bareruby_prot/binding/*/targets.rb"
 
-    def self.declarations = (Dir.glob(INSIDE) + Gem.find_files(INSTALLED)).sort
+    # **A binding is found once even when it is reachable twice.** Looking in every gem
+    # means looking in copies of one: a checkout that carries a gem in its working tree
+    # and has the same gem installed sees both, and loading both redefines every constant
+    # in it. Which binding a declaration is for is the name of the directory it sits in,
+    # and the first one found wins — the load path is searched before the installed gems,
+    # so a working tree beats a copy of itself.
+    def self.declarations = Gem.find_files(DECLARATIONS).uniq { |one| named(one) }.sort_by { |one| named(one) }
+
+    def self.named(declaration) = File.basename(File.dirname(declaration))
 
     def self.load_bindings = declarations.each { |one| require one }
   end
