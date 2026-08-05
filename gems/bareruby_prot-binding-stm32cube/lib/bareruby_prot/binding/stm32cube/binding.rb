@@ -330,7 +330,20 @@ module BareRubyProt
               bareruby_board_fault();
           }
 
-          uint8_t *bytes = (uint8_t *)bareruby_arena_alloc(arena, length);
+          /* HAL receives into the result's own bytes, so a read costs the arena one
+             string and nothing else — a temporary here would sit in the region until
+             the block ends, since an arena frees nothing. The handle is built by hand,
+             in the runtime's own order, because the runtime offers no way to size a
+             string before writing it. */
+          bareruby_string_t *result =
+              (bareruby_string_t *)bareruby_arena_alloc(arena, (int32_t)sizeof(bareruby_string_t));
+          result->arena = arena;
+          result->capacity = length + 1;
+          result->bytes = (char *)bareruby_arena_alloc(arena, result->capacity);
+          result->length = length;
+          result->bytes[length] = '\\0';
+
+          uint8_t *bytes = (uint8_t *)result->bytes;
           I2C_HandleTypeDef *bus = bareruby_board_i2c(self->id);
           uint16_t device = bareruby_i2c_read_address(address);
           HAL_StatusTypeDef status;
@@ -351,8 +364,7 @@ module BareRubyProt
               bareruby_board_fault();
           }
 
-          bareruby_string_t *result = bareruby_string_new(arena, "");
-          return bareruby_string_append_bytes(result, (const char *)bytes, length);
+          return result;
       }
     CPP
 
