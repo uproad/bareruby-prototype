@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "The PWM class: what a program may drive a pin with, and what that lowers to."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.files = Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]

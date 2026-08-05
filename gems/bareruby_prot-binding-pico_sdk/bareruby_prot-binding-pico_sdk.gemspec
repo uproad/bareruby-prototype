@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Reaches Raspberry Pi Pico boards through pico-sdk."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   # The C++ lives in the Ruby as heredocs, but the flashing script and the family it
   # offers are files, and a gem carries only what it lists.

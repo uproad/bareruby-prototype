@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Runs BareRuby: the compiler, the second stage, and what a desk is."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.files = Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]

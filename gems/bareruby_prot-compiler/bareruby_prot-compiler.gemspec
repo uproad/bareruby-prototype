@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Compiles BareRuby to C++, and declares what a binding answers."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.files = Dir["lib/**/*.{rb,yml}"]
   spec.require_paths = ["lib"]

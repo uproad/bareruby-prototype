@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Reaches ST NUCLEO boards through a CubeMX project and the STM32Cube HAL."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   # The C++ lives in the Ruby as heredocs, but the bridge that synchronizes a build into a
   # CubeMX project is a script, the header that project includes is a header, and the

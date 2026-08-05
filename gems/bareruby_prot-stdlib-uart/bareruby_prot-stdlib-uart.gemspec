@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "The UART class: what a program may say over a serial line, and what that lowers to."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.files = Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]

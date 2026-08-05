@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Reaches Arduino boards through the Arduino core."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   # The C++ lives in the Ruby as heredocs, but the family this binding offers is a file,
   # and a gem carries only what it lists. What this core cannot be asked for is a fact
