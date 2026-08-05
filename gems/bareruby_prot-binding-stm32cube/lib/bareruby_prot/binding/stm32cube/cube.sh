@@ -9,13 +9,16 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT=$(cd "$HERE/../../.." && pwd)
 
 TARGET_DIRECTORY=$1
 PROJECT_DIRECTORY=$2
 CONFIGURATION=${3:-Debug}
 
-TOOLS="$ROOT/.tools/stm32cube"
+# Found from where the command was run rather than from where this script is. A binding
+# that is not part of the checkout cannot reach out of its own directory and expect to
+# land in one: an SDK and a CubeMX project belong to the desk, not to the gem that asks
+# for them.
+TOOLS="$PWD/.tools/stm32cube"
 
 # CubeMX generates the project rather than this repository, but a build reaches for it,
 # so it belongs where everything else a build reaches for is kept. One project there
@@ -118,9 +121,13 @@ while IFS= read -r relative_source; do
     GENERATED_SOURCES+=("$generated_source")
 done < "$SOURCE_LIST"
 
+# The two headers are the first stage's output rather than anything this side carries, so
+# they are found from what this run produced: they sit one level above the target's
+# directory, which is the same place the source list reaches them at.
+GENERATED=$(dirname "$TARGET_DIRECTORY")
 GENERATED_HEADERS=(
-    "$ROOT/build/bareruby_binding.h"
-    "$ROOT/build/bareruby_runtime.h"
+    "$GENERATED/bareruby_binding.h"
+    "$GENERATED/bareruby_runtime.h"
     "$HERE/bareruby_entry.h"
 )
 for generated_header in "${GENERATED_HEADERS[@]}"; do
@@ -147,7 +154,7 @@ echo "bareruby: synchronized generated sources into $PROJECT_NAME"
 # CubeMX generates sources, not a build. The build it names is STM32CubeIDE, an Eclipse
 # application that cannot be had without an ST account — so what it would have compiled
 # is compiled here instead, by the ARM GNU toolchain the freestanding boards already use.
-TOOLCHAIN="${ARM_TOOLCHAIN_PATH:-$ROOT/.tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}/bin/arm-none-eabi"
+TOOLCHAIN="${ARM_TOOLCHAIN_PATH:-$PWD/.tools/common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi}/bin/arm-none-eabi"
 [ -x "$TOOLCHAIN-g++" ] || {
     echo "bareruby: no ARM toolchain at $TOOLCHAIN-g++" >&2
     echo "          Put one under .tools/, or name one in ARM_TOOLCHAIN_PATH." >&2
