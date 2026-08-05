@@ -70,17 +70,18 @@ bareruby build --target=f446 samples/heartbeat.rb --no-exceptions
 - CubeMX の全機能を再実装すること。BareRuby が現在提供する GPIO、UART、I2C、tick、
   DWT delay に必要な範囲から実装する。
 
-## 現状と解消する依存
+## 解消した依存
 
-現状も実際のコンパイルとリンクは生成 Makefile と `arm-none-eabi-gcc/g++` で行っており、
-STM32CubeIDE の builder は使用していない。しかし `cube.sh` は次を要求している。
+移行前もコンパイルとリンクは生成 Makefile と `arm-none-eabi-gcc/g++` で行っており、
+STM32CubeIDE の builder は使用していなかった。しかし旧 `cube.sh` は次を要求していた。
+いずれも削除済みである。
 
 - ユーザー所有の CubeMX 生成済みプロジェクト
 - `.project` と `.cproject`
 - `Core/`、`Drivers/`、startup、リンカスクリプト
 - `main.c` に手作業で追加した `bareruby_entry()` 呼び出し
 
-また、現在の共通実装には次の F446RE 固有値が埋め込まれている。
+また、旧共通実装には次の F446RE 固有値が埋め込まれていた。
 
 - `-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`
 - `STM32F446xx`
@@ -89,7 +90,7 @@ STM32CubeIDE の builder は使用していない。しかし `cube.sh` は次�
 - GPIOA から GPIOH まで存在するという仮定
 - LD2、USART2、I2C1 を初期化済みとする前提
 
-新しい基盤では、これらを family、device、board の三層へ分離する。
+新しい基盤は、これらを family、device、board の三層へ分離した。
 
 ## 設計
 
