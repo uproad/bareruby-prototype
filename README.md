@@ -182,7 +182,7 @@ Covered so far:
   (36644 B against 36700 B) and no RAM, which is the six format strings.
 
   What this core cannot be asked for is recorded in its
-  [README](target/binding/arduino/README.md): PWM has a duty and no frequency, because
+  [README](gems/bareruby_prot-binding-arduino/README.md): PWM has a duty and no frequency, because
   `analogWrite` picks one and offers no way to name another; the chip has pull-ups and no
   pull-downs; `%lld` is not implemented by this libc; and `begin` has no build here at
   all, because the core compiles with `-fno-exceptions` and this libc carries no
@@ -690,11 +690,12 @@ What is the same everywhere belongs to the last pass and sits beside it in
 `pass/pass_12_cpp_source_generator/`: the runtime proper — the arena, the strings, the
 fixed-point arithmetic — and the declarations every binding answers.
 
-What differs by what is being called sits under `target/binding/<binding>/`, one directory
-each: `binding.rb` implements those declarations in its own words, `build.rb` writes down
-what the second stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a
-machine. Each names its own translation units, because the name a piece of C++ is written
-under belongs with that C++ and nowhere else.
+What differs by what is being called sits in one directory per binding, whether that is
+`target/binding/<binding>/` here or the same path inside a gem: `binding.rb` implements
+those declarations in its own words, `build.rb` writes down what the second stage is,
+`toolchain.rb` runs it, and `flash.rb` puts the result on a machine. Each names its own
+translation units, because the name a piece of C++ is written under belongs with that C++
+and nowhere else.
 
 **Nothing outside that directory knows the binding is there.** Two more files finish it —
 `targets.rb`, which registers the machines it reaches and the compositions it can produce
@@ -703,8 +704,10 @@ six the compiler names no binding at all. It finds them by looking, and it looks
 places: beside itself, and among the gems installed at the desk. **A binding does not know
 which of the two it is in.**
 
-`gems/bareruby_prot-binding-pico_sdk/` is one that has left. It is a gem, built and
-installed like any other, and the four Raspberry Pi Pico machines arrive with it:
+`gems/bareruby_prot-binding-pico_sdk/` and `gems/bareruby_prot-binding-arduino/` are two
+that have left. They are gems, built and installed like any other, and the machines they
+reach arrive with them — four Raspberry Pi Pico boards from the one, `arduino-mega2560`
+from the other:
 
 ```sh
 cd gems/bareruby_prot-binding-pico_sdk
@@ -713,12 +716,12 @@ GEM_HOME=../../.gems gem install --local bareruby_prot-binding-pico_sdk-0.0.1.ge
 ```
 
 `.gems/` sits under the repository for the same reason `.tools/` does, and is gitignored
-for the same reason too. A desk that installs it the ordinary way is served as well; this
-only adds a place to look. **Uninstall it and the Pico machines are gone from
+for the same reason too. A desk that installs them the ordinary way is served as well;
+this only adds a place to look. **Uninstall one and its machines are gone from
 `target list`, while everything else still compiles** — which is what an add-on being an
 add-on means.
 
-Packaging one asked two questions that a single tree never had to answer.
+Packaging the first asked two questions that a single tree never had to answer.
 
 **Where the SDK is.** `toolchain.rb` reached for `.tools/` by walking up out of its own
 directory, which works only while it is part of the checkout. It is found from where the
@@ -730,6 +733,21 @@ with a relative path. Once one is packaged elsewhere that path leads nowhere, an
 was a convenience becomes an interface**: it lives in `lib/bareruby_prot/` now and is
 required by name. Nothing else crossed that line — one file was the whole of what a
 binding needs from this side.
+
+**Packaging the second asked neither of them again.** One line of the Arduino binding
+changed — the same `.tools/` walk, corrected the same way — and the interface the first
+one established held with nothing added to it. The rest is a directory move: the
+`arduino-mega2560` build comes out byte for byte identical, 2702 B of flash and 186 B of
+RAM for `samples/heartbeat.rb` and the same `.hex`. That is worth stating because the two
+bindings do not resemble each other. This one's second stage is not a file list but a
+sketch directory that `toolchain.rb` gathers, and its board is written to over a serial
+port `flash.rb` asks `arduino-cli` to identify. Neither arrangement needed anything of
+the compiler that the first had not already asked for.
+
+One edge is worth knowing. `target.yml` records a composition, not a gem, so uninstalling
+a binding a recorded target names leaves that record pointing at nothing. The run stops
+and says which composition went missing, and every other target builds once the entry is
+removed or the gem is back.
 
 ### A class the language offers, from a gem
 
