@@ -49,13 +49,19 @@ module BareRubyProt
     end
 
     # The two answers no template can hold, and the one name no gem may be shipped under.
+    #
+    # **The template says which files these are, not the directory they were copied into.**
+    # Asking the destination what it holds makes the work depend on what was already there,
+    # and a `new` that landed on a directory full of someone else's files would rewrite
+    # every one of them.
     def written
-      Dir.glob(File.join(@directory, "**/*"), File::FNM_DOTMATCH).each do |path|
-        next unless File.file?(path)
-
-        File.write(path, filled(File.read(path)))
-      end
+      copied.each { |path| File.write(path, filled(File.read(path))) }
       RENAMED.each { |from, to| FileUtils.mv(at(from), at(to)) }
+    end
+
+    def copied
+      Dir.glob("**/*", File::FNM_DOTMATCH, base: TEMPLATE)
+         .map { |name| at(name) }.select { |path| File.file?(path) }
     end
 
     def filled(text)
