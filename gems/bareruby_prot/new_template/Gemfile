@@ -1,0 +1,35 @@
+# frozen_string_literal: true
+
+# What this project is built from, and the whole list of what it can be built for.
+#
+# **This file is the catalogue.** Nothing else names the boards this ecosystem reaches, so
+# there is no second list that could disagree with it, and uncommenting one line is the
+# entire cost of being able to build for a board. `bareruby target list` answers a
+# different and shorter question — what is installed — because a command that read the
+# comments below would be taking gem names apart, and a gem name is words rather than
+# fields.
+#
+# The gems are read from a checkout rather than from rubygems.org, because this prototype
+# publishes nothing. Released, the same lines would carry a version and no path.
+source "https://rubygems.org"
+
+path "__GEMS__" do
+  # The ecosystem. The compiler arrives as its dependency and is deliberately not named
+  # here: a project that named it would be holding two versions of one answer.
+  gem "bareruby_prot"
+
+  # The standard classes, all of them. A project that has to find out which gem holds
+  # `GPIO` before it can use `GPIO` has been asked a question it cannot answer yet.
+  gem "bareruby_prot-stdlib-adc"
+  gem "bareruby_prot-stdlib-gpio"
+  gem "bareruby_prot-stdlib-i2c"
+  gem "bareruby_prot-stdlib-onboard_led"
+  gem "bareruby_prot-stdlib-pwm"
+  gem "bareruby_prot-stdlib-uart"
+
+  # The boards. Uncomment the one on this desk and run `bundle install`; `bareruby target
+  # add` can offer it from then on. More than one may be uncommented.
+  # gem "bareruby_prot-binding-pico_sdk"   # Raspberry Pi Pico, Pico W, Pico 2, Pico 2 W
+  # gem "bareruby_prot-binding-stm32cube"  # ST NUCLEO-F446RE
+  # gem "bareruby_prot-binding-arduino"    # Arduino Mega 2560
+end

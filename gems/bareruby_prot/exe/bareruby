@@ -3,6 +3,12 @@
 
 # The one executable. Every command a user types arrives here, and nothing else in the
 # ecosystem is reachable from a shell.
+#
+# The project is found before anything else is loaded: what the compiler writes, it writes
+# beside where it was run, and where that is gets settled the moment it is required.
+require "bareruby_prot/project"
+BareRubyProt::Project.stand(ARGV)
+
 require "bareruby_prot/cli"
 
 exit BareRubyProt::Cli.run(ARGV)

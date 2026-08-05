@@ -11,9 +11,11 @@ Gem::Specification.new do |spec|
   spec.summary = "The UART class: what a program may say over a serial line, and what that lowers to."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
-  spec.files = Dir["lib/**/*.rb"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

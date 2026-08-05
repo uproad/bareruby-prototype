@@ -13,9 +13,17 @@ Gem::Specification.new do |spec|
   spec.summary = "Runs BareRuby: the compiler, the second stage, and what a desk is."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
-  spec.files = Dir["lib/**/*.rb"]
+  # The template `new` writes is shipped as files rather than as strings, so it is carried
+  # here as files too. Nothing requires it, which means nothing here would notice it going
+  # missing: a project written out of a gem that left it behind is empty, and only a run
+  # that installs this gem and calls `new` says so.
+  #
+  # The gemspec ships too, because a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.rb"] +
+               Dir["new_template/**/*"].select { |path| File.file?(path) }
   spec.require_paths = ["lib"]
 
   # The one executable, and the only way into any of this from a shell.

@@ -9,6 +9,7 @@ require "bareruby_prot/compiler"
 
 require_relative "deployment"
 require_relative "catalog"
+require_relative "scaffold"
 
 module BareRubyProt
   # The one way in. The commands stack rather than duplicate: build compiles first and
@@ -22,6 +23,8 @@ module BareRubyProt
     USAGE = <<~USAGE
       Usage: bareruby COMMAND [SOURCE.rb] [OPTIONS]
 
+        new NAME            Write a project that builds unedited. Uncomment a board in
+                            its Gemfile to reach one.
         compile SOURCE.rb   Ruby to C++, into build/<composition>/.
                             Reads no configuration; without --target the target is the
                             machine doing the compiling.
@@ -54,6 +57,7 @@ module BareRubyProt
 
     def run
       case @command
+      when "new" then Scaffold.run(@arguments)
       when "compile" then compile
       when "build" then build
       when "flash" then flash
@@ -154,10 +158,14 @@ module BareRubyProt
       Compiler.new(source, targets:, debug:, exceptions: @exceptions).run
     end
 
-    # Named from where the command was run, like everything else a run reaches for. This
-    # used to be beside the executable, which was the same place until the executable
-    # became a gem.
-    def source = @arguments[0] || File.expand_path("ref.rb", Dir.pwd)
+    # Named from the project root, like everything else a run reaches for that it did not
+    # bring with it. A project written by `new` keeps its program at app/main.rb; this
+    # checkout is not one of those and keeps the representative program at its root, which
+    # is what a run standing here compiles when it is given nothing.
+    def source
+      @arguments[0] || ["app/main.rb", "ref.rb"].map { |named| File.expand_path(named) }
+                                                .find { |path| File.exist?(path) }
+    end
 
     def usage
       warn USAGE

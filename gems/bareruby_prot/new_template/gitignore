@@ -1,0 +1,12 @@
+# Written by the compiler, in full, on every run.
+/build/
+/dump/
+
+# The SDKs and toolchains a build reaches for, downloaded or built in place. Other
+# people's releases, and this desk's copy of them.
+/.tools/
+
+# config/target.yml is deliberately not listed. Which compositions this project is built
+# for is true of the project, and belongs with it. What is true of one desk — the serials
+# under `boards:`, the paths under `options:` — sits inside those same entries, and moves
+# out of this file on the day a second desk needs it to.

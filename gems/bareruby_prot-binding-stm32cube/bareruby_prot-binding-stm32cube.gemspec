@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Reaches ST NUCLEO boards through a CubeMX project and the STM32Cube HAL."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   # The C++ lives in the Ruby as heredocs, but the bridge that synchronizes a build into a
   # CubeMX project is a script, the header that project includes is a header, and the
@@ -19,7 +19,10 @@ Gem::Specification.new do |spec|
   #
   # The prose travels too. This is the one binding that cannot work until the desk has
   # prepared a project by hand, and what to prepare is the whole of setup.md.
-  spec.files = Dir["lib/**/*.{rb,sh,yml,h}"] + ["README.md", "setup.md", "build.md"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml,h}"] +
+               ["README.md", "setup.md", "build.md"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

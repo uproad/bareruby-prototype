@@ -370,6 +370,8 @@ because it is what `bareruby compile` compiles when it is given no argument.
 first, so each does its own work and then the next one's.
 
 ```sh
+./bareruby new hello                         # a project that builds without being edited
+
 cd bareruby-prototype
 ./bareruby target add                        # once per board: answer a few questions
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
@@ -379,13 +381,14 @@ cd bareruby-prototype
 ./bareruby                                   # prints usage
 ```
 
-| Verb | What it does | Reads `target.yml` |
+| Verb | What it does | Reads `config/target.yml` |
 | --- | --- | --- |
+| `new` | writes a project: a Gemfile that lists the boards, a record holding this machine, and a program that blinks | no |
 | `compile` | Ruby to C++, into `build/<composition>/` | no — without `--target` the target is the machine doing the compiling |
 | `build` | `compile`, then each binding's toolchain, leaving the artifact beside its sources | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
-| `target add` | asks which machine this is and writes it into `target.yml` | writes it |
+| `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
 | `target list` | every machine that can be targeted, by family | no |
 
 `build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
@@ -433,9 +436,11 @@ needs.
 
 ### Saying which machines are here
 
-`target.yml` is not tracked, because which machines are at a desk is true of the desk
-rather than of the project. It is not meant to be written by hand either — `./bareruby
-target add` asks, and writes the answer.
+`config/target.yml` is not tracked *here*, because which machines are at this desk is true
+of the desk rather than of this repository; in a project written by `./bareruby new` it is
+tracked, because which compositions a project is built for is true of the project. It is
+not meant to be written by hand either — `./bareruby target add` asks, and writes the
+answer.
 
 **What is on screen is the entry itself, in the words the file will use** — not a list of
 questions that produces one afterwards, but the entry, being written:
@@ -521,8 +526,8 @@ binding's `targets.rb`, where they already are. The machine that needs no hardwa
 offered first and the rest are alphabetical, so anything attaching later has one obvious
 place to go. `./bareruby target list` prints them all.
 
-[`target.yml.sample`](target.yml.sample) documents every field, for reading a file back
-once it exists.
+[`config/target.yml.sample`](config/target.yml.sample) documents every field, for reading
+a file back once it exists.
 
 ## Running the first stage
 
@@ -823,7 +828,8 @@ turned out to be the whole story here too, and every remaining case was the same
   is loud; a path that is wrong where an empty answer is legal is silent.**
 - `ref.rb`, the default source, was found beside the executable.
 
-All three are found from where the command was run now, which is what they always meant.
+All three are found from the project root now, which is what they always meant. Where that
+root is, is the next section.
 
 **Looking in every gem means looking in copies of one.** A checkout that carries a gem in
 its working tree and has the same gem installed finds the same binding twice, and loading
@@ -843,6 +849,79 @@ working tree or from `.gems/bin/bareruby` with nothing but installed gems on the
 
 `reserved/` holds the notes for three bindings that do not exist yet — ESP-IDF, UEFI and
 WASI. They were filed under a binding directory that no longer has anywhere to be.
+
+### Where a project starts
+
+`bareruby new hello` writes a project. **It builds without being edited**: the record it
+comes with holds one entry — the machine doing the compiling — and `app/main.rb` blinks
+the onboard LED, which on this machine is a stub that says on fd2 what it would have done.
+So the first thing a newcomer does succeeds, and it succeeds before any hardware has been
+bought.
+
+```
+hello/
+├── .gitignore          build/, dump/, .tools/
+├── Gemfile             what this is built from, and every board it could be built for
+├── Gemfile.lock
+├── README.md
+├── bin/bareruby        the binstub. The entrance from here on
+├── config/target.yml   which compositions this project is built for
+└── app/main.rb         the program
+```
+
+**The Gemfile is the catalogue.** Every board this ecosystem reaches is a line in it,
+commented out, and uncommenting one is the whole cost of being able to build for that
+board. Nothing else holds that list, so there is no second copy to fall out of step —
+which is also why the list is only ever read by a person. A command that read those
+comment lines would be taking gem names apart, and a gem name is words rather than fields.
+`target list` answers the neighbouring question, what is *installed*, and that answer comes
+from the gems themselves.
+
+```sh
+./bareruby new hello
+cd hello
+bin/bareruby build                 # host. Unedited, and it runs
+$EDITOR Gemfile                    # uncomment a board
+bundle install
+bin/bareruby target add            # it can offer that board now
+bin/bareruby deploy
+```
+
+**Where the root is, is bundler's answer.** A project names the ecosystem in its Gemfile
+and runs it through the binstub beside it, so by the time the executable is running,
+something has already had to find the Gemfile. `config/target.yml`, the source compiled
+when none is named, `build/` and `dump/` are all found from there, and the process is
+stood at the root before the compiler is even loaded — a gem that knows nothing about
+projects needs to be told nothing if it is standing in the right place.
+
+That answers the silent failure the move to gems turned up. **A run that cannot find the
+root does not get as far as reading a record**, so a desk that has recorded nothing and a
+run that has lost its way stop being the same silence. Nothing here walks a tree looking
+for a marker, and nothing had to decide what would count as one — which matters precisely
+because the file worth finding is the file allowed to be missing.
+
+This checkout has a `Gemfile` of its own for that reason, and for no other: it runs its own
+commands, so it needs to be a root the same way a generated project is.
+
+Two things in the template cannot be the same on two desks and are written when the project
+is: which machine is doing the compiling, and where the gems come from. The second is a
+prototype's problem only — nothing here is published, so a project reads these gems from
+the checkout or the GEM_HOME it was made from, where a released one would name a version.
+
+Running it wholly from installed gems produces the same firmware, byte for byte:
+
+```sh
+for g in gems/*/; do (cd $g && gem build *.gemspec -o /tmp/$(basename $g).gem); done
+GEM_HOME=/tmp/gh gem install --local --no-document /tmp/*.gem
+GEM_HOME=/tmp/gh PATH=/tmp/gh/bin:$PATH bareruby new /tmp/installed
+```
+
+The template is files rather than strings, so what a user gets can be read as what it will
+be — and files are exactly what a `spec.files` can leave behind. Nothing requires them, so
+nothing in this repository would notice them missing; the project would simply come out
+empty, and only an install-and-run says so. The dot file is shipped as `gitignore` and
+renamed on the way out, because under its own name it would take effect here and hide the
+very files it is meant to carry.
 
 ### A class the language offers, from a gem
 

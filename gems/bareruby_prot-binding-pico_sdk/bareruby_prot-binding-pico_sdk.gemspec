@@ -11,11 +11,13 @@ Gem::Specification.new do |spec|
   spec.summary = "Reaches Raspberry Pi Pico boards through pico-sdk."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
   # The C++ lives in the Ruby as heredocs, but the flashing script and the family it
   # offers are files, and a gem carries only what it lists.
-  spec.files = Dir["lib/**/*.{rb,sh,yml}"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml}"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

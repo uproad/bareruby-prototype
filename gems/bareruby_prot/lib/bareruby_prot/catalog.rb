@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "io/console"
 require "yaml"
 
@@ -574,7 +575,8 @@ module BareRubyProt
     # Appended as text rather than written back as YAML, so that whatever else is in the
     # file — the other entries, and whatever was said about them — survives being added to.
     def self.write(record)
-      File.write(Deployment::FILE, "bareruby:\n  targets:\n") unless File.exist?(Deployment::FILE)
+      FileUtils.mkdir_p(File.dirname(Deployment::FILE))
+      File.write(Deployment::FILE, "targets:\n") unless File.exist?(Deployment::FILE)
       File.open(Deployment::FILE, "a") { |file| file.write(rendered(place(record))) }
       puts "Added to #{Deployment::FILE}:"
       puts rendered(place(record))
@@ -582,7 +584,7 @@ module BareRubyProt
 
     def self.rendered(record)
       first, *rest = record.map { |key, value| lines(key, value) }.flatten
-      ["    - #{first}", *rest.map { |line| "      #{line}" }].join("\n") + "\n"
+      ["  - #{first}", *rest.map { |line| "    #{line}" }].join("\n") + "\n"
     end
 
     def self.lines(key, value)

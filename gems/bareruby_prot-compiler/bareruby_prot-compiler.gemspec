@@ -12,9 +12,11 @@ Gem::Specification.new do |spec|
   spec.summary = "Compiles BareRuby to C++, and declares what a binding answers."
   spec.authors = ["uproad"]
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 4.0"
 
-  spec.files = Dir["lib/**/*.{rb,yml}"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,yml}"]
   spec.require_paths = ["lib"]
 
   # The only thing outside this gem that reading a program needs.
