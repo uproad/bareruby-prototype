@@ -2,7 +2,7 @@
 
 require "yaml"
 
-require_relative "target/target"
+require "bareruby_prot/target/target"
 
 module BareRubyProt
   # What is true of this desk rather than of the project: which of the checked
@@ -16,7 +16,11 @@ module BareRubyProt
   # together name is looked up rather than assembled — a composition nobody has run is
   # not a target, it is an untried idea.
   class Deployment
-    FILE = File.expand_path("target.yml", __dir__)
+    # **A desk's record is the desk's, so it is found from where the command was run.** It
+    # was found from beside this file, which was the same place until this file became part
+    # of a gem; a gem looking beside itself finds nothing and says the ordinary thing — that
+    # this desk has no record — while quietly building somewhere else than it was told to.
+    FILE = File.expand_path("target.yml", Dir.pwd)
 
     # A board takes the artifact its composition produced, and several identical boards
     # take the same one, so where to write it is a list and what to write is not.

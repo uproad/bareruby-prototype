@@ -19,8 +19,12 @@ require_relative "pass/pass_12_cpp_source_generator"
 
 module BareRubyProt
   class Compiler
-    DUMP_DIRECTORY = File.expand_path("dump", __dir__)
-    BUILD_DIRECTORY = File.expand_path("build", __dir__)
+    # **Where a run writes is the run's, not this file's.** Both were found from beside
+    # this file, which was the same place while the compiler was a tree; a compiler that
+    # is a gem would write its output into the installed gem instead. They are found from
+    # where the command was run, which is the directory the sources were named from.
+    DUMP_DIRECTORY = File.expand_path("dump", Dir.pwd)
+    BUILD_DIRECTORY = File.expand_path("build", Dir.pwd)
     ARTIFACT_SCHEMA = "ARTIFACTS"
     STATUS_COMPILE_ERROR = 10
     BEGIN_ERROR = "error: begin requires the exception mechanism, which --no-exceptions removes."

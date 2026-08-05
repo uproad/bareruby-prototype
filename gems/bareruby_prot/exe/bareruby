@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# The one executable. Every command a user types arrives here, and nothing else in the
+# ecosystem is reachable from a shell.
+require "bareruby_prot/cli"
+
+exit BareRubyProt::Cli.run(ARGV)
