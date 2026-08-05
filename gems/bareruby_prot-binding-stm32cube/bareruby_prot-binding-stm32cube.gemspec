@@ -21,7 +21,7 @@ Gem::Specification.new do |spec|
   # reads these gems from where they are, and to bundler a directory with no gemspec in
   # it is not a gem.
   spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml,erb}"] +
-               ["README.md", "setup.md", "build.md"]
+               ["README.md", "readme_jp.md", "setup.md", "build.md"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

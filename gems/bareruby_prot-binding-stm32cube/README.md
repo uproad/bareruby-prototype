@@ -6,6 +6,7 @@ pinned checkout, generates everything board-specific, and links with a pinned GC
 
 See [setup.md](setup.md) for the one-time install and for describing a board of your
 own. See [build.md](build.md) for build, flash, serial and troubleshooting.
+[readme_jp.md](readme_jp.md) is the guide in Japanese, from `new` to a blinking LED.
 
 The name `stm32cube` means the STM32Cube HAL — the library — not the IDE that shares
 its branding. The IDE plays no part here.
