@@ -8,9 +8,10 @@
 # are other people's releases.
 /.tools/
 
-# Which boards are on this desk is a fact about a desk, not about the project.
-# Copy target.yml.sample to start one.
-/target.yml
+# Which boards are on this desk is a fact about a desk, not about this repository.
+# Copy config/target.yml.sample to start one. In a project written by `bareruby new` this
+# file is tracked instead: which compositions a project is built for is true of it.
+/config/target.yml
 
 # Gems this checkout reaches for, installed here rather than into the desk.
 /.gems/
