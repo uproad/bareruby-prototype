@@ -257,6 +257,74 @@ Covered so far:
   program on the Pico blinks. One chip, two boards, two outcomes, and nothing before the
   hardware could tell them apart.
 
+- **What a peripheral call costs, and who removes it** (`samples/gpio_pico_loop.rb`) —
+  every GPIO a Pico 1 brings out to its header, pulsed one after another with nothing
+  between the writes, so the period of GP0 is one sweep and an oscilloscope reads the
+  cost straight off a pin.
+
+  A peripheral is a translation unit of its own, so `gp.write(1)` is a call across one
+  where the hardware asks for a single store. Measured on a real Pico, GP0 came out at
+  **137.07 kHz** — 7.295 µs a sweep, 912 cycles at 125 MHz, **140 ns and 17.5 cycles for
+  one write**, against the two-cycle store the chip is capable of.
+
+  **Nothing on this side can remove that call, and nothing on this side should.** The
+  caller and the callee are never in front of the compiler at the same time, so the one
+  party that has both is the linker — and it already knows how. `-flto` on the generated
+  units and on the link is the whole change; there is no inliner here, no `inline` hint
+  and no per-function rule. **This is what emitting C++ rather than instructions was
+  for**: the optimizer is somebody else's and already written.
+
+  The same board then reads **1.29–1.47 MHz** — about **ten times**. The two figures the
+  scope alternates between are one measurement, not noise: 1468.571 × 7 and 1285.000 × 8
+  are both 10.28 MHz, so it is quantizing a period of 681–778 ns at ±1 count. The loop
+  is 73 instructions where it was 209 plus 52 calls into a nine-instruction callee, and
+  the mask `1 << pin` has left the loop entirely — computed once per pin at the top and
+  held, so the body is two stores to the SIO and nothing else. Per write: **~14 ns, about
+  1.75 cycles**.
+
+  **The second chip answers the same question differently, and that is the more
+  interesting result.** A Pico 2 W runs the same program with the same 26 pins: 469
+  instructions a sweep become 68, and it goes from **263.6–270.0 kHz to 1.29–1.47 MHz —
+  about five times**, not ten. The RP2350's write is one `mcrr` to the GPIO coprocessor
+  rather than two stores to the SIO, and its out-of-line callee is six instructions where
+  the RP2040's is nine, so there was less call to remove in the first place.
+
+  What is left once it is removed is what differs. Per instruction the RP2040 costs the
+  same before and after — 1.35 cycles against 1.16–1.33 — while the **RP2350 goes from
+  1.20 to 1.60**. Its LTO'd loop is 52 `mcrr` out of 68 instructions where the baseline
+  was 52 out of 469: at 11% of the path the coprocessor write was hidden among ordinary
+  instructions, and at 76% it is the path. It costs about **2 cycles against the RP2040's
+  1.75**, so a 20% higher clock buys nothing here and **both chips land on the same
+  681–778 ns sweep**. That attribution is inferred from the two measurements rather than
+  measured on its own.
+
+  Which is the shape of the answer worth keeping: removing the calls moves the floor to
+  wherever the hardware's own cost is, and where that floor sits is a fact about the chip
+  that only appears once everything above it is gone.
+
+  **Only the units this build generated are given to it.** Asking it of the whole target
+  drags in the SDK's sources, and pico-sdk reaches its own stdio through `-Wl,--wrap`: a
+  wrapper nothing calls in the IR is dropped before the linker makes the reference that
+  would have kept it, and holding all 160 wrapped symbols down would link every one of
+  them into every program. That version built 31040 B against 27052 B. Confined to the
+  generated units it is **26552 B — smaller than not doing it at all**, because the calls
+  go and the callees go with them, and it is instruction-for-instruction as fast. The
+  boundary worth crossing was the one between generated units anyway; past it the build
+  belongs to somebody else.
+
+  It costs nothing anywhere else: `blink` 30580 → 30372 B of text, `fixed` 41256 → 40936,
+  `interrupt` 32012 → 31804, `avs` 32492 → 32448. Two grow — `tenji_int` 32228 → 32336
+  and `i2c` 93760 → 94336 — which is inlining trading size for speed where a call was
+  worth removing. On the RP2350 the same sample goes 29596 → 29252. The host build takes
+  it too, because one `g++` invocation is still not
+  one translation unit: all 24 host programs print byte-for-byte what they printed
+  before.
+
+  **The Arduino core and the CubeMX project do not get it here.** The Arduino core owns
+  its own compile options and offers no way to add one, which is the same delegation seen
+  from the other side. The CubeMX build does not link on this desk at all, before this
+  change or after, so there was nothing to measure and nothing was changed for it.
+
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
 not a copy — so what it changes, the caller sees — and a method that returns an object

@@ -39,6 +39,7 @@ module BareRubyProt
         toolchain = arm-none-eabi-g++
         language_standard = gnu++20
         compile_options = -std=gnu++20 -fno-rtti
+        link_time_optimization = enabled
         include_directories = ..
         sources = #{@sources.join(' ')}
         link_libraries = #{libraries.join(' ')}
@@ -88,6 +89,25 @@ module BareRubyProt
         target_include_directories(bareruby_program PRIVATE ..)
         target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
         target_link_libraries(bareruby_program #{libraries.join(' ')})
+
+        # Each peripheral is a translation unit of its own, so a pin write is a call
+        # across one where the hardware asks for a single store. Nothing this side can
+        # see undoes that — the caller and the callee are never in front of the compiler
+        # at the same time — so it is handed to the linker, which has both. This is the
+        # whole reason the first stage emits C++ rather than instructions: the optimizer
+        # is somebody else's and already written.
+        #
+        # **Only the units this build generated.** Asked of the target instead, it would
+        # take pico-sdk's sources with it, and the SDK reaches its own stdio through
+        # -Wl,--wrap: a wrapper nothing calls in the IR is dropped before the linker makes
+        # the reference that would have kept it. Naming the 160 symbols it wraps would
+        # link every one of them into every program. The boundary that matters here is the
+        # one between generated units anyway — past it, the build is somebody else's.
+        set_source_files_properties(
+        #{@sources.map { |source| "    #{source}" }.join("\n")}
+            PROPERTIES COMPILE_OPTIONS "-flto")
+
+        target_link_options(bareruby_program PRIVATE -flto)
         #{stdio_text}
         pico_add_extra_outputs(bareruby_program)
       CMAKE
