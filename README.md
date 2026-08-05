@@ -141,6 +141,16 @@ Covered so far:
   the HAL with `arm-none-eabi-g++`. A physical board has been programmed over SWD, with
   LD2 and USART2 exercised; that run predates the move off STM32CubeIDE's headless
   builder. I2C links against STM32CubeF4 HAL 1.28.3 but remains hardware-unverified.
+  `samples/heartbeat.rb` links to 5416 B of text and 1644 B of bss on this board; the
+  bss is the HAL's, since the whole of `Drivers/` is compiled and the linker drops what
+  no call reaches.
+
+  **Two of its units still fail to link together.** `bareruby_startup` had been left in
+  the GPIO unit when GPIO moved out of the unit every build reaches, so a program that
+  never touches a pin — `samples/heartbeat.rb` is one — linked against a definition it
+  had no reason to have pulled in. Splitting one file into several makes *which* file a
+  definition landed in a fact worth checking, and nothing checks it: every binding names
+  its own units and the linker is the only thing that reads the answer.
 
 - **The Arduino core binding** (`arduino-mega2560`) — an ATmega2560 at 16 MHz with 256 KB
   of flash and 8 KB of SRAM, reached through the Arduino core and built by `arduino-cli`.

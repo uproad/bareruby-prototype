@@ -149,10 +149,6 @@ module BareRubyProt
           }
       }
 
-      void bareruby_startup(void) {
-          // HAL_Init, the system clock, and all MX peripherals are ready before entry.
-      }
-
       void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
           self->pin = pin;
           self->params = params;
@@ -206,6 +202,10 @@ module BareRubyProt
       extern "C" int __io_putchar(int ch) {
           uint8_t byte = (uint8_t)ch;
           return HAL_UART_Transmit(&huart2, &byte, 1, HAL_MAX_DELAY) == HAL_OK ? ch : EOF;
+      }
+
+      void bareruby_startup(void) {
+          // HAL_Init, the system clock, and all MX peripherals are ready before entry.
       }
 
       static void bareruby_delay_us(uint32_t microseconds) {
