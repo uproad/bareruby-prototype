@@ -9,11 +9,18 @@
 # comments below would be taking gem names apart, and a gem name is words rather than
 # fields.
 #
-# The gems are read from a checkout rather than from rubygems.org, because this prototype
-# publishes nothing. Released, the same lines would carry a version and no path.
+# The gems are read from where they are rather than from rubygems.org, because this
+# prototype publishes nothing. Released, the same lines would carry a version and no path.
+#
+# **The glob is not decoration.** A path source reads every gemspec under the directory it
+# is given, and the directory these are installed into is the one every other gem on the
+# desk is installed into. Left to its default it evaluates hundreds of other people's
+# gemspecs — many of which shell out to `git ls-files`, in a directory that is not a
+# repository — and offers every one of them to the resolver. Saying which directories are
+# ours is what keeps this source to eleven of them.
 source "https://rubygems.org"
 
-path "__GEMS__" do
+path "__GEMS__", glob: "bareruby_prot*/*.gemspec" do
   # The ecosystem. The compiler arrives as its dependency and is deliberately not named
   # here: a project that named it would be holding two versions of one answer.
   gem "bareruby_prot"
