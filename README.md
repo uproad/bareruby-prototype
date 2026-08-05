@@ -213,7 +213,7 @@ Covered so far:
   fact about the two together, so it lives where the two meet:
 
   ```ruby
-  # target/binding/pico_sdk/machine/pico_w.rb
+  # gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico_w.rb
   module PicoSdkBinding
     module PicoW
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
@@ -602,7 +602,7 @@ board, and `PICO_PLATFORM` is not even the chip's name: an RP2350 answers to
 chosen. So they are kept where the machine and the binding meet rather than on the machine:
 
 ```ruby
-# target/binding/pico_sdk/machine/pico2_w.rb
+# gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico2_w.rb
 def self.pico_board = "pico2_w"
 
 def self.pico_platform = "rp2350"
@@ -911,7 +911,7 @@ nothing but the files it owns, and brings the linked ELF back to
 `build/<composition>/bareruby_program.elf` so that flashing needs to know nothing about
 how the Cube project arranges its output. `options.configuration` picks `-Og -g3` or
 `-O2`; `ARM_TOOLCHAIN_PATH` names a compiler kept somewhere other than `.tools/`.
-The binding's [README](target/binding/stm32cube/README.md) records project preparation, the
+The binding's [README](gems/bareruby_prot-binding-stm32cube/README.md) records project preparation, the
 ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.
 
 `./bareruby flash --target=f446` writes that ELF over SWD with `STM32_Programmer_CLI`,
@@ -1178,10 +1178,10 @@ The bootloader then shows up as a USB mass storage device — `2e8a:0003 Raspber
 RP2 Boot` in `lsusb`, a removable 128 MiB disk in `dmesg`. Then run:
 
 ```sh
-target/binding/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
-target/binding/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
-target/binding/pico_sdk/flash.sh path/to/other.uf2
-target/binding/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --list                # what is attached, and the fstab line for each
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh                       # defaults to the raspberry-pi-pico artifact
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh path/to/other.uf2
+gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --board SERIAL path/to/other.uf2
 ```
 
 The script locates boards by SCSI vendor `RPI` and by USB vendor `2e8a` rather than by a
@@ -1253,7 +1253,7 @@ Only the mount needs privileges. One line in `/etc/fstab` per board removes even
 /dev/disk/by-id/usb-RPI_RP2350_34319CF054AB3BD6-0:0-part1 /mnt/pico2 vfat noauto,user,umask=000 0 0
 ```
 
-`target/binding/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
+`gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/flash.sh --list` prints these lines for whatever is in BOOTSEL, serial and all. The
 mount points are read back out of `/etc/fstab`, so they can be named anything as long as
 each is distinct.
 
