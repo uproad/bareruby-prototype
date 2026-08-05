@@ -211,28 +211,45 @@ module BareRubyProt
           }
       }
 
-      static uint32_t bareruby_asleep_mark;
+      /* Microsecond-resolution time from the tick HAL already keeps: the millisecond
+         count, refined by how far SysTick has counted into the current millisecond.
+         Reading the tick twice catches a rollover between the reads. 64 bits so the
+         value never wraps, and SysTick so the same code serves a Cortex-M0, which
+         has no cycle counter. */
+      static uint64_t bareruby_asleep_now(void) {
+          uint32_t tick;
+          uint32_t cycles;
+          do {
+              tick = HAL_GetTick();
+              cycles = SysTick->LOAD - SysTick->VAL;
+          } while (tick != HAL_GetTick());
+          return (uint64_t)tick * 1000u + cycles / (SystemCoreClock / 1000000u);
+      }
 
-      static void bareruby_asleep_until(uint32_t interval) {
-          uint32_t now = HAL_GetTick();
-          uint32_t deadline = bareruby_asleep_mark + interval;
-          int32_t remaining = (int32_t)(deadline - now);
-          if (remaining > 0) {
-              HAL_Delay((uint32_t)remaining);
+      static uint64_t bareruby_asleep_mark;
+
+      /* Wait out what remains of the interval since the last mark, so the body's own
+         cost is part of the period, not added to it. All three asleep entries pass
+         through here — the mark they share is in microseconds, so a microsecond wait
+         moves it just as surely as a second one. HAL_Delay would round the wait to
+         ticks; spinning on the same clock keeps the microsecond phase. */
+      static void bareruby_asleep_until(uint64_t interval) {
+          uint64_t deadline = bareruby_asleep_mark + interval;
+          while (bareruby_asleep_now() < deadline) {
           }
-          bareruby_asleep_mark = HAL_GetTick();
+          bareruby_asleep_mark = bareruby_asleep_now();
       }
 
       void bareruby_asleep(int32_t seconds) {
-          bareruby_asleep_until(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
+          bareruby_asleep_until(seconds > 0 ? (uint64_t)seconds * 1000000u : 0u);
       }
 
       void bareruby_asleep_ms(int32_t milliseconds) {
-          bareruby_asleep_until(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+          bareruby_asleep_until(milliseconds > 0 ? (uint64_t)milliseconds * 1000u : 0u);
       }
 
       void bareruby_asleep_us(int32_t microseconds) {
-          bareruby_machine_delay_us(microseconds);
+          bareruby_asleep_until(microseconds > 0 ? (uint64_t)microseconds : 0u);
       }
     CPP
 
