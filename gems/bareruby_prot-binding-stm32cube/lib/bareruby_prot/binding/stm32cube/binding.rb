@@ -407,12 +407,15 @@ module BareRubyProt
     # exists to fail. The STM32446E-EVAL's official data wires its labelled LED as an
     # input, which is how a manifest comes to have no led and a program that never
     # touches it still builds.
+    # A refusal here is the program's mistake, not this gem's, so it is said the way
+    # the compiler says its own compile errors: the message, and status 10.
     def self.unit(key, machine)
       if key == :onboard_led
         board = Manifests.board(machine.key)
         unless board.led
-          raise Manifests::Error.new(board.path, "#{board.key} has no onboard LED; " \
-                                                 "OnboardLED cannot be built for it")
+          warn "error: #{board.key} has no onboard LED, so OnboardLED cannot be built " \
+               "for it. Its manifest is #{board.path}."
+          exit 10
         end
       end
       UNITS.fetch(key)
