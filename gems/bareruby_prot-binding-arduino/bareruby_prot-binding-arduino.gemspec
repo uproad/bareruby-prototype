@@ -16,7 +16,9 @@ Gem::Specification.new do |spec|
   # The C++ lives in the Ruby as heredocs, but the family this binding offers is a file,
   # and a gem carries only what it lists. What this core cannot be asked for is a fact
   # somebody installing this needs, so the README travels with it.
-  spec.files = Dir["lib/**/*.{rb,yml}"] + ["README.md"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,yml}"] + ["README.md"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

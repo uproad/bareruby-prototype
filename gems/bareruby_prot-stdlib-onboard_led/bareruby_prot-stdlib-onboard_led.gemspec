@@ -13,7 +13,9 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0"
 
-  spec.files = Dir["lib/**/*.rb"]
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end
