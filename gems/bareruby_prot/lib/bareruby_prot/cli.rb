@@ -33,11 +33,11 @@ module BareRubyProt
                             its Gemfile to reach one.
         init FAMILY         Write FAMILY's config templates into this project, every
                             field explained in place. Renaming a .sample makes it real.
-        compile SOURCE.rb   Ruby to C++, into build/<composition>/.
-                            Reads no configuration; without --target the target is the
-                            machine doing the compiling.
+        compile SOURCE.rb   Ruby to C++, into .bareruby/compile/<composition>/. Makes no
+                            artifact, so build/ stays empty. Reads no configuration; without
+                            --target the target is the machine doing the compiling.
         build   SOURCE.rb   compile, then run each binding's toolchain over what it produced,
-                            leaving the artifact beside its sources.
+                            leaving the artifact — and only that — in build/<composition>/.
         flash               Write what build left onto the boards that take it.
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
@@ -197,14 +197,23 @@ module BareRubyProt
     # here: the person who typed this has no other way to learn that it worked, and no way
     # at all to learn where what it made is. Toolchains are quiet unless they fail, so
     # without this line a first success is indistinguishable from silence.
+    # **build/ holds what was built and nothing else.** The toolchains leave far more than
+    # that behind — a cmake tree alone is 679 files and 9.4 MB against 52 KB of firmware —
+    # and all of it is how the artifact was made rather than what was asked for. The binding
+    # says which of what it left is the artifact; this side says where artifacts go.
     def made(entry)
       made = entry.target.binding.toolchain.artifact(directory_of(entry))
-      puts "bareruby: #{entry.target.name} -> #{made.delete_prefix("#{Dir.pwd}/")}"
+      kept = File.join(ARTIFACTS, entry.directory, File.basename(made))
+      FileUtils.mkdir_p(File.dirname(kept))
+      FileUtils.cp(made, kept)
+      puts "bareruby: #{entry.target.name} -> #{kept.delete_prefix("#{Dir.pwd}/")}"
     end
+
+    ARTIFACTS = File.expand_path("build", Dir.pwd)
 
     def debug?(entry) = @debug || entry.debug
 
-    def directory_of(entry) = File.join(Compiler::BUILD_DIRECTORY, entry.directory)
+    def directory_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.directory)
 
     # An entry that named itself takes the name it chose, so that two entries built from
     # one composition — a debug one and a release one — do not land in one place.
@@ -212,7 +221,7 @@ module BareRubyProt
       return unless entry.name
 
       FileUtils.rm_rf(directory_of(entry))
-      FileUtils.mv(File.join(Compiler::BUILD_DIRECTORY, entry.target.directory),
+      FileUtils.mv(File.join(Compiler::COMPILE_DIRECTORY, entry.target.directory),
                    directory_of(entry))
     end
 
