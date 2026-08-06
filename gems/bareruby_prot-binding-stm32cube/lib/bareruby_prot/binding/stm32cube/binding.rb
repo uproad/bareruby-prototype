@@ -110,6 +110,72 @@ module BareRubyProt
       #include "bareruby_binding.h"
       #include "bareruby_board.h"
 
+      /* The public GPIO API currently carries one realtime handler, just like the Pico
+         and Arduino bindings. STM32 gives each pin number one EXTI line, with lines 5--9
+         and 10--15 sharing vectors; the seven strong handlers below replace the startup
+         file's weak defaults and hand those vectors to HAL. */
+      static bareruby_interrupt_handler_t bareruby_gpio_interrupt_handler;
+      static uint16_t bareruby_gpio_interrupt_pin;
+
+      static IRQn_Type bareruby_gpio_interrupt_irq(int32_t pin) {
+          switch ((uint32_t)pin & 15u) {
+          case 0: return EXTI0_IRQn;
+          case 1: return EXTI1_IRQn;
+          case 2: return EXTI2_IRQn;
+          case 3: return EXTI3_IRQn;
+          case 4: return EXTI4_IRQn;
+          case 5:
+          case 6:
+          case 7:
+          case 8:
+          case 9: return EXTI9_5_IRQn;
+          default: return EXTI15_10_IRQn;
+          }
+      }
+
+      extern "C" void HAL_GPIO_EXTI_Callback(uint16_t pin) {
+          if (pin == bareruby_gpio_interrupt_pin && bareruby_gpio_interrupt_handler != NULL) {
+              bareruby_gpio_interrupt_handler();
+          }
+      }
+
+      extern "C" void EXTI0_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+      }
+
+      extern "C" void EXTI1_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
+      }
+
+      extern "C" void EXTI2_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_2);
+      }
+
+      extern "C" void EXTI3_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+      }
+
+      extern "C" void EXTI4_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_4);
+      }
+
+      extern "C" void EXTI9_5_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_5);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_6);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_7);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_9);
+      }
+
+      extern "C" void EXTI15_10_IRQHandler(void) {
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_11);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_12);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_14);
+          HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_15);
+      }
+
       /* Pin numbering is sixteen to a port, port A first — the family's own order.
          Which ports exist is the adapter's answer, so a pin on a port this package
          does not bond out is refused rather than aliased. */
@@ -165,6 +231,30 @@ module BareRubyProt
 
       bool bareruby_gpio_low(bareruby_gpio_t *self) {
           return bareruby_gpio_read(self) == 0;
+      }
+
+      void bareruby_gpio_on_interrupt(
+          bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
+          GPIO_TypeDef *port = bareruby_gpio_port(self->pin);
+          uint16_t pin = bareruby_gpio_pin(self->pin);
+          IRQn_Type interrupt = bareruby_gpio_interrupt_irq(self->pin);
+
+          GPIO_InitTypeDef config = {};
+          config.Pin = pin;
+          config.Mode = (events & 4) ? GPIO_MODE_IT_FALLING : GPIO_MODE_IT_RISING;
+          config.Pull = (self->params & 8) ? GPIO_PULLUP
+                                           : ((self->params & 16) ? GPIO_PULLDOWN : GPIO_NOPULL);
+
+          bareruby_gpio_interrupt_handler = handler;
+          bareruby_gpio_interrupt_pin = pin;
+          HAL_GPIO_Init(port, &config);
+
+          /* Do not deliver an edge left pending while the pin and callback were being
+             installed. Priority 2 is the value ST's own F446 GPIO EXTI example uses. */
+          __HAL_GPIO_EXTI_CLEAR_IT(pin);
+          HAL_NVIC_ClearPendingIRQ(interrupt);
+          HAL_NVIC_SetPriority(interrupt, 2, 0);
+          HAL_NVIC_EnableIRQ(interrupt);
       }
     CPP
 
