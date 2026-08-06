@@ -483,6 +483,10 @@ module BareRubyProt
 
     def self.toolchain = PicoSdkToolchain
 
+    # What this binding reaches for that it does not carry. A binding without one is a
+    # binding that needs nothing fetched, which is an answer rather than an omission.
+    def self.tools = PicoSdkTools
+
     def self.flash = PicoSdkFlash
 
     def self.build = PicoSdkBuild

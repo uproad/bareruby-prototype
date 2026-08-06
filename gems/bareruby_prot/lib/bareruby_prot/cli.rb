@@ -10,11 +10,17 @@ require "bareruby_prot/compiler"
 require_relative "deployment"
 require_relative "catalog"
 require_relative "scaffold"
+require_relative "tools"
 
 module BareRubyProt
-  # The one way in. The commands stack rather than duplicate: build compiles first and
-  # then runs a toolchain over what it produced, deploy builds first and then writes what
-  # it built onto the boards that take it. Each does its own work and then the next one's.
+  # The one way in. The commands stack rather than duplicate: build fetches what it will
+  # build with and then compiles, and then runs a toolchain over what it produced; deploy
+  # builds first and then writes what it built onto the boards that take it. Each does its
+  # own work and then the next one's.
+  #
+  # **compile is the one that does not stack tools install**, because the first stage
+  # reaches for no toolchain at all. A desk with not one SDK on it can still turn Ruby into
+  # C++, and keeping that true is worth a command of its own.
   #
   # compile is the only command that reads nothing but its own arguments. From build
   # onwards a command needs to know which desk it is standing at — which boards are here
@@ -37,6 +43,8 @@ module BareRubyProt
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
         target list         Every machine that can be targeted, by family.
+        tools install       Fetch what the recorded targets build with, pinned by version
+                            and hash. build and flash do this first; silent once it is done.
 
       Options:
         --target=NAME       Work on NAME, repeatable. Names and their short forms are in
@@ -66,6 +74,7 @@ module BareRubyProt
       when "flash" then flash
       when "deploy" then deploy
       when "target" then target
+      when "tools" then tools
       else usage
       end
     end
@@ -76,6 +85,16 @@ module BareRubyProt
       when "list" then Catalog.list
       else usage
       end
+    end
+
+    # An SDK and a cross compiler are gigabytes of somebody else's release, and every board
+    # needs one before anything can be built for it. Having its own verb is what lets CI
+    # fetch them in a step it can cache, and lets a desk see what is about to be taken.
+    def tools
+      return usage unless @arguments[0] == "install"
+
+      Tools.install(entries.map(&:target))
+      0
     end
 
     # `bareruby init stm32`. What is written is the binding's to say — a family knows
@@ -112,6 +131,7 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
+      Tools.install(planned.map(&:target))
       Compiler.clear_output
       done = planned.all? do |entry|
         compile_for([entry.target], debug: debug?(entry))
@@ -129,6 +149,7 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
+      Tools.install(planned.map(&:target))
       done = planned.all? do |entry|
         entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
                                                         options: entry.options)

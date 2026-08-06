@@ -373,6 +373,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 
 cd bareruby-prototype
+./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one target, no flashing
@@ -390,18 +391,42 @@ cd bareruby-prototype
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
 | `target list` | every machine that can be targeted, by family | no |
+| `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 
-`build` reaches for an SDK and a toolchain, and what it reaches for lives under `.tools/`,
-one directory per binding, each named for the version it is:
+`build` reaches for an SDK and a toolchain, and it fetches them itself. **The commands
+stack, and `tools install` is at the bottom of the stack**: `build` fetches and then
+compiles and then runs a toolchain, `deploy` builds and then flashes. Having its own verb
+is what lets CI fetch in a step it can cache, and lets a desk see what is about to be
+taken; having it underneath `build` is what makes a project someone cloned — its
+`config/target.yml` already naming a Pico — build without anyone knowing it had to.
+
+`compile` is the one command that does not stack it. The first stage reaches for no
+toolchain at all, and a desk with not one SDK on it can still turn Ruby into C++.
 
 ```text
-.tools/
+~/.bareruby/tools/
 ├── common/
 │   └── arm/
 │       └── arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
-├── pico_sdk/
-│   ├── pico-sdk-2.3.0/
-│   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+└── pico_sdk/
+    ├── pico-sdk-2.3.0/
+    └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+```
+
+**The store belongs to the desk, not to a project.** One pico-sdk serves every project on
+a machine; keeping it under the checkout was right while there was only one checkout, and
+`bareruby new` ended that. `BARERUBY_TOOLS` names it somewhere else. The version is in the
+directory name because it is part of what a measurement means — moving from pico-sdk 1.5.1
+to 2.3.0 changed every figure recorded below.
+
+Only the Pico binding is fetched this way so far. `stm32cube` installs itself with its own
+script, into the project's `.tools/`, from a lock of the same shape; `arduino` is not
+fetched at all, because `arduino-cli` installs its own cores and there is no archive for
+this side to bring down. Which of them has to be moved next is a question about those
+bindings rather than about this mechanism.
+
+```text
+.tools/                                  # still project-local, for the two below
 ├── arduino/
 │   ├── arduino-cli-1.5.2-rc.1/
 │   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
@@ -410,12 +435,6 @@ one directory per binding, each named for the version it is:
     ├── STM32CubeF4-1.28.3/             # HAL, CMSIS, startup files, linker scripts
     └── F446_Sample/                    # the CubeMX project this desk builds for
 ```
-
-`.tools/` is gitignored, being a gigabyte of other people's releases, but it sits under
-the repository all the same: what a build reaches for is the build's, and a checkout that
-has to be told where its own SDK is has been left half-installed. The version is in the
-name because it is part of what a measurement means — moving from pico-sdk 1.5.1 to 2.3.0
-changed every figure recorded below.
 
 `common/` is for what more than one binding reaches for, filed under the instruction set it
 serves rather than under a binding that only half-owns it: the Pico boards and the NUCLEO are
@@ -849,6 +868,61 @@ working tree or from `.gems/bin/bareruby` with nothing but installed gems on the
 
 `reserved/` holds the notes for three bindings that do not exist yet — ESP-IDF, UEFI and
 WASI. They were filed under a binding directory that no longer has anywhere to be.
+
+### What a build is made of, and who brings it
+
+An SDK and a cross compiler are gigabytes of somebody else's release. **Which ones a board
+needs is the binding's answer; where they go and how the two shapes they come in are
+brought down is this side's.** The ecosystem never learns what pico-sdk is — it knows how
+to verify an archive against a hash and how to clone a repository at a commit, and a
+binding that needs neither does not use it. `arduino-cli` installs its own cores, and
+there is nothing here for it to fit into.
+
+The lock beside the binding is the whole of what is known:
+
+```yaml
+arm_gcc:
+  from: https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel
+  directory: common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+  archives:
+    linux-x64:
+      file: arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
+      sha256: 6cd1bbc1d9ae57312bcd169ae283153a9572bd6a8e4eeae2fedfbc33b115fdbb
+sdk:
+  github: raspberrypi/pico-sdk
+  tag: 2.3.0
+  commit: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+  submodules:
+    lib/tinyusb: 86ad6e56c1700e85f1c5678607a762cfe3aa2f47
+    lib/cyw43-driver: 055d64274b014dd7b1c2fc94d26e8a18face7124
+```
+
+Nothing says `latest`. The archive is pinned by release and SHA-256 and the hash is not
+optional — what is being unpacked is a compiler, and it came off the network. The
+repository is pinned by tag *and* commit, because a tag that has been moved is the failure
+a tag alone cannot see, and its submodules by commit, because a submodule moved underneath
+a release is a different SDK with the same name.
+
+Two of the SDK's five submodules are taken. btstack, lwip and mbedtls are a Bluetooth and
+networking stack this compiler has no way to ask for, and they are most of what a full
+checkout weighs: **75 MB against the 129 MB a plain `git clone --recursive` leaves**.
+
+Three properties are worth stating because a build depends on them:
+
+- **A desk that already has one says so, and nothing is fetched.** `PICO_SDK_PATH` and
+  `PICO_TOOLCHAIN_PATH` still win, and then the store is not even created. Which variable
+  covers which thing is known in the binding and nowhere else, which is why the skipping
+  lives there rather than in the fetching.
+- **The second run is silent and touches no network.** This runs underneath every build; a
+  check that reached out would make every build pay for the first one's convenience. The
+  question "is it already here" is answered from the disk.
+- **It says what it is taking before it takes it.** A gigabyte should not start in silence.
+
+The move from the project's `.tools/` to the desk's store changes nothing that reaches a
+board. `samples/heartbeat.rb` built for the Pico both ways gives **the same `.uf2`, byte
+for byte**, the same 30324 B of text and 3604 B of bss, and the same ELF once stripped.
+The unstripped ELFs differ, and only there: debug information records where the SDK it was
+compiled against was sitting.
 
 ### Where a project starts
 

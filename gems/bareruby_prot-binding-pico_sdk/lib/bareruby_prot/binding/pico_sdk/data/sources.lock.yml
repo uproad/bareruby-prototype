@@ -1,0 +1,43 @@
+# Everything a Pico build reaches for that this gem does not carry: where it comes from,
+# which version it is, and where it lands in the store. `bareruby tools install` reads this
+# file and nothing else downloads.
+#
+# Nothing here says `latest`. The archive is pinned by release and SHA-256, the repository
+# by tag and commit, and its submodules by commit — the SDK's own version is not enough,
+# because a submodule moved underneath it is a different SDK with the same name. A desk
+# that keeps its own copy says so through the environment, and then nothing here is read.
+#
+# The version is part of the directory name because it is part of what a measurement
+# means: moving from pico-sdk 1.5.1 to 2.3.0 changed every figure this repository records.
+#
+# common/ is what more than one binding reaches for, filed under the instruction set it
+# serves rather than under either binding.
+arm_gcc:
+  from: https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel
+  directory: common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
+  archives:
+    linux-x64:
+      file: arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
+      sha256: 6cd1bbc1d9ae57312bcd169ae283153a9572bd6a8e4eeae2fedfbc33b115fdbb
+    linux-arm64:
+      file: arm-gnu-toolchain-13.2.rel1-aarch64-arm-none-eabi.tar.xz
+      sha256: 8fd8b4a0a8d44ab2e195ccfbeef42223dfb3ede29d80f14dcf2183c34b8d199a
+    darwin-x64:
+      file: arm-gnu-toolchain-13.2.rel1-darwin-x86_64-arm-none-eabi.tar.xz
+      sha256: 075faa4f3e8eb45e59144858202351a28706f54a6ec17eedd88c9fb9412372cc
+    darwin-arm64:
+      file: arm-gnu-toolchain-13.2.rel1-darwin-arm64-arm-none-eabi.tar.xz
+      sha256: 39c44f8af42695b7b871df42e346c09fee670ea8dfc11f17083e296ea2b0d279
+
+sdk:
+  github: raspberrypi/pico-sdk
+  tag: 2.3.0
+  commit: 98a542c1a62fb549ffb5d66a3e5892b06276b670
+  directory: pico_sdk/pico-sdk-2.3.0
+  # Two of the SDK's submodules, and only two. A build reaches USB through tinyusb and the
+  # W boards' LED through the wireless driver; btstack, lwip and mbedtls are a Bluetooth
+  # and networking stack this compiler has no way to ask for, and they are most of what a
+  # full checkout weighs.
+  submodules:
+    lib/tinyusb: 86ad6e56c1700e85f1c5678607a762cfe3aa2f47
+    lib/cyw43-driver: 055d64274b014dd7b1c2fc94d26e8a18face7124
