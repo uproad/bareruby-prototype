@@ -45,6 +45,8 @@ module BareRubyProt
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
+        --version           Which versions of these gems are here.
+        --help              This.
 
       Options:
         --target=NAME       Work on NAME, repeatable. Names and their short forms are in
@@ -67,6 +69,8 @@ module BareRubyProt
 
     def run
       case @command
+      when "--help", "-h", "help" then asked
+      when "--version", "-v", "version" then version
       when "new" then @arguments.first ? Scaffold.run(@arguments) : usage
       when "init" then init
       when "compile" then compile
@@ -213,9 +217,35 @@ module BareRubyProt
                                                 .find { |path| File.exist?(path) }
     end
 
+    # **Being asked for the usage and getting it is not a misuse.** The text is the same
+    # either way; where it goes and what the shell is told are not. Asked for, it is output
+    # and the status is success; arrived at by typing something that is not a command, it
+    # is a complaint and the status says so.
+    def asked
+      puts USAGE
+      0
+    end
+
     def usage
       warn USAGE
       2
+    end
+
+    # **What made an artifact is not one version.** The compiler lowers the program, but a
+    # binding's C++ is compiled into it and a standard class brings its own declarations
+    # and units, so the bytes on a board are decided by every one of these together — the
+    # same reason a target is spelled out rather than named. So they are all listed.
+    #
+    # What is listed is what is installed. A checkout runs two of these gems out of its
+    # working tree, and a working tree has no version to report; the copy named here is
+    # then the installed one, which is not necessarily the code that just ran.
+    def version
+      Gem::Specification.select { |spec| spec.name.start_with?("bareruby_prot") }
+                        .group_by(&:name).values
+                        .map { |found| found.max_by(&:version) }
+                        .sort_by(&:name)
+                        .each { |spec| puts "#{spec.name} #{spec.version}" }
+      0
     end
   end
 end
