@@ -526,6 +526,17 @@ The first is the likely one — commenting a line back out, or cloning a project
 installing — and sending that person to `target add` would send them somewhere that cannot
 help, since the command offers what is installed and this is not.
 
+A third goes wrong on the command line rather than in the record, and it is the one this
+program answered with a stack until recently — a `--target=` naming neither an entry nor a
+composition:
+
+```
+no target is named pico1x. config/target.yml records pico1h, pico2w, arduino_mega_2560.
+`bareruby target list` prints every composition that can be named instead.
+```
+
+Both lists are handed back because a name that reached here could have come from either.
+
 `build` reaches for an SDK and a toolchain, and it fetches them itself. **The commands
 stack, and `tools install` is at the bottom of the stack**: `build` fetches and then
 compiles and then runs a toolchain, `deploy` builds and then flashes. Having its own verb
@@ -719,7 +730,10 @@ machines as it lists:
 
 `bareruby compile` reads no configuration at all: a compilation is exactly what its
 command line asked for, and with nothing said the target is `host`. From `build` onwards a
-command needs to know which desk it is standing at, and that is what `target.yml` answers.
+command needs to know which desk it is standing at, and that is what `target.yml` answers —
+and from there `--target=` takes an entry's own name too, for the reason
+[below](#where-the-artifacts-land). This is the one command that cannot, so a name only a
+desk knows is refused here rather than resolved.
 
 ### Where the artifacts land
 
@@ -743,6 +757,14 @@ either, because an RP2350 is built for Arm or for RISC-V. What lies underneath i
 of the name only because the triple already carries it. An entry in `target.yml` that gives
 a `name:` uses that instead, which is how one composition can be built twice — a debug one
 and a release one — without the two landing in one place.
+
+**That name is what `--target=` takes**, and it had to become so: naming the composition
+reaches whichever entry spells it first, so the second one could be built and could not be
+asked for. From `build` onwards the option looks for a recorded name before a composition,
+which is the order the two stand in front of the person typing — `build/` is named after
+the entry, and the line saying where the artifact went prints that name, so it is the name
+the next command is typed from. Naming the composition still works and still answers with
+the first entry spelling it.
 
 The entry `bareruby new` writes gives one for the other reason: **it is the only entry whose
 directory would differ from desk to desk.** Its triple is whatever machine is doing the
