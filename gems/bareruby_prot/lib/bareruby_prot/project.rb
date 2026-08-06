@@ -30,7 +30,8 @@ module BareRubyProt
     # round, a command that is not on this list is simply run where it was typed.
     # `target add` writes into the project and `target list` reads the gems that are
     # installed, so the verb is not enough to answer for both and the pair is named.
-    ROOTED = ["compile", "build", "flash", "deploy", "init", "target add"].freeze
+    ROOTED = ["compile", "build", "flash", "deploy", "init",
+              "target add", "tools install"].freeze
 
     def self.stand(arguments)
       return if (ROOTED & [arguments.first, arguments.take(2).join(" ")]).empty?
