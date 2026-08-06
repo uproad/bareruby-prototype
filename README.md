@@ -393,6 +393,35 @@ cd bareruby-prototype
 | `target list` | every machine that can be targeted, by family | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 
+**A build says what it made.** Toolchains are quiet unless they fail, so without a line of
+its own a first success is indistinguishable from nothing having happened — and there is no
+other way to learn where the artifact went:
+
+```
+$ bin/bareruby build
+bareruby: host -> build/none-host-x86_64-pc-linux/bareruby_program
+bareruby: raspberry-pi-pico -> build/pico-pico_sdk-thumbv6m-none-eabi/bareruby_program.uf2
+```
+
+**A refusal is one sentence, not a stack.** Being asked for a board nobody installed is not
+a fault in this program: it knows exactly what is wrong and the person who typed the command
+is the one who can fix it. Anything unplanned keeps its backtrace, because then the frames
+are the report.
+
+Two things go wrong with a record, in different places, and the advice differs:
+
+```
+config/target.yml names binding: pico_sdk, and no installed gem declares it.
+Uncomment its line in the Gemfile and run `bundle install`.
+
+config/target.yml: nothing is machine: pico, binding: pico_sdk, triple: thumbv7em-none-eabihf.
+Run `bareruby target list`, or `bareruby target add` to be asked instead.
+```
+
+The first is the likely one — commenting a line back out, or cloning a project without
+installing — and sending that person to `target add` would send them somewhere that cannot
+help, since the command offers what is installed and this is not.
+
 `build` reaches for an SDK and a toolchain, and it fetches them itself. **The commands
 stack, and `tools install` is at the bottom of the stack**: `build` fetches and then
 compiles and then runs a toolchain, `deploy` builds and then flashes. Having its own verb

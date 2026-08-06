@@ -136,7 +136,9 @@ module BareRubyProt
       done = planned.all? do |entry|
         compile_for([entry.target], debug: debug?(entry))
         place(entry)
-        entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
+        built = entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
+        made(entry) if built
+        built
       end
       done ? 0 : 1
     end
@@ -184,6 +186,16 @@ module BareRubyProt
         recorded.find { |entry| entry.target.equal?(target) } ||
           Deployment::Entry.new(target, nil, false, [], {})
       end
+    end
+
+    # **A build that says nothing looks exactly like a build that did nothing.** That is
+    # the argument `nothing` already makes about an empty run, and it is the same argument
+    # here: the person who typed this has no other way to learn that it worked, and no way
+    # at all to learn where what it made is. Toolchains are quiet unless they fail, so
+    # without this line a first success is indistinguishable from silence.
+    def made(entry)
+      made = entry.target.binding.toolchain.artifact(directory_of(entry))
+      puts "bareruby: #{entry.target.name} -> #{made.delete_prefix("#{Dir.pwd}/")}"
     end
 
     def debug?(entry) = @debug || entry.debug
