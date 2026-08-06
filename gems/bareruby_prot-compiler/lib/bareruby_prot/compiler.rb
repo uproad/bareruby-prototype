@@ -24,7 +24,13 @@ module BareRubyProt
     # is a gem would write its output into the installed gem instead. They are found from
     # where the command was run, which is the directory the sources were named from.
     DUMP_DIRECTORY = File.expand_path("dump", Dir.pwd)
-    BUILD_DIRECTORY = File.expand_path("build", Dir.pwd)
+
+    # **What the first stage writes is not what was built.** The C++, the build system that
+    # turns it into an artifact, and the manifest describing both are the boundary between
+    # the two stages — real files on disk, handable to the second stage on their own — but
+    # nobody asked for them. They live where the machinery lives, under the name of the
+    # command that fills the directory.
+    COMPILE_DIRECTORY = File.expand_path(".bareruby/compile", Dir.pwd)
     ARTIFACT_SCHEMA = "ARTIFACTS"
     STATUS_COMPILE_ERROR = 10
     BEGIN_ERROR = "error: begin requires the exception mechanism, which --no-exceptions removes."
@@ -40,7 +46,7 @@ module BareRubyProt
     # run produced. It is done once for a command rather than once for a compilation,
     # because one command may compile more than once — targets that disagree about debug
     # cannot share a run — and the second must not erase the first.
-    def self.clear_output = FileUtils.rm_rf(BUILD_DIRECTORY)
+    def self.clear_output = FileUtils.rm_rf(COMPILE_DIRECTORY)
 
     def initialize(source_file_name, targets:, debug:, exceptions:)
       @source_file_name = source_file_name
@@ -51,7 +57,7 @@ module BareRubyProt
 
     def run
       FileUtils.mkdir_p(DUMP_DIRECTORY)
-      FileUtils.mkdir_p(BUILD_DIRECTORY)
+      FileUtils.mkdir_p(COMPILE_DIRECTORY)
 
       generator = Pass::BareRubyAstGenerator.new(@source_file_name).run
       generator.notices.each { |notice| warn notice }
@@ -95,7 +101,7 @@ module BareRubyProt
 
     def write_artifacts(artifacts)
       artifacts.each do |relative_path, content|
-        path = File.join(BUILD_DIRECTORY, relative_path)
+        path = File.join(COMPILE_DIRECTORY, relative_path)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
       end
