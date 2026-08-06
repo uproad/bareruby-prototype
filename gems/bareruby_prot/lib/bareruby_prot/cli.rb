@@ -49,9 +49,11 @@ module BareRubyProt
         --help              This.
 
       Options:
-        --target=NAME       Work on NAME, repeatable. Names and their short forms are in
-                            `bareruby target list`. Without it, build takes its targets from
-                            target.yml — see target.yml.sample.
+        --target=NAME       Work on NAME, repeatable. An entry's name in target.yml, or a
+                            composition — names and their short forms are in `bareruby
+                            target list`. compile takes only the latter, reading no record.
+                            Without it, build takes its targets from target.yml — see
+                            target.yml.sample.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
     USAGE
@@ -123,7 +125,12 @@ module BareRubyProt
       1
     end
 
+    # **The one command a recorded name cannot reach**, because this is the command that
+    # reads no record: a compilation is exactly what its command line asked for. So a name
+    # only a desk knows is refused here rather than resolved, and refused the same way any
+    # other unknown name is.
     def compile
+      wanted.each { |name| raise Stop, no_target(name, []) unless Target.named?(name) }
       Compiler.clear_output
       compile_for(Target.select(@target_options), debug: @debug)
     end
@@ -186,10 +193,40 @@ module BareRubyProt
       recorded = Deployment.entries
       return recorded if @target_options.empty?
 
-      Target.select(@target_options).map do |target|
-        recorded.find { |entry| entry.target.equal?(target) } ||
-          Deployment::Entry.new(target, nil, false, [], {})
-      end
+      wanted.map { |name| entry_named(name, recorded) }
+    end
+
+    def wanted
+      @target_options.map { |option| option.delete_prefix(Target::OPTION_PREFIX) }
+    end
+
+    # **An entry's own name is looked for first, because it is the name in front of the
+    # person typing.** It is what `build/` is named after and what the line saying where
+    # the artifact went prints, so it is the name a next command is typed from. It is also
+    # the only one that tells two entries of one composition apart — a debug build and a
+    # release build of the same board are exactly that, which is what a record gives a
+    # `name:` for. A composition still names itself, and answers with the first entry
+    # spelling it, so `--target=pico` keeps meaning what it meant.
+    def entry_named(name, recorded)
+      recorded.find { |entry| entry.name == name } || composed(name, recorded)
+    end
+
+    # **A name that is neither is a refusal, not a stack.** It is a typo or a name from
+    # another desk, which the person who typed it is the one who can fix, and both lists
+    # it could have come from are short enough to hand back.
+    def composed(name, recorded)
+      raise Stop, no_target(name, recorded) unless Target.named?(name)
+
+      target = Target[name]
+      recorded.find { |entry| entry.target.equal?(target) } ||
+        Deployment::Entry.new(target, nil, false, [], {})
+    end
+
+    def no_target(name, recorded)
+      here = recorded.filter_map(&:name)
+      recorded_names = here.empty? ? "" : "#{Deployment::FILE} records #{here.join(', ')}. "
+      "no target is named #{name}. #{recorded_names}" \
+        "`bareruby target list` prints every composition that can be named instead."
     end
 
     # **A build that says nothing looks exactly like a build that did nothing.** That is

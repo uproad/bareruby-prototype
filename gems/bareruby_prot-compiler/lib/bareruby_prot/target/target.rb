@@ -65,6 +65,11 @@ module BareRubyProt
 
     def self.[](name) = TABLE.fetch(ALIASES.fetch(name, name))
 
+    # Asked before reaching for one, because a name arriving from a command line may name
+    # something this side has never heard of — a desk gives its own names to the entries
+    # it records, and only the side that reads that record can tell the two apart.
+    def self.named?(name) = TABLE.key?(ALIASES.fetch(name, name))
+
     # A run compiles exactly what it was asked for. Nothing is read from a file and
     # nothing is merged in behind the request, so what a command line says is the whole
     # of what happens; with nothing said, the machine doing the compiling is the target.
