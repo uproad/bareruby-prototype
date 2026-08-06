@@ -385,8 +385,8 @@ cd bareruby-prototype
 | Verb | What it does | Reads `config/target.yml` |
 | --- | --- | --- |
 | `new` | writes a project: a Gemfile that lists the boards, a record holding this machine, and a program that blinks | no |
-| `compile` | Ruby to C++, into `build/<composition>/` | no — without `--target` the target is the machine doing the compiling |
-| `build` | `compile`, then each binding's toolchain, leaving the artifact beside its sources | yes |
+| `compile` | Ruby to C++, into `.bareruby/compile/<composition>/`. Makes no artifact, so `build/` stays empty | no — without `--target` the target is the machine doing the compiling |
+| `build` | `compile`, then each binding's toolchain, leaving the artifact — and only that — in `build/<composition>/` | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
@@ -403,6 +403,28 @@ reason a target is spelled out rather than named. `--version` lists every one of
 Asking for the usage and getting it is not a misuse: `--help` puts it on output and exits
 zero, while typing something that is not a command puts the same text on the error stream
 and says so in the status.
+
+**`build/` holds what was built, and nothing else.** One file per composition: the `.uf2`
+for a Pico, the `.hex` for the Mega, the ELF for a NUCLEO, the executable for this machine.
+Everything else — the generated C++, the build system that turns it into an artifact, the
+tree a toolchain leaves behind — is *how* it was built, and lives under `.bareruby/`.
+
+```text
+build/                          .bareruby/compile/
+└── pico1h/                     ├── bareruby_binding_*.cpp   the shared translation units
+    └── bareruby_program.uf2    ├── bareruby_runtime_*.cpp
+                                └── pico-pico_sdk-thumbv6m-none-eabi/
+                                    ├── main.cpp  CMakeLists.txt  manifest.txt
+                                    └── build/   what cmake left: 679 files, 9.4 MB
+```
+
+The numbers are why. A Pico composition was 11 MB across 684 files, of which the 52 KB
+that goes on the board was one. `compile` now makes no `build/` at all, which is right:
+it produces no artifact.
+
+**Which of what a toolchain leaves is the artifact is the binding's answer**, and it was
+already being given — every binding names one. Where artifacts go is this side's answer.
+Neither had to learn anything about the other.
 
 **A build says what it made.** Toolchains are quiet unless they fail, so without a line of
 its own a first success is indistinguishable from nothing having happened — and there is no
@@ -1191,9 +1213,9 @@ image. So that is what the second stage does. The first stage writes the makefil
 says how, alongside the C++, the way it writes a `CMakeLists.txt` for a Pico.
 
 The toolchain copies in only the translation units this program reached for, replaces
-nothing but the files it owns, and brings the linked ELF back to
-`build/<composition>/bareruby_program.elf` so that flashing needs to know nothing about
-how the Cube project arranges its output. `options.configuration` picks `-Og -g3` or
+nothing but the files it owns, and brings the linked ELF back beside the
+sources it was built from, so that flashing needs to know nothing about how the Cube
+project arranges its output. `options.configuration` picks `-Og -g3` or
 `-O2`; `ARM_TOOLCHAIN_PATH` names a compiler kept somewhere other than `.tools/`.
 The binding's [README](gems/bareruby_prot-binding-stm32cube/README.md) records project preparation, the
 ownership boundary, CubeMX regeneration, pin mapping, and supported bindings.

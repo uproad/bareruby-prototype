@@ -33,4 +33,5 @@ prints the rest.
 | `app/main.rb` | the program. `build` compiles this when no source is named |
 | `config/target.yml` | which compositions this project is built for, and what is attached |
 | `Gemfile` | what this is built from, and the list of boards that can be reached |
-| `build/` | what the compiler and the toolchains wrote. Rewritten in full every run |
+| `build/` | what was built: one artifact per composition, and nothing else |
+| `.bareruby/` | how it was built. Rewritten in full every run, and never worth keeping |
