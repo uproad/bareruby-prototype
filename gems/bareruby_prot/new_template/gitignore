@@ -1,5 +1,9 @@
-# Written by the compiler, in full, on every run.
+# What was built: one artifact per composition, and nothing else.
 /build/
+
+# How it was built — the generated C++, the build system, and what the toolchain left
+# behind. Written in full on every run, and never worth keeping.
+/.bareruby/
 /dump/
 
 # The SDKs and toolchains a build reaches for, downloaded or built in place. Other
