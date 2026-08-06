@@ -15,6 +15,77 @@ The language specification and the real implementation live in separate reposito
 that are not public yet. Nothing here points at them. Comments record why a decision was
 made in their own terms, so this repository reads on its own.
 
+## Quick usage
+
+```sh
+$ ruby -v
+ruby 4.0.3 ...                    # 4.0 or later
+
+$ git clone https://github.com/uproad/bareruby-prototype
+$ cd bareruby-prototype
+$ ./bareruby new ../hello         # a project that builds without being edited
+$ cd ../hello
+$ $EDITOR Gemfile                 # uncomment connected board
+$ bundle install
+$ bin/bareruby target add         # it can offer that board now
+$ bin/bareruby deploy             # compile, build, and write it onto the board
+```
+
+```ruby
+Gemfile
+  # if you have raspberry pi pico
+  gem "bareruby_prot-binding-pico_sdk" # uncomment
+```
+
+**`deploy` writes over USB, so the board has to be visible from here.**
+
+**Linux** — nothing to set up. Hold BOOTSEL while plugging the board in:
+
+```sh
+$ lsusb
+... ID 2e8a:0003 Raspberry Pi RP2 Boot
+```
+
+**WSL** — Windows owns the device, and hands it over with
+[usbipd-win](https://github.com/dorssel/usbipd-win). Install it once, in Windows:
+
+```powershell
+powershell
+> winget install dorssel.usbipd-win
+```
+
+Then share the board, from an **elevated** PowerShell — `bind` is the step that needs it.
+`usbipd list` also runs from WSL, as `usbipd.exe`, which is the quicker way to find a
+BUSID:
+
+```powershell
+powershell
+> usbipd list                        # while BOOTSEL is held, find the 2e8a:0003 line
+> usbipd bind   --busid <BUSID>      # once per device. It stays shared afterwards
+> usbipd attach --busid <BUSID> --wsl --auto-attach
+```
+
+```sh
+wsl
+$ lsusb                              # back in WSL
+... ID 2e8a:0003 Raspberry Pi RP2 Boot
+```
+
+**Two things here are what a first attempt runs into.** The bootloader and the running
+program are *different USB devices* — `2e8a:0003` and `2e8a:000a` on an RP2040,
+`2e8a:000f` and `2e8a:0009` on an RP2350 — so run those three again once the board has
+left BOOTSEL, and bind the second one too. And `--auto-attach` is not optional for a
+board that stays plugged in: without it every reset drops the board out of WSL, and the
+next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
+than the board. [More below](#flashing-a-pico-from-wsl), including mounting without
+`sudo`.
+
+**macOS** — untried. `flash.sh` reads `/sys`, so flashing a Pico is Linux-only; `compile`
+and `build` reach for neither.
+
+`deploy` fetches the SDK and the cross compiler the first time it needs them. What every
+verb does is [further down](#the-short-way).
+
 Covered so far:
 
 - **M0** — Prism → BRAST → TAST → LIR → C++ for the representative program the design
