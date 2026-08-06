@@ -36,14 +36,48 @@ $ bin/bareruby deploy             # compile, build, and write it onto the board
   gem "bareruby_prot-binding-pico_sdk" # uncomment
 ```
 
-**`deploy` writes over USB, so the board has to be visible from here** — which differs by
-desk:
+**`deploy` writes over USB, so the board has to be visible from here.**
 
-- **Linux** — nothing to set up. A Pico held in BOOTSEL is `2e8a:0003` in `lsusb`.
-- **WSL** — Windows owns it until an elevated `usbipd attach --busid <ID> --wsl` hands it
-  over, and it flips between two ids as it resets ([below](#flashing-a-pico-from-wsl)).
-- **macOS** — untried. The Pico's `flash.sh` reads `/sys`, so that one is Linux-only;
-  `compile` and `build` reach for neither.
+**Linux** — nothing to set up. Hold BOOTSEL while plugging the board in:
+
+```sh
+$ lsusb
+... ID 2e8a:0003 Raspberry Pi RP2 Boot
+```
+
+**WSL** — Windows owns the device, and hands it over with
+[usbipd-win](https://github.com/dorssel/usbipd-win). Install it once, in Windows:
+
+```powershell
+> winget install dorssel.usbipd-win
+```
+
+Then share the board, from an **elevated** PowerShell — `bind` is the step that needs it.
+`usbipd list` also runs from WSL, as `usbipd.exe`, which is the quicker way to find a
+BUSID:
+
+```powershell
+> usbipd list                        # while BOOTSEL is held, find the 2e8a:0003 line
+> usbipd bind   --busid <BUSID>      # once per device. It stays shared afterwards
+> usbipd attach --busid <BUSID> --wsl --auto-attach
+```
+
+```sh
+$ lsusb                              # back in WSL
+... ID 2e8a:0003 Raspberry Pi RP2 Boot
+```
+
+**Two things here are what a first attempt runs into.** The bootloader and the running
+program are *different USB devices* — `2e8a:0003` and `2e8a:000a` on an RP2040,
+`2e8a:000f` and `2e8a:0009` on an RP2350 — so run those three again once the board has
+left BOOTSEL, and bind the second one too. And `--auto-attach` is not optional for a
+board that stays plugged in: without it every reset drops the board out of WSL, and the
+next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
+than the board. [More below](#flashing-a-pico-from-wsl), including mounting without
+`sudo`.
+
+**macOS** — untried. `flash.sh` reads `/sys`, so flashing a Pico is Linux-only; `compile`
+and `build` reach for neither.
 
 `deploy` fetches the SDK and the cross compiler the first time it needs them. What every
 verb does is [further down](#the-short-way).
