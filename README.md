@@ -432,7 +432,7 @@ other way to learn where the artifact went:
 
 ```
 $ bin/bareruby build
-bareruby: host -> build/none-host-x86_64-pc-linux/bareruby_program
+bareruby: host -> build/host/bareruby_program
 bareruby: raspberry-pi-pico -> build/pico-pico_sdk-thumbv6m-none-eabi/bareruby_program.uf2
 ```
 
@@ -672,6 +672,12 @@ either, because an RP2350 is built for Arm or for RISC-V. What lies underneath i
 of the name only because the triple already carries it. An entry in `target.yml` that gives
 a `name:` uses that instead, which is how one composition can be built twice — a debug one
 and a release one — without the two landing in one place.
+
+The entry `bareruby new` writes gives one for the other reason: **it is the only entry whose
+directory would differ from desk to desk.** Its triple is whatever machine is doing the
+compiling, so the path a project's own README would have to print is one no second desk can
+use. Named `host`, the artifact is at `build/host/bareruby_program` for everybody, and that
+is a path that can be typed and written down.
 
 Only the selected targets are written. Their directories hold the generated entry point
 and a `manifest.txt`; Pico targets also receive a `CMakeLists.txt`, the STM32 target a
@@ -989,10 +995,10 @@ compiled against was sitting.
 ### Where a project starts
 
 `bareruby new hello` writes a project. **It builds without being edited**: the record it
-comes with holds one entry — the machine doing the compiling — and `app/main.rb` blinks
-the onboard LED, which on this machine is a stub that says on fd2 what it would have done.
-So the first thing a newcomer does succeeds, and it succeeds before any hardware has been
-bought.
+comes with holds one entry — the machine doing the compiling, named `host` so that what it
+builds is at `build/host/` on every desk — and `app/main.rb` blinks the onboard LED, which
+on this machine is a stub that says on fd2 what it would have done. So the first thing a
+newcomer does succeeds, and it succeeds before any hardware has been bought.
 
 ```
 hello/

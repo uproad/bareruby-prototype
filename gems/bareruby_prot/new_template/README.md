@@ -8,7 +8,7 @@ This tree was written by `bareruby new` and builds without being edited.
 
 ```sh
 bin/bareruby build      # compile app/main.rb and build it for this machine
-./build/*/bareruby_program
+./build/host/bareruby_program
 ```
 
 The program blinks the onboard LED. On the machine doing the compiling there is no LED,
