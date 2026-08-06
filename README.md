@@ -25,29 +25,15 @@ $ git clone https://github.com/uproad/bareruby-prototype
 $ cd bareruby-prototype
 $ ./bareruby new ../hello         # a project that builds without being edited
 $ cd ../hello
-$ bin/bareruby build              # for the machine doing the compiling
-$ ./build/host/bareruby_program
-onboard_led_init()
-onboard_led_write(value=1)
-sleep_ms(milliseconds=500)
-```
-
-**Nothing is installed and nothing is fetched.** The first stage is Ruby and Prism ships
-with Ruby 4.0, so a desk with not one SDK on it gets that far. There is no `gem install`
-either, because these gems are published nowhere — a prototype meant to be thrown away has
-no release, so the project `new` writes reads them from the checkout it came out of.
-
-The program it writes blinks the onboard LED, and the machine doing the compiling is a
-target like any other: it has no LED, so each call says on fd2 what it would have done.
-The first success comes before any hardware is bought.
-
-A board is four more lines, and the first of them is the whole of what choosing one costs:
-
-```sh
-$ $EDITOR Gemfile                 # uncomment the board on this desk
+$ $EDITOR Gemfile                 # uncomment connected board
 $ bundle install
 $ bin/bareruby target add         # it can offer that board now
 $ bin/bareruby deploy             # compile, build, and write it onto the board
+```
+
+```Gemfile
+  # if you have raspberry pi pico
+  gem "bareruby_prot-binding-pico_sdk" # uncomment
 ```
 
 `deploy` fetches the SDK and the cross compiler the first time it needs them. What every
