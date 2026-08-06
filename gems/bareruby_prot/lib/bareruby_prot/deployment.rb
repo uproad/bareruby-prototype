@@ -4,6 +4,8 @@ require "yaml"
 
 require "bareruby_prot/target/target"
 
+require_relative "stop"
+
 module BareRubyProt
   # What is true of this desk rather than of the project: which of the checked
   # compositions are wanted here, which boards are attached to take them, and the few
@@ -65,9 +67,28 @@ module BareRubyProt
       found = Target::TABLE.each_value.find { |target| spelling(target) == wanted }
       return found if found
 
-      raise "#{FILE}: nothing is #{described(wanted)}. Run `bareruby target list`, or " \
-            "`bareruby target add` to be asked instead.\n#{listed}"
+      raise Stop, missing(wanted)
     end
+
+    # **Two things are wrong in different places, and the advice differs.** A binding no
+    # installed gem declares is a Gemfile that has not been edited or installed — the most
+    # likely of the two by far, because commenting a line back out or cloning a project
+    # without installing both do it. Sending that person to `target add` is sending them
+    # somewhere that cannot help: the command offers what is installed, and this is not.
+    #
+    # A binding that exists but not in this combination is the other thing, and then the
+    # compositions that do exist are what there is to say.
+    def self.missing(wanted)
+      unless bindings.include?(wanted["binding"])
+        return "#{FILE} names binding: #{wanted['binding']}, and no installed gem " \
+               "declares it. Uncomment its line in the Gemfile and run `bundle install`."
+      end
+
+      "#{FILE}: nothing is #{described(wanted)}. Run `bareruby target list`, or " \
+        "`bareruby target add` to be asked instead.\n#{listed}"
+    end
+
+    def self.bindings = Target::TABLE.each_value.map { |target| target.binding.key.to_s }.uniq
 
     def self.spelling(target)
       { "machine" => target.machine.key.to_s, "binding" => target.binding.key.to_s,
