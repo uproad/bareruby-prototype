@@ -31,7 +31,8 @@ $ bin/bareruby target add         # it can offer that board now
 $ bin/bareruby deploy             # compile, build, and write it onto the board
 ```
 
-```Gemfile
+```ruby
+Gemfile
   # if you have raspberry pi pico
   gem "bareruby_prot-binding-pico_sdk" # uncomment
 ```
@@ -49,6 +50,7 @@ $ lsusb
 [usbipd-win](https://github.com/dorssel/usbipd-win). Install it once, in Windows:
 
 ```powershell
+powershell
 > winget install dorssel.usbipd-win
 ```
 
@@ -57,12 +59,14 @@ Then share the board, from an **elevated** PowerShell — `bind` is the step tha
 BUSID:
 
 ```powershell
+powershell
 > usbipd list                        # while BOOTSEL is held, find the 2e8a:0003 line
 > usbipd bind   --busid <BUSID>      # once per device. It stays shared afterwards
 > usbipd attach --busid <BUSID> --wsl --auto-attach
 ```
 
 ```sh
+wsl
 $ lsusb                              # back in WSL
 ... ID 2e8a:0003 Raspberry Pi RP2 Boot
 ```
