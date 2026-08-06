@@ -4,40 +4,30 @@ require "fileutils"
 
 require "bareruby_prot/toolchain"
 
+require_relative "tools"
+
 module BareRubyProt
   # cmake and pico-sdk, which the manifest spells out, plus the three paths the SDK has to
   # be told before it will run at all. cmake leaves its own tree behind and the firmware
   # inside it, so the images come up one level to sit beside the sources they were made
   # from — what a board is given should not be found by knowing how cmake arranges itself.
   module PicoSdkToolchain
-    # What this binding is built with lives under the desk it is run from, one directory
-    # each, and each of them says which version it is. A version is not a detail here:
-    # moving from 1.5.1 to 2.3.0 changed every size this repository has recorded, so a
-    # figure without the version it was measured under says less than it appears to. A
-    # desk that keeps its own copies elsewhere says so through the environment, which
-    # still wins.
+    # **What this binding is built with belongs to the desk, not to a project and not to
+    # this gem.** One pico-sdk serves every project on a machine; an SDK is a gigabyte of
+    # somebody else's release, so a binding that reached out of its own directory for one
+    # would be looking inside itself. Where the store is, and how the two shapes these come
+    # in are fetched, is the ecosystem's answer; which of them are needed is this
+    # binding's, and it is written down in the lock beside tools.rb.
     #
-    # **It is found from where the command was run rather than from where this file is.**
-    # A binding that is not part of the checkout cannot reach out of its own directory and
-    # expect to land in one — an SDK is a gigabyte of somebody else's release and belongs
-    # to the desk, not to the gem that asks for it.
-    TOOLS = File.expand_path(".tools", Dir.pwd)
-
+    # A desk that keeps its own copies elsewhere says so through the environment, which
+    # still wins — and then nothing is fetched at all.
+    #
     # One SDK serves every board: RP2350 needs 2.0.0 or newer, and RP2040 is still
     # supported there, so there is no reason to keep a second checkout for it.
     #
     # The ARM toolchain is filed under common/ rather than here, because the STM32 boards
     # are built by the same compiler — a thing two bindings reach for is not either one's.
     # What it is common to is an instruction set, so that is the shelf it sits on.
-    PATHS = {
-      "PICO_SDK_PATH" => "pico_sdk/pico-sdk-2.3.0",
-      "PICO_TOOLCHAIN_PATH" => "common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi",
-      # SDK 2.x builds picotool on demand. Left alone it lands inside the target's build
-      # tree, which the next first-stage run deletes, so it is kept outside of it instead.
-      # Which picotool that is, is the SDK's decision, so it carries the SDK's version.
-      "PICOTOOL_FETCH_FROM_GIT_PATH" => "pico_sdk/picotool-2.3.0"
-    }.freeze
-
     IMAGES = ["bareruby_program.uf2", "bareruby_program.elf"].freeze
 
     def self.run(directory, options: {})
@@ -49,7 +39,7 @@ module BareRubyProt
     end
 
     def self.environment
-      PATHS.to_h { |name, default| [name, ENV[name] || File.join(TOOLS, default)] }
+      PicoSdkTools.paths.to_h { |name, held| [name, ENV[name] || Tools.at(held)] }
     end
 
     def self.artifact(directory) = File.join(directory, IMAGES.first)
