@@ -36,11 +36,40 @@ module BareRubyProt
     end
 
     def run
+      return over if over?
+
       copy
       written
       install
       said
       0
+    end
+
+    # **The one thing this command must not do is write over the files it wrote before.**
+    # Those are exactly the files a project is edited in — the program, the Gemfile the
+    # boards are uncommented in, the record. `new NAME` is easy to type a second time: out
+    # of shell history, or after a first attempt stopped partway. Landing on a project and
+    # returning zero would take a day's work with it and say nothing.
+    #
+    # What is in the way is named rather than counted, and nothing is written at all — a
+    # command that stopped halfway through would leave a tree that is neither.
+    def over? = holding.any?
+
+    def holding = writes.select { |name| File.exist?(at(name)) }
+
+    # What the template lands as, which is not quite what it carries: the dot file arrives
+    # under its own name.
+    def writes
+      Dir.glob("**/*", File::FNM_DOTMATCH, base: TEMPLATE)
+         .select { |name| File.file?(File.join(TEMPLATE, name)) }
+         .map { |name| RENAMED.fetch(name, name) }
+    end
+
+    def over
+      warn "bareruby: #{@directory} already holds #{holding.sort.join(', ')}."
+      warn "bareruby: nothing was written. A project is made in a directory that has none " \
+           "of those."
+      1
     end
 
     def copy

@@ -943,6 +943,12 @@ hello/
 └── app/main.rb         the program
 ```
 
+`new` writes nothing into a directory that already holds any of the files it would write.
+Those are the files a project is edited in — the program, the Gemfile the boards are
+uncommented in, the record — and `new NAME` is easy to type a second time, out of shell
+history or after a first attempt stopped partway. What is in the way is named, and the
+tree is left exactly as it was.
+
 **The Gemfile is the catalogue.** Every board this ecosystem reaches is a line in it,
 commented out, and uncommenting one is the whole cost of being able to build for that
 board. Nothing else holds that list, so there is no second copy to fall out of step —
