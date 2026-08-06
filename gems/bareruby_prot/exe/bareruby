@@ -11,4 +11,11 @@ BareRubyProt::Project.stand(ARGV)
 
 require "bareruby_prot/cli"
 
-exit BareRubyProt::Cli.run(ARGV)
+# A refusal is printed as the sentence it is; anything else keeps its backtrace, because
+# an exception nobody planned for is a bug here and the frames are the report.
+begin
+  exit BareRubyProt::Cli.run(ARGV)
+rescue BareRubyProt::Stop => e
+  warn "bareruby: #{e.message}"
+  exit 1
+end

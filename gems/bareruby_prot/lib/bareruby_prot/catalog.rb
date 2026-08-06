@@ -5,6 +5,7 @@ require "io/console"
 require "yaml"
 
 require_relative "deployment"
+require_relative "stop"
 
 module BareRubyProt
   # Asking, rather than being told. A composition takes three answers and none of them is
@@ -101,7 +102,17 @@ module BareRubyProt
       0
     end
 
-    def self.add = Session.new.run
+    # It draws a screen and reads single keys, so it wants a terminal and says so. Without
+    # this the raw read fails with an ioctl error from inside the reader, which describes
+    # the mechanism rather than the situation — and the situation, in a pipe or a CI job,
+    # is that this is the wrong command to be reaching for.
+    def self.add
+      raise Stop, "target add asks questions, so it needs a terminal. Write the entry " \
+                  "into config/target.yml instead — config/target.yml.sample has the shape." \
+        unless $stdin.tty?
+
+      Session.new.run
+    end
 
     # One run of `target add`. It keeps the answers, knows which question is current, and
     # moves either way through them — a choice made early is not a choice made forever.
