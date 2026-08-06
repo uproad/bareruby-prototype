@@ -36,6 +36,15 @@ $ bin/bareruby deploy             # compile, build, and write it onto the board
   gem "bareruby_prot-binding-pico_sdk" # uncomment
 ```
 
+**`deploy` writes over USB, so the board has to be visible from here** — which differs by
+desk:
+
+- **Linux** — nothing to set up. A Pico held in BOOTSEL is `2e8a:0003` in `lsusb`.
+- **WSL** — Windows owns it until an elevated `usbipd attach --busid <ID> --wsl` hands it
+  over, and it flips between two ids as it resets ([below](#flashing-a-pico-from-wsl)).
+- **macOS** — untried. The Pico's `flash.sh` reads `/sys`, so that one is Linux-only;
+  `compile` and `build` reach for neither.
+
 `deploy` fetches the SDK and the cross compiler the first time it needs them. What every
 verb does is [further down](#the-short-way).
 
