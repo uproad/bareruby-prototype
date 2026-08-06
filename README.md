@@ -392,6 +392,17 @@ cd bareruby-prototype
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
 | `target list` | every machine that can be targeted, by family | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
+| `--version` | which versions of these gems are here | no |
+| `--help` | the usage, on output, with a status that says nothing went wrong | no |
+
+**What made an artifact is not one version.** The compiler lowers the program, but a
+binding's C++ is compiled into it and a standard class brings its own declarations and
+translation units, so the bytes on a board are decided by all of them together — the same
+reason a target is spelled out rather than named. `--version` lists every one of them.
+
+Asking for the usage and getting it is not a misuse: `--help` puts it on output and exits
+zero, while typing something that is not a command puts the same text on the error stream
+and says so in the status.
 
 `build` reaches for an SDK and a toolchain, and it fetches them itself. **The commands
 stack, and `tools install` is at the bottom of the stack**: `build` fetches and then
