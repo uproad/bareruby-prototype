@@ -338,6 +338,16 @@ README lists.
 Several mechanisms here are worth what they cost rather than free, and these figures are
 what makes each one a choice rather than a default.
 
+### What a peripheral costs when nothing names it
+
+Each standard class became a gem with a translation unit of its own, so a program links
+only the peripherals it actually names. The Mega 2560 shows it plainly, because it has no
+`--gc-sections` doing the same work invisibly: `samples/heartbeat.rb` lights the on-board
+LED and never touches a pin, and it went **4190 B → 3496 B → 2702 B of flash** as `GPIO`,
+then the rest, left the always-linked file, and **657 B → 186 B of SRAM** once `Serial`
+stopped being linked into a program that never prints. Roughly a third of the original
+build was machinery for classes the program does not name. The Pico builds are unchanged.
+
 ### What exceptions cost
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
@@ -469,7 +479,7 @@ against 52 for the default blink — so the file shrinks while the program in it
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one
-took is described in the [README](README.md#flashing-a-pico-from-wsl).
+took is described in the [README](README.md#flashing-a-pico).
 
 ### Raspberry Pi Pico
 
