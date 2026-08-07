@@ -3,7 +3,9 @@
 require "fileutils"
 
 require "bareruby_prot/toolchain"
+
 require_relative "build"
+require_relative "tools"
 
 module BareRubyProt
   # arduino-cli reads a sketch, and a sketch is a directory rather than a file list. So
@@ -16,29 +18,6 @@ module BareRubyProt
   # What comes back is left where cmake's is: beside the sources it was made from, under a
   # name that does not carry how the tool arranges itself.
   module ArduinoToolchain
-    # **It is found from where the command was run rather than from where this file is.**
-    # A binding that is not part of the checkout cannot reach out of its own directory and
-    # expect to land in one — a core is somebody else's release, downloaded to the desk,
-    # and belongs to the desk rather than to the gem that asks for it.
-    TOOLS = File.expand_path(".tools/arduino", Dir.pwd)
-
-    # arduino-cli installs itself wherever it is unpacked, so it is unpacked under the
-    # repository, beside the version it is — a core's output is the version of the tool
-    # that produced it. One already on PATH wins, because a desk that has it has said so.
-    INSTALL = File.join(TOOLS, "arduino-cli-1.5.2-rc.1")
-
-    # The core is the compiler: avr-gcc, avr-libc and avrdude arrive with it, and they are
-    # what actually builds a sketch. Left alone arduino-cli files them under ~/.arduino15,
-    # which would leave the largest part of this binding's toolchain outside the repository
-    # while the command that drives it sits inside. These say otherwise. Versions are not
-    # in the names because arduino-cli keeps its own inside — one directory holds every
-    # core and every tool version it has been asked for.
-    DIRECTORIES = {
-      "ARDUINO_DIRECTORIES_DATA" => "data",
-      "ARDUINO_DIRECTORIES_DOWNLOADS" => "downloads",
-      "ARDUINO_DIRECTORIES_USER" => "user"
-    }.freeze
-
     IMAGES = {
       "bareruby_program.ino.hex" => "bareruby_program.hex",
       "bareruby_program.ino.elf" => "bareruby_program.elf"
@@ -65,9 +44,20 @@ module BareRubyProt
       end
     end
 
+    # **What this binding is built with belongs to the desk, not to a project and not to
+    # this gem.** One core serves every project on a machine, and it is 325 MB of somebody
+    # else's compiler — a binding that reached out of its own directory for one would be
+    # looking inside itself, and one that filed it under whichever project built first
+    # would make the next project fetch it again. Where the store is is the ecosystem's
+    # answer; which things go in it is this binding's, and it is written down in the lock
+    # beside tools.rb.
+    #
+    # The command is looked for on PATH before the store's copy, because a desk that has
+    # its own has said so — and the fetching side reads that same answer, so the copy this
+    # falls back to is one that was only ever downloaded when it was going to be used.
     def self.environment
-      directories = DIRECTORIES.to_h { |name, place| [name, ENV[name] || File.join(TOOLS, place)] }
-      directories.merge("PATH" => "#{ENV.fetch('PATH', '')}:#{INSTALL}")
+      ArduinoTools.environment
+                  .merge("PATH" => "#{ENV.fetch('PATH', '')}:#{ArduinoTools.command_directory}")
     end
 
     def self.artifact(directory) = File.join(directory, IMAGES.values.first)

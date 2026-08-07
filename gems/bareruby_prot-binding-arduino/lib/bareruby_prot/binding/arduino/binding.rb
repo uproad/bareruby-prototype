@@ -457,6 +457,8 @@ module BareRubyProt
 
     def self.key = :arduino
 
+    def self.tools = ArduinoTools
+
     def self.toolchain = ArduinoToolchain
 
     def self.flash = ArduinoFlash
