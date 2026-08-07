@@ -15,20 +15,34 @@
 # at all, so it is invisible here until BOOTSEL is held. A --debug build stays visible
 # and is reset into BOOTSEL over USB, with no button.
 #
-# Mounting the bootloader volume is the only step that needs privileges. Give /etc/fstab
-# one line per board and the whole script runs as a normal user; `--list` prints the line
-# to add. Without a line for the board the script re-executes itself under sudo.
+# **Finding a board, and reaching the volume its bootloader presents, is the operating
+# system's answer rather than this script's**, and the two systems differ by more than a
+# flag: Linux publishes a block device and leaves the mounting to whoever wants it,
+# while macOS has mounted it before anything here runs. So they are two files rather
+# than branches through one, and each answers the same six questions:
+#
+#     attached_boards            one line per board: SERIAL CHIP STATE NODE
+#     listing_advice LINES       what --list should add here, given those lines
+#     reset_into_bootsel NODE    reboot a running --debug firmware into the bootloader
+#     reset_advice               what a reset that produced no board might mean here
+#     open_volume NODE SER CHIP  set VOLUME to a directory the image can be copied into
+#     close_volume               give VOLUME back, if it had to be taken
+#
+# What is left in this file is what neither system gets a say in: which board the image
+# is for, that the volume really is a bootloader, and the copy.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+BESIDE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-# Where a board with no fstab line of its own gets mounted, under sudo.
-FALLBACK_MOUNT_POINT=/mnt/pico
-
-# The system mount is setuid root and honours the fstab "user" option. A mount from
-# some other prefix on PATH (Homebrew's util-linux, say) is not setuid and cannot.
-MOUNT=/usr/bin/mount
-UMOUNT=/usr/bin/umount
+case "$(uname -s)" in
+    Linux) source "$BESIDE/flash.linux.sh" ;;
+    Darwin) source "$BESIDE/flash.darwin.sh" ;;
+    *)
+        echo "flash: no board is reached from $(uname -s)." >&2
+        exit 1
+        ;;
+esac
 
 BOARD=""
 LIST=""
@@ -43,71 +57,6 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# The bootloader and the running firmware announce the same chip under different ids,
-# and the flash id is the same in both, so a board keeps one identity across a reset.
-chip_of_bootsel_model() {
-    case "$1" in
-        RP2) echo rp2040 ;;
-        RP2350) echo rp2350 ;;
-        *) echo unknown ;;
-    esac
-}
-
-chip_of_usb_product() {
-    case "$1" in
-        000a) echo rp2040 ;;
-        0009) echo rp2350 ;;
-        *) echo unknown ;;
-    esac
-}
-
-# The block device sits several levels below the USB device that carries the serial.
-usb_directory_of() {
-    local directory
-    directory=$(readlink -f "$1")
-    while [ ! -e "$directory/serial" ] && [ "$directory" != "/" ]; do
-        directory=$(dirname "$directory")
-    done
-    [ -e "$directory/serial" ] && echo "$directory"
-}
-
-# One line per attached board: SERIAL CHIP STATE NODE. A board in BOOTSEL is named by
-# its partition, a running one by the serial port its firmware brought up.
-attached_boards() {
-    local device model usb serial tty product
-    for device in /sys/block/sd*; do
-        [ -e "$device/device/vendor" ] || continue
-        [ "$(tr -d ' ' < "$device/device/vendor")" = RPI ] || continue
-        model=$(tr -d ' ' < "$device/device/model")
-        usb=$(usb_directory_of "$device/device") || continue
-        [ -n "$usb" ] || continue
-        serial=$(cat "$usb/serial")
-        echo "$serial $(chip_of_bootsel_model "$model") bootsel /dev/$(basename "$device")1"
-    done
-    for tty in /dev/ttyACM*; do
-        [ -c "$tty" ] || continue
-        usb=$(readlink -f "/sys/class/tty/$(basename "$tty")/device/..")
-        # A board resetting into BOOTSEL can vanish mid-scan, so read defensively.
-        [ "$(cat "$usb/idVendor" 2>/dev/null)" = 2e8a ] || continue
-        product=$(cat "$usb/idProduct" 2>/dev/null) || continue
-        serial=$(cat "$usb/serial" 2>/dev/null) || continue
-        [ -n "$serial" ] || continue
-        echo "$serial $(chip_of_usb_product "$product") running $tty"
-    done
-}
-
-# The by-id path carries the serial, so it names one physical board even when two of
-# them label their bootloader volume after the same chip.
-fstab_line_for() {
-    local serial=$1 chip=$2 model
-    case "$chip" in
-        rp2040) model=RP2 ;;
-        rp2350) model=RP2350 ;;
-        *) model=RP2 ;;
-    esac
-    echo "/dev/disk/by-id/usb-RPI_${model}_${serial}-0:0-part1 /mnt/pico-${serial:0:8} vfat noauto,user,umask=000 0 0"
-}
-
 if [ -n "$LIST" ]; then
     boards=$(attached_boards)
     if [ -z "$boards" ]; then
@@ -120,16 +69,7 @@ if [ -n "$LIST" ]; then
     echo "$boards" | while read -r serial chip state node; do
         printf '%-18s %-8s %-8s %s\n' "$serial" "$chip" "$state" "$node"
     done
-    echo
-    echo "fstab lines (mount points may be renamed, but must be distinct):"
-    echo "$boards" | while read -r serial chip state _; do
-        if [ "$state" = bootsel ]; then
-            echo "  $(fstab_line_for "$serial" "$chip")"
-        else
-            echo "  # $serial: put it in BOOTSEL and list again — the path holds the"
-            echo "  #   bootrom's id, which an RP2040 does not report while running."
-        fi
-    done
+    listing_advice "$boards"
     exit 0
 fi
 
@@ -173,9 +113,10 @@ fi
 
 read -r SERIAL _ STATE NODE <<< "$candidates"
 echo "flash: board     $SERIAL ($CHIP)"
-echo "flash: firmware  $UF2 ($(stat -c %s "$UF2") bytes)"
+# wc rather than stat, whose one flag for this is spelled differently on each system.
+echo "flash: firmware  $UF2 ($(wc -c < "$UF2" | tr -d ' ') bytes)"
 
-bootsel_partitions_of_chip() {
+bootsel_nodes_of_chip() {
     attached_boards | awk -v chip="$CHIP" '$2 == chip && $3 == "bootsel" { print $4 }'
 }
 
@@ -188,19 +129,18 @@ bootsel_partitions_of_chip() {
 # both). What identifies it instead is having appeared — the board in BOOTSEL that was
 # not there a moment ago is the one just reset.
 if [ "$STATE" = running ]; then
-    BEFORE=$(bootsel_partitions_of_chip)
+    BEFORE=$(bootsel_nodes_of_chip)
     echo "flash: $NODE is up, resetting it into BOOTSEL at 1200 baud"
-    stty -F "$NODE" 1200 hupcl 2>/dev/null || true
+    reset_into_bootsel "$NODE"
     PARTITION=""
     for _ in $(seq 40); do
-        PARTITION=$(bootsel_partitions_of_chip | grep -vxF "${BEFORE:-$'\n'}" | head -1 || true)
+        PARTITION=$(bootsel_nodes_of_chip | grep -vxF "${BEFORE:-$'\n'}" | head -1 || true)
         [ -n "$PARTITION" ] && break
         sleep 0.5
     done
     if [ -z "$PARTITION" ]; then
         echo "flash: no $CHIP board came back in BOOTSEL mode." >&2
-        echo "       After a reset the device re-enumerates, so usbipd may need to attach again" >&2
-        echo "       ('usbipd attach --wsl --busid <id>' on the Windows side)." >&2
+        reset_advice
         exit 1
     fi
 else
@@ -209,88 +149,25 @@ fi
 
 echo "flash: device    $PARTITION"
 
-# The block device appears before udev publishes /dev/disk, and the fstab lines name
-# the volume through it, so resolving them the moment the board is found loses the race
-# and looks like "this board has no line".
-wait_for_disk_link() {
-    local attempt link target
-    target=$(readlink -f "$PARTITION")
-    for attempt in $(seq 20); do
-        for link in /dev/disk/by-id/* /dev/disk/by-label/*; do
-            [ -e "$link" ] || continue
-            [ "$(readlink -f "$link")" = "$target" ] && return 0
-        done
-        sleep 0.5
-    done
-    return 1
-}
-
-# Ask fstab where this board goes rather than assuming one place serves every board.
-fstab_mount_point() {
-    local device point target
-    target=$(readlink -f "$PARTITION")
-    while read -r device point _; do
-        case "$device" in "" | \#*) continue ;; esac
-        [ "$(readlink -f "$device" 2>/dev/null)" = "$target" ] || continue
-        echo "$point"
-        return 0
-    done < /etc/fstab
-    return 1
-}
-
-wait_for_disk_link || true
-MOUNT_POINT=$FALLBACK_MOUNT_POINT
-FSTAB_POINT=$(fstab_mount_point) && MOUNT_POINT=$FSTAB_POINT || FSTAB_POINT=""
-
-echo "flash: mount     $MOUNT_POINT"
-mountpoint -q "$MOUNT_POINT" && "$UMOUNT" "$MOUNT_POINT"
-
-# udev creates the mount's device link a moment after the block device itself, so the
-# first mount right after a reset can lose the race. Retry rather than give up.
-mount_with_retry() {
-    local attempt
-    for attempt in $(seq 20); do
-        if "$MOUNT" "$MOUNT_POINT" 2>/dev/null; then
-            return 0
-        fi
-        sleep 0.5
-    done
-    return 1
-}
-
-if [ -n "$FSTAB_POINT" ]; then
-    mount_with_retry || {
-        echo "flash: mounting $MOUNT_POINT through /etc/fstab failed." >&2
-        exit 1
-    }
-else
-    if [ "$(id -u)" -ne 0 ]; then
-        echo "flash: no fstab line names $PARTITION, escalating"
-        echo "       To keep this board out of sudo, add:"
-        echo "         $(fstab_line_for "$SERIAL" "$CHIP")"
-        exec sudo -- "$0" --board "$SERIAL" "$UF2"
-    fi
-    mkdir -p "$MOUNT_POINT"
-    "$MOUNT" -t vfat -o rw,umask=000 "$PARTITION" "$MOUNT_POINT"
-fi
+open_volume "$PARTITION" "$SERIAL" "$CHIP"
 
 # The bootloader always exposes INFO_UF2.TXT. Refuse to write to anything else.
-if [ ! -f "$MOUNT_POINT/INFO_UF2.TXT" ]; then
-    "$UMOUNT" "$MOUNT_POINT"
+if [ ! -f "$VOLUME/INFO_UF2.TXT" ]; then
+    close_volume
     echo "flash: $PARTITION is not an RP2 bootloader volume, aborting." >&2
     exit 1
 fi
-sed 's/^/flash: info      /' "$MOUNT_POINT/INFO_UF2.TXT"
+sed 's/^/flash: info      /' "$VOLUME/INFO_UF2.TXT"
 
 # The board resets as soon as the last block lands, so the copy, the sync and the
 # unmount are all expected to fail at the end. The device disappearing is the
 # success signal.
-cp "$UF2" "$MOUNT_POINT/" 2>/dev/null || true
+cp "$UF2" "$VOLUME/" 2>/dev/null || true
 sync 2>/dev/null || true
-"$UMOUNT" "$MOUNT_POINT" 2>/dev/null || true
+close_volume
 
 for _ in $(seq 20); do
-    if ! bootsel_partitions_of_chip | grep -qxF "$PARTITION"; then
+    if ! bootsel_nodes_of_chip | grep -qxF "$PARTITION"; then
         echo "flash: done. The board left BOOTSEL mode and is running the firmware."
         exit 0
     fi
