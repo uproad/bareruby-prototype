@@ -160,6 +160,14 @@ module BareRubyProt
 
       def asks = family ? family["asks"] : []
 
+      # **What a debug build buys is the binding's answer, so the binding is what says
+      # it.** Only one of them means anything by the field: a pico-sdk firmware keeps its
+      # USB interface up and is reflashed without the button, while the others take the
+      # flag and do nothing with it. A line written here would be true of one family and
+      # a lie to the rest, and a family with nothing to say answers by having no hint —
+      # the same shape as a family that asks nothing.
+      def debug_hint = family&.fetch("debug_hint", nil)
+
       # Which family is in play: the one being moved through while the machines are open,
       # or — once a machine is chosen — the one that holds it. It is never stored, because
       # a machine already says which family it belongs to.
@@ -175,7 +183,7 @@ module BareRubyProt
         case key
         when "machine" then choose_machine
         when "name" then type(key, "Name it?", suggest: suggestion)
-        when "debug" then choose(key, [false, true], &:to_s)
+        when "debug" then choose(key, [true, false], note: debug_hint, &:to_s)
         when "confirm" then choose(key, [true, false]) { |yes| yes ? "write it" : "discard" }
         else family_ask(key)
         end
@@ -254,12 +262,13 @@ module BareRubyProt
       # While a list is open, the choice under the cursor is shown as though it had been
       # made — dimmed, because it has not been. That is what makes the three a machine
       # settles visible **before** it is settled, which is the one place the lesson lands.
-      def choose(key, choices)
+      def choose(key, choices, note: nil)
         index = @cursor[key] || choices.index { |one| chosen?(key, one) } || 0
         loop do
           @cursor[key] = index
           @preview = { key => stored(choices[index]) }
-          render(question_for(key), choices.each_with_index.map { |one, at| row(at == index, yield(one)) })
+          render(question_for(key),
+                 choices.each_with_index.map { |one, at| row(at == index, yield(one)) }, note:)
           case keypress
           when :up then index = (index - 1) % choices.length
           when :down then index = (index + 1) % choices.length
