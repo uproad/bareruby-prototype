@@ -245,7 +245,7 @@ bareruby:
       machine: pico
       binding: pico_sdk
       triple: thumbv6m-none-eabi
-      debug: false
+      debug: true
       boards: []
 ```
 
@@ -254,6 +254,14 @@ name is the directory the artifacts land in, so one another entry already holds 
 refused. **`boards:` is not asked for** — it is a serial read off the machine in front of
 you, and it is not needed until two machines carrying one chip are attached at once, which
 flashing detects and prints the candidates for.
+
+**`debug:` is offered as `true`**, because a board is attached to be worked on and that is
+the answer that hour needs: the firmware stays enumerated over USB, so the flasher resets
+it over that port and the BOOTSEL button is not touched again. It costs roughly twice the
+image, which is what `false` is for once the program is finished rather than being written.
+The question says so where it is asked, and says it only where it is true — the field
+reaches the pico-sdk build and no other, so the Arduino core and a Cube project take it and
+do nothing with it.
 
 [`config/target.yml.sample`](config/target.yml.sample) documents every field.
 
