@@ -17,10 +17,10 @@ module BareRubyProt
       target = Toolchain.recorded(directory, "openocd_target")
       serials = boards.empty? ? [nil] : boards
       serials.all? do |serial|
-        system(openocd, *(serial ? ["-c", "adapter serial #{serial}"] : []),
-               "-f", "interface/#{interface}.cfg",
-               "-f", "target/#{target}.cfg",
-               "-c", "program #{image} verify reset exit")
+        Toolchain.aloud([openocd, *(serial ? ["-c", "adapter serial #{serial}"] : []),
+                         "-f", "interface/#{interface}.cfg",
+                         "-f", "target/#{target}.cfg",
+                         "-c", "program #{image} verify reset exit"])
       end
     end
 

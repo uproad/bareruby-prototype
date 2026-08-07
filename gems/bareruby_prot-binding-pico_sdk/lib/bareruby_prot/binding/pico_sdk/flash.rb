@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "bareruby_prot/toolchain"
+
 module BareRubyProt
   # A .uf2 carries the family id of the chip it was built for, so the image says which
   # boards are candidates and only two of the same chip need telling apart. That is what
@@ -14,9 +16,9 @@ module BareRubyProt
     # is rather than raised over. Writing stops at the first board that refuses.
     def self.run(directory, boards:, options: {})
       image = File.join(directory, "bareruby_program.uf2")
-      return system(SCRIPT, image) if boards.empty?
+      return Toolchain.aloud([SCRIPT, image]) if boards.empty?
 
-      boards.all? { |board| system(SCRIPT, "--board", board.to_s, image) }
+      boards.all? { |board| Toolchain.aloud([SCRIPT, "--board", board.to_s, image]) }
     end
   end
 end
