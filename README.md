@@ -146,13 +146,34 @@ with not one SDK on it can still turn Ruby into C++.
 
 **`build/` holds what was built, and nothing else** — one file per composition. Everything
 else, the generated C++ and the tree a toolchain leaves behind, lives under `.bareruby/`.
-A build says where it put things:
+
+A run says which stage each target is in and how long it has been there, redrawing the
+table in place while it works. The stages are the verbs it stacked, so `deploy` has four
+columns and `compile` has one:
 
 ```
-$ bin/bareruby build
-bareruby: host -> build/host/bareruby_program
-bareruby: raspberry-pi-pico -> build/pico-pico_sdk-thumbv6m-none-eabi/bareruby_program.uf2
+$ bin/bareruby deploy
+bareruby deploy app/main.rb · 3 targets
+TARGET      TOOLS  COMPILE    BUILD    FLASH  ARTIFACT
+pico1h       0.1s     0.1s     6.8s     9.9s  bareruby_program.uf2  70.5 KB
+pico2w       0.1s     0.1s    7.2s+        .
+mega2560     0.1s        .        .        .
+deploy: 1/3 · 15.4s
 ```
+
+A cell is `.` before its stage, seconds with a `+` while it runs, seconds when it is done,
+and `FAIL` when the stage refused. Every artifact is at `build/<target>/`, so the row says
+all of the path but the file name. The last line says how it went once it is over —
+`deploy: success · 3/3 · 31.8s`, or `failed` where a target did not get through every
+stage it was asked for. **How far along a stage is, is not asked** — cmake
+counts translation units, and the link and the image that follow them are worth more than
+any of them, so a proportion taken from that count reads 90% for as long as it reads
+anything.
+
+Anything else with something to say — a notice from a pass, a build system that refused,
+the script naming the board it wrote — says it above the table, which keeps scrolling as
+a log does. Where there is no terminal to redraw, in a pipe or in CI, there is no table:
+each stage says one line as it finishes.
 
 Three things go wrong, and the advice differs. Two are in the record:
 

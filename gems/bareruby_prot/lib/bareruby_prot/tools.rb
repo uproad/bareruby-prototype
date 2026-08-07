@@ -5,6 +5,8 @@ require "fileutils"
 require "open-uri"
 require "tmpdir"
 
+require_relative "toolchain"
+
 module BareRubyProt
   # What a build reaches for that no gem carries: SDKs, cross compilers, the programs that
   # write a board. Gigabytes of other people's releases.
@@ -65,7 +67,7 @@ module BareRubyProt
         downloaded = File.join(scratch, file)
         download("#{from}/#{file}", downloaded)
         verify(downloaded, sha256)
-        system("tar", "-xf", downloaded, "-C", scratch, exception: true)
+        fetching(["tar", "-xf", downloaded, "-C", scratch])
         place(Dir.children(scratch).reject { |name| name == file }, scratch, directory)
       end
     end
@@ -85,14 +87,21 @@ module BareRubyProt
     end
 
     def self.clone(github, tag, into)
-      system("git", "clone", "--branch", tag, "--depth", "1",
-             "https://github.com/#{github}.git", into, exception: true)
+      fetching(["git", "clone", "--branch", tag, "--depth", "1",
+                "https://github.com/#{github}.git", into])
     end
 
     def self.submodule(into, path, commit)
-      system("git", "-C", into, "submodule", "update", "--init", "--depth", "1", path,
-             exception: true)
+      fetching(["git", "-C", into, "submodule", "update", "--init", "--depth", "1", path])
       confirm(File.join(into, path), commit, path)
+    end
+
+    # git and tar say where a download has got to, which is worth hearing when it is a
+    # gigabyte — but they say it to the terminal, and a run drawing a table there needs
+    # them to say it through this side instead. What they said is passed on either way;
+    # only a failure stops the run.
+    def self.fetching(command)
+      raise "#{command.first} failed while fetching." unless Toolchain.aloud(command)
     end
 
     def self.confirm(repository, commit, what)

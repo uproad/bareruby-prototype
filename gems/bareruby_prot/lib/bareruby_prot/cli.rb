@@ -9,6 +9,7 @@ require "bareruby_prot/compiler"
 
 require_relative "deployment"
 require_relative "catalog"
+require_relative "progress"
 require_relative "scaffold"
 require_relative "tools"
 
@@ -69,6 +70,9 @@ module BareRubyProt
       @arguments -= @target_options
     end
 
+    # The table is finished here rather than by the command that drew it, because deploy is
+    # two commands and one table: build starts it, flash goes on filling it in, and the
+    # only place that knows both are over is the place they were both dispatched from.
     def run
       case @command
       when "--help", "-h", "help" then asked
@@ -83,6 +87,8 @@ module BareRubyProt
       when "tools" then tools
       else usage
       end
+    ensure
+      @progress&.finish
     end
 
     def target
@@ -129,10 +135,17 @@ module BareRubyProt
     # reads no record: a compilation is exactly what its command line asked for. So a name
     # only a desk knows is refused here rather than resolved, and refused the same way any
     # other unknown name is.
+    #
+    # **One compilation serves every target it was asked for**, because what differs
+    # between them is decided in the last pass and everything before it is the same work.
+    # So the row each target has in the table is filled in from that one run, and they all
+    # say the same seconds — which is what happened.
     def compile
       wanted.each { |name| raise Stop, no_target(name, []) unless Target.named?(name) }
       Compiler.clear_output
-      compile_for(Target.select(@target_options), debug: @debug)
+      targets = Target.select(@target_options)
+      showing(targets, %i[compile])
+      @progress.at(:compile, targets) { compile_for(targets, debug: @debug) }
     end
 
     # One entry at a time rather than one run for all of them, because two entries may
@@ -142,16 +155,26 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
-      Tools.install(planned.map(&:target))
+      showing(planned, %i[tools compile build])
       Compiler.clear_output
-      done = planned.all? do |entry|
+      planned.all? { |entry| built(entry) } ? 0 : 1
+    end
+
+    # The three stages one entry passes through, each timed where it happens. Fetching is
+    # asked for one entry at a time rather than once for all of them so that the wait lands
+    # on the row that waited; it is the same question asked repeatedly, and a binding whose
+    # tools are already here answers it without reaching anywhere.
+    def built(entry)
+      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
+      @progress.at(:compile, [entry]) do
         compile_for([entry.target], debug: debug?(entry))
         place(entry)
-        built = entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
-        made(entry) if built
-        built
       end
-      done ? 0 : 1
+      worked = @progress.at(:build, [entry]) do
+        entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
+      end
+      made(entry) if worked
+      worked
     end
 
     # What is on the boards is whatever the last build left, so flashing on its own is
@@ -162,12 +185,16 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
-      Tools.install(planned.map(&:target))
-      done = planned.all? do |entry|
+      showing(planned, %i[tools flash])
+      planned.all? { |entry| flashed(entry) } ? 0 : 1
+    end
+
+    def flashed(entry)
+      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
+      @progress.at(:flash, [entry]) do
         entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
-                                                        options: entry.options)
+                                                            options: entry.options)
       end
-      done ? 0 : 1
     end
 
     # Asking for a deployment and being told nothing is worse than being told there is
@@ -179,17 +206,38 @@ module BareRubyProt
       1
     end
 
+    # The table is asked for here, before build and flash are stacked underneath, so that
+    # the two of them fill in one table with a column for every stage they pass through
+    # rather than each drawing its own half of one.
     def deploy
+      planned = entries
+      return nothing if planned.empty?
+
+      showing(planned, %i[tools compile build flash])
       status = build
       return status unless status.zero?
 
       flash
     end
 
+    # **Whoever asks first says what the run is**, and everyone after gets what they asked
+    # for. Which source is being compiled is worth saying only where something is compiled,
+    # so the stages answer that too.
+    def showing(rows, stages)
+      @progress ||= Progress.new(@command, (shown if stages.include?(:compile)), rows, stages)
+    end
+
+    def shown = source.delete_prefix("#{Dir.pwd}/")
+
     # A record of this desk answers for the targets it names. Naming targets on the
     # command line instead asks for exactly those, and the record still answers for what
     # only it can know: which boards are attached, and where an external project lives.
-    def entries
+    #
+    # Read once, because deploy asks twice — and because the rows of the table are these
+    # entries, so a second reading would be a second set of rows for one run.
+    def entries = @entries ||= resolved
+
+    def resolved
       recorded = Deployment.entries
       return recorded if @target_options.empty?
 
@@ -229,21 +277,20 @@ module BareRubyProt
         "`bareruby target list` prints every composition that can be named instead."
     end
 
-    # **A build that says nothing looks exactly like a build that did nothing.** That is
-    # the argument `nothing` already makes about an empty run, and it is the same argument
-    # here: the person who typed this has no other way to learn that it worked, and no way
-    # at all to learn where what it made is. Toolchains are quiet unless they fail, so
-    # without this line a first success is indistinguishable from silence.
     # **build/ holds what was built and nothing else.** The toolchains leave far more than
     # that behind — a cmake tree alone is 679 files and 9.4 MB against 52 KB of firmware —
     # and all of it is how the artifact was made rather than what was asked for. The binding
     # says which of what it left is the artifact; this side says where artifacts go.
+    #
+    # What was made is told to the table rather than printed, because it belongs to the row
+    # that made it: every artifact is at build/<target>/, so the row already says all of the
+    # path but the file name.
     def made(entry)
       made = entry.target.binding.toolchain.artifact(directory_of(entry))
       kept = File.join(ARTIFACTS, entry.directory, File.basename(made))
       FileUtils.mkdir_p(File.dirname(kept))
       FileUtils.cp(made, kept)
-      puts "bareruby: #{entry.target.name} -> #{kept.delete_prefix("#{Dir.pwd}/")}"
+      @progress.artifact(entry, kept.delete_prefix("#{Dir.pwd}/"))
     end
 
     ARTIFACTS = File.expand_path("build", Dir.pwd)

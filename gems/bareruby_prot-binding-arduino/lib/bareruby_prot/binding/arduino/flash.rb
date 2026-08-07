@@ -24,7 +24,8 @@ module BareRubyProt
       return false if ports.empty?
 
       ports.all? do |port|
-        system(environment, COMMAND, "upload", "-p", port, "--fqbn", fqbn, "--input-file", image)
+        Toolchain.aloud([COMMAND, "upload", "-p", port, "--fqbn", fqbn, "--input-file", image],
+                        environment)
       end
     end
 
