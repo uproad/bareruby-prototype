@@ -30,12 +30,17 @@ module BareRubyProt
     # What it is common to is an instruction set, so that is the shelf it sits on.
     IMAGES = ["bareruby_program.uf2", "bareruby_program.elf"].freeze
 
+    # What the second stage answered is what this answers. Bringing the images up one level
+    # is what happens after a build that worked, not the answer to whether it did — and a
+    # run that reads the wrong one of those calls a failed build a success.
     def self.run(directory, options: {})
-      Toolchain.run(directory, Toolchain.recorded_command(directory), environment)
+      return false unless Toolchain.run(directory, Toolchain.recorded_command(directory), environment)
+
       IMAGES.each do |image|
         made = File.join(directory, "build", image)
         FileUtils.cp(made, File.join(directory, image)) if File.exist?(made)
       end
+      true
     end
 
     def self.environment
