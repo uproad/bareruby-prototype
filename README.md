@@ -338,6 +338,10 @@ somewhere else.
 ```text
 ~/.bareruby/tools/
 ├── common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
+├── arduino/
+│   ├── arduino-cli-1.5.2-rc.1/
+│   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
+│   └── downloads/
 └── pico_sdk/
     ├── pico-sdk-2.3.0/
     └── picotool-2.3.0/                 # the SDK fetches and builds this itself
@@ -351,19 +355,20 @@ what `--debug` needs** — without it the SDK only warns and builds a firmware i
 the non-debug one, so a `--debug` build silently is not one. **The CYW43 driver is what a
 wireless board's on-board LED needs**, because that LED hangs off the radio.
 
-Two bindings are not fetched this way. `stm32cube` installs itself with its own script
-into the project's `.tools/`, and `arduino` is not fetched at all, because `arduino-cli`
-installs its own cores:
+**Not everything arrives as an archive to verify.** `arduino-cli` does, and is; the AVR
+core does not — it is an index and a set of packages `arduino-cli` resolves for itself, so
+there is no single file to hash and the version is pinned on its command line instead. The
+command that owns a format is the one that fetches it, and both land on the same shelf
+either way.
+
+One binding is still not fetched this way. `stm32cube` installs itself with its own script,
+into the project's `.tools/` rather than the desk's store, because what it puts there is
+partly this project's — the CubeMX project a build is made against:
 
 ```text
-.tools/
-├── arduino/
-│   ├── arduino-cli-1.5.2-rc.1/
-│   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
-│   └── downloads/
-└── stm32cube/
-    ├── STM32CubeF4-1.28.3/             # HAL, CMSIS, startup files, linker scripts
-    └── F446_Sample/                    # the CubeMX project this desk builds for
+.tools/stm32cube/
+├── STM32CubeF4-1.28.3/                 # HAL, CMSIS, startup files, linker scripts
+└── F446_Sample/                        # the CubeMX project this desk builds for
 ```
 
 A desk that keeps its own copies elsewhere says so through the environment, and what is
@@ -423,18 +428,21 @@ path has never been run** — the STM32 firmware verified so far was flashed by 
 libc carries no unwinder, so a program containing `begin` has no build for this board
 either way round.
 
-Two things are needed, neither of them needing `sudo`:
+Two things are needed and neither is asked for: `build` fetches `arduino-cli`, then has it
+install the pinned core. 36 MB for the command and 325 MB for the core, onto the desk's
+shelf rather than into the project, so the second project pays nothing.
 
-```sh
-mkdir -p .tools/arduino/arduino-cli-1.5.2-rc.1 && cd .tools/arduino/arduino-cli-1.5.2-rc.1
-curl -fsSLO https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
-tar xf arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
-export ARDUINO_DIRECTORIES_DATA=$PWD/../data
-./arduino-cli core install arduino:avr
+```
+bareruby: fetching arduino-cli-1.5.2-rc.1 into ~/.bareruby/tools
+bareruby:   https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+bareruby: fetching arduino:avr@1.8.8 into ~/.bareruby/tools
+bareruby:   ~/.bareruby/tools/arduino/arduino-cli-1.5.2-rc.1/arduino-cli core install
 ```
 
-That is 37 MB for the command and 381 MB for the core. `ARDUINO_DIRECTORIES_DATA` keeps
-it out of `~/.arduino15`, and `bareruby` passes the same thing on every build.
+A desk that has its own says so and nothing is fetched: an `arduino-cli` on `PATH` covers
+the command, and `ARDUINO_DIRECTORIES_DATA` covers the core. Both are read before anything
+reaches the network, so honouring them costs no download. What `bareruby` sets otherwise
+keeps the core out of `~/.arduino15`, and it passes the same thing on every build.
 
 `./bareruby flash --target=mega` writes the `.hex` over the serial port the board talks
 on, found by asking `arduino-cli` which ports carry this board. `boards:` in `target.yml`

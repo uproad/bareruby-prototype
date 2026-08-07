@@ -116,11 +116,24 @@ module BareRubyProt
     # An archive holds one directory and it is named whatever the release names it. What
     # the lock calls it is what it is filed under, so the two are reconciled here rather
     # than by everything that later has to find it.
+    #
+    # **Some releases hold no directory at all** — arduino-cli is a command and a licence,
+    # loose at the top of the tarball, and a release that unpacks into the directory it was
+    # unpacked in is a shape as ordinary as the other. Which one arrived is a question the
+    # archive answers by what came out of it, so it is asked here rather than written into
+    # every lock that ever names one.
     def self.place(unpacked, scratch, directory)
       into = at(directory)
       FileUtils.mkdir_p(File.dirname(into))
       FileUtils.rm_rf(into)
-      FileUtils.mv(File.join(scratch, unpacked.first), into)
+      return FileUtils.mv(File.join(scratch, unpacked.first), into) if held?(unpacked, scratch)
+
+      FileUtils.mkdir_p(into)
+      unpacked.each { |name| FileUtils.mv(File.join(scratch, name), into) }
+    end
+
+    def self.held?(unpacked, scratch)
+      unpacked.one? && File.directory?(File.join(scratch, unpacked.first))
     end
   end
 end

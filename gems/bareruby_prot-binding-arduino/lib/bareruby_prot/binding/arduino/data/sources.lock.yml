@@ -1,0 +1,48 @@
+# Everything an Arduino build reaches for that this gem does not carry: where it comes
+# from, which version it is, and where it lands in the store. `bareruby tools install`
+# reads this file and nothing else downloads.
+#
+# **Two things arrive, and only one of them is an archive.** arduino-cli is a release like
+# any other — fetched, verified by SHA-256, unpacked. The core is what actually compiles a
+# sketch, and it is not a file: arduino-cli fetches it from an index of its own, in pieces,
+# and there is nothing single for the fetching side to hash. So it is pinned on the command
+# line instead, and the versioned directory it lands in is what says it arrived.
+#
+# The hashes below come from the release's own checksums file, which is **not** named after
+# the archives — it is `<version>-checksums.txt`, beside them:
+#
+#     https://downloads.arduino.cc/arduino-cli/1.5.2-rc.1-checksums.txt
+#
+# The version is part of the directory name because it is part of what a measurement means,
+# and because a core's output is the version of the tool that produced it.
+cli:
+  from: https://downloads.arduino.cc/arduino-cli
+  directory: arduino/arduino-cli-1.5.2-rc.1
+  archives:
+    linux-x64:
+      file: arduino-cli_1.5.2-rc.1_Linux_64bit.tar.gz
+      sha256: 396b4dd7d405ce116b7c95c0941784b005d989c52adfde51d983f66c4b0f9531
+    linux-arm64:
+      file: arduino-cli_1.5.2-rc.1_Linux_ARM64.tar.gz
+      sha256: 6f7b803ca9b17be1c3ab2df8beaf76f7711912effce3552e8fc705c708e5d1e9
+    darwin-x64:
+      file: arduino-cli_1.5.2-rc.1_macOS_64bit.tar.gz
+      sha256: 6afa2e06201df224eb6576d665dff053f67ebcec65ade1786aed14c22a9daa52
+    darwin-arm64:
+      file: arduino-cli_1.5.2-rc.1_macOS_ARM64.tar.gz
+      sha256: 24479837c6d30d36e6bebf446eb0d20e2dce465223fc004335de4732570b2cfa
+
+core:
+  package: arduino:avr
+  version: 1.8.8
+  # Under the data directory, and the whole of what says the core is already here. It is
+  # the versioned path arduino-cli files a core under, so a version bump asks the question
+  # again rather than finding the old answer.
+  holds: packages/arduino/hardware/avr/1.8.8
+  # The three directories arduino-cli keeps its own things in. Left alone it puts them
+  # under ~/.arduino15, which would leave the largest part of this binding's toolchain
+  # outside the store — and outside wherever BARERUBY_TOOLS moves the store to.
+  directories:
+    ARDUINO_DIRECTORIES_DATA: arduino/data
+    ARDUINO_DIRECTORIES_DOWNLOADS: arduino/downloads
+    ARDUINO_DIRECTORIES_USER: arduino/user
