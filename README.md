@@ -15,6 +15,14 @@ The language specification and the real implementation live in separate reposito
 that are not public yet. Nothing here points at them. Comments record why a decision was
 made in their own terms, so this repository reads on its own.
 
+This file is what a person needs to run it. Three others carry the rest:
+
+| File | What is in it |
+| --- | --- |
+| [`HISTORY.md`](HISTORY.md) | what each milestone proved, what it deliberately left out, and every size and timing measured while proving it |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | how the thing is put together — the gems, the bindings, the passes — and how to build, install and check a change |
+| [`AGENTS.md`](AGENTS.md) | the rules an agent working in this repository keeps to |
+
 ## Quick usage
 
 ```sh
@@ -86,325 +94,27 @@ and `build` reach for neither.
 `deploy` fetches the SDK and the cross compiler the first time it needs them. What every
 verb does is [further down](#the-short-way).
 
-Covered so far:
+## What it has answered
 
-- **M0** — Prism → BRAST → TAST → LIR → C++ for the representative program the design
-  documents use (`ref.rb`), compiled with the host `g++` and executed.
-- **M1** — the same eight passes produce an rp2040 firmware image for the blink
-  program (`samples/blink.rb`), built with pico-sdk into a real `.uf2` and flashed onto a
-  Raspberry Pi Pico, where it blinks.
-- **M2** — the MVP language and the three demos it is defined by: blink, servo
-  (`samples/servo.rb`) and UART logging (`samples/logger.rb`). Adds pass 8 and, in the
-  language, control flow, strings with printf-expanded interpolation, keyword arguments,
-  symbols, `Fixed`, and the PWM, UART and Machine bindings.
-- **M2.5** — inheritance and modules flattened at compile time with `super`, begin and
-  rescue with `--no-exceptions`, the interpolation assignment form, and require
-  expansion. No new pass; pass 5 does the flattening.
-- **M2.6** — the ADC binding (`samples/adc.rb`). `read` and `read_voltage` return `Fixed`
-  rather than the guideline's `Float`, `read_raw` returns `Int32`, and a pin with no
-  converter channel is passed through as written: what values an interface accepts is the
-  running code's business, not the compiler's, which checks types and nothing else. No new
-  pass.
-- **M2.7** — fixed-capacity arrays (`samples/array.rb`): `Array.new(n[, init])`, array
-  literals, `[]`, `[]=`, `size` and `dup`. Single element type, capacity settled while
-  compiling. Assignment shares the array as Ruby does, and only `dup` duplicates it;
-  indexing is pointer arithmetic and is not range checked. No new pass.
-- **M3 — the arena**, the third layer of the memory model (`samples/arena.rb`):
-  `arena(N) { … }` is a **form rather than an object**. There is no `Arena.new`, no block
-  parameter and no `reset`: an arena cannot be named, passed or stored, so a program can
-  only ever be inside one. `arena(N)` asks for N bytes *here* — finding no region it takes
-  the buffer its own site reserved and becomes the current one, finding a region it becomes
-  a release point and checks on the way in that N bytes are left. Which role a block plays
-  is settled when it is entered rather than while compiling, because a block written in a
-  method is outermost or nested depending on who calls that method. Written without a size,
-  `arena { … }` asks for nothing and is a release point only. Allocation bumps one pointer
-  and each region is a static buffer belonging to the site that declared it: asking for 1024
-  bytes more moves `bss` by exactly 1024. Leaving a block hands back everything it took, done
-  by a guard whose destructor runs on the way out, so an exception leaving the block releases
-  as well. **Which region an allocation comes from is one implicit pointer** — a method
-  allocates and hands the result back without being told where from, which is why the arena
-  needs no parameter and no lifetime analysis over an object graph. Running out throws rather
-  than stopping, so a program can answer it; with `--no-exceptions` it falls back to stopping,
-  the rule a bare `raise` already follows. An allocation may not be stored in an instance
-  variable or in a local the block did not introduce. No new pass.
-- **M3 — the growing array** (`samples/arena.rb`): `Arena::Array.new(n)` and
-  `Arena::Array.new(n, init)`, whose length is a run-time value — the case the first two
-  layers cannot serve — plus `[]`, `[]=`, `size`, `length`, `<<` and `dup`. The empty literal
-  `[]` is sugar for it inside a region, and `::Array` is how a program reaches the
-  fixed-capacity one from in there. **Writing past the end grows it**, which is why it cannot
-  be a handle held by value: growing takes a bigger block from the region and moves both the
-  pointer and the length, and a copy of a handle would keep naming the block the array has
-  left behind — whether an append were seen would depend on how much room happened to be
-  left. So, like the string, the handle lives in the region and a binding is its address.
-  Elements a program has not written read as the default of their type, and a gap left by
-  writing past the end reads the same as a fresh array does: every element type an array can
-  hold has a default of all zero bits, so one clear serves them all. Indexing stays pointer
-  arithmetic and is not range checked. No new pass.
-- **M3 — the variable-length string** (`samples/string.rb`), the other value the first two
-  layers cannot hold: `Arena::String.new`, `.new("text")`, `.new(other_string)` and
-  `.new("count: #{n}")` create one — and the empty literal `""` is sugar for it inside a
-  region — and it answers `<<`, `+`, `size`, `length`, `dup`,
-  `==`, `!=` and `to_s`. It grows: appending past the block it holds takes a bigger one from
-  the region and copies into it, and the block left behind stays until the region is
-  released, because an arena has no free. Both its bytes and its handle come from the
-  region, so a method can create one and hand it back, and every binding is the address of
-  the one string — `b = a` then `b << " C"` is seen through `a`, exactly as in Ruby, while
-  `+` and `dup` answer new strings. The interpolation form is the one that needs no
-  estimate: `vsnprintf` says how long a rendering is before writing it, where an
-  interpolation assigned to a fixed-capacity local (M2.5) has to bound every part while
-  compiling. The runtime owns the representation — the generated code reads no field of a
-  string. No new pass.
-- **M3 — UART receive** (`samples/uart_receive.rb`): `uart.read(n)` takes exactly the
-  requested bytes on the successful path and `uart.gets` takes a line including its
-  newline, both as variable-length strings. The Ruby calls keep their standard shape;
-  when they appear inside an `arena` block, pass 5 threads that innermost region into the
-  binding as the place the result belongs. The hosted UART receives its byte stream on
-  stdin, and the rp2040 binding reads from the selected hardware UART with pico-sdk. The
-  target-specific receive code is a separate translation unit and is linked only when a
-  program calls `read` or `gets`. The empty-buffer `nil` path waits for M3's nilable type;
-  this prototype implements only the successful receive the feasibility question needs.
-  No new pass.
-- **M3 — I2C** (`samples/i2c.rb`): `I2C.new(id, frequency:)`, `write(address,
-  *outputs)` and `read(address, length, *outputs)`. Integer, fixed-array, static-string and
-  variable-length-string outputs are flattened in order into one temporary byte string,
-  so one Ruby call remains one bus transaction. As with UART receive, pass 5 supplies the
-  innermost active arena without adding a Ruby argument: it owns both that temporary and
-  the variable-length string `read` returns. A read with outputs writes them without a
-  stop, then starts the read with a repeated start. The hosted bus takes read bytes from
-  stdin; the rp2040 binding uses pico-sdk, with I2C0 on GP4/GP5 and I2C1 on GP6/GP7. C++
-  string literals now encode arbitrary bytes rather than requiring valid UTF-8. NAK and
-  timeout handling stay outside the successful path this prototype implements. The
-  target-specific sources are linked only when an I2C operation reaches the program. No
-  new pass.
-- **M3 — nilable values** (`samples/nilable.rb`, `samples/definite_assignment.rb`): `nil`
-  joins with `T` as inferred `T?`
-  and lowers uniformly to a struct containing an explicit presence tag and the ordinary
-  value representation. A local tested by `if` or assigned in a `while` condition is
-  narrowed to `T` in its true path, `nil?` reads absence, local safe navigation produces
-  another nilable value, and `maybe || default` unwraps or substitutes without exposing
-  the tag to Ruby. A missing `else` contributes `Nil`; a local first assigned on a path
-  that may not run is declared beforehand in the Nil state; and an instance variable not
-  assigned on every path through `initialize` starts in that same state — where a method
-  `initialize` calls counts as one of those paths, so a field a constructor sets through a
-  helper is an ordinary `T` rather than a `T?`. The sample
-  exercises both `Int32?` and a variable-length
-  string pointer in the same representation scheme. This feasibility slice follows the
-  local-only withdrawal line: instance-variable narrowing and invalidation are not
-  implemented. No new pass.
-- **M4 — experimental GPIO interrupts** (`samples/interrupt.rb`):
-  `button.on_interrupt(edge: GPIO::EDGE_FALL) { ... }` lowers its non-capturing,
-  zero-argument block to a realtime handler and registers it with the GPIO receiver.
-  The hosted binding records registration and calls the handler synchronously once, so
-  the sample demonstrates GP15 falling-edge input driving a GP25 LED write without
-  hardware. The rp2040 binding keeps one zero-argument handler pointer and invokes it
-  from pico-sdk's GPIO callback bridge. Pass 11 rejects arena storage or allocation in a
-  realtime handler and in user methods reachable from it. This is deliberately
-  provisional: it supports one handler, `EDGE_FALL` only, no captures, no unregister,
-  no generalized interrupt API, and no production diagnostics. Built with pico-sdk
-  2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
-  it was built but not hardware-flashed.
-- **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
-  `.tools/stm32cube/`, owns clock, pin, startup, HAL initialization and the linker
-  script. Pass
-  12 adds HAL-backed GPIO, timing, LD2, USART2 and I2C1 translation units, entered from a
-  CubeMX-preserved user section after every peripheral is initialized. `bareruby build`
-  generates one application, synchronizes only the reached units, and links them against
-  the HAL with `arm-none-eabi-g++`. A physical board has been programmed over SWD, with
-  LD2 and USART2 exercised; that run predates the move off STM32CubeIDE's headless
-  builder. I2C links against STM32CubeF4 HAL 1.28.3 but remains hardware-unverified.
-  `samples/heartbeat.rb` links to 5416 B of text and 1644 B of bss on this board; the
-  bss is the HAL's, since the whole of `Drivers/` is compiled and the linker drops what
-  no call reaches.
+The pipeline runs end to end, on real hardware, for three instruction sets. Ruby reaches
+C++ through eight to twelve passes; a standard toolchain and a platform SDK turn that into
+a firmware image; the image blinks a board.
 
-  **Two of its units still fail to link together.** `bareruby_startup` had been left in
-  the GPIO unit when GPIO moved out of the unit every build reaches, so a program that
-  never touches a pin — `samples/heartbeat.rb` is one — linked against a definition it
-  had no reason to have pulled in. Splitting one file into several makes *which* file a
-  definition landed in a fact worth checking, and nothing checks it: every binding names
-  its own units and the linker is the only thing that reads the answer.
+- **The language** — M0 through M4: control flow, strings, keyword arguments, symbols,
+  `Fixed`, inheritance and modules flattened while compiling, fixed-capacity arrays, an
+  arena with a growing array and a variable-length string in it, nilable values, and
+  experimental GPIO interrupts.
+- **The machines** — a Raspberry Pi Pico and a Pico 2 W through pico-sdk, a
+  NUCLEO-F446RE through the STM32Cube HAL, and an Arduino Mega 2560 through the Arduino
+  core. The last of those is eight-bit, and it found three faults every 32-bit target had
+  been agreeing with.
+- **The shape** — the compiler holds no peripheral and no board. Bindings and standard
+  classes arrive as gems, and uninstalling one takes its machines away and leaves
+  everything else compiling.
 
-- **The Arduino core binding** (`arduino-mega2560`) — an ATmega2560 at 16 MHz with 256 KB
-  of flash and 8 KB of SRAM, reached through the Arduino core and built by `arduino-cli`.
-  The core owns `main` and calls `setup` and `loop`, so this side supplies those two and
-  the program's own loop never comes back out of the first of them.
+[`HISTORY.md`](HISTORY.md) records all of it, milestone by milestone, with the figures.
 
-  **What that build takes is not a build file but a directory.** A sketch is compiled
-  whole and nothing outside it is compiled at all, so the declaration the first stage
-  makes everywhere — these are the translation units this program reached for — is met by
-  gathering exactly those into one directory and handing it over. The link boundary
-  survives a build system this side does not own: a program that never touches I2C leaves
-  `Wire.h` unmentioned, so the library is never even discovered, let alone linked. What
-  comes out is a complete sketch, which opens in the Arduino IDE without this repository.
-
-  `samples/heartbeat.rb` is 4190 B of flash and 657 B of SRAM, and blinks the board's LED
-  on real hardware. `samples/features.rb`, `samples/fixed.rb` and `samples/string.rb`
-  print on the board exactly what they print on the host, which puts the arena and the
-  variable-length string runtime — 2963 B of the 8192 there are — on an eight-bit machine
-  with nothing changed for it.
-
-  **It is the first machine here whose natural word is not 32 bits, and it found three
-  faults every 32-bit target had been agreeing with.** All three are fixed in code shared
-  by every target, because all three were wrong everywhere and only visible here.
-
-  - **A printf conversion names a width, not a language type.** `int32_t` is an `int` on
-    a 64-bit machine and a `long` on this one, and a value crossing an ellipsis is not
-    converted to a parameter's type, because there is no parameter. So an interpolation
-    renders as `%ld` and pass 12 widens the value to `long`, which is 32 bits on both.
-    Under `%d`, `"count=#{70000} step=#{7}"` printed `count=4464 step=1` on the board —
-    the low half of the first value, and then its high half read as the second.
-  - **`1 << 15` is a shift into the sign bit** where an `int` is 16 bits. The half added
-    before `Fixed`'s rounding shift was being subtracted, and `(0.5 * 100).to_i32`
-    answered 49.
-  - **A `*` field width is not read** by the smallest `printf` a machine ships with, so a
-    width handed over as a value never arrives at all. `Fixed#to_s` now carries one
-    format per fraction width instead.
-
-  The three cost 56 B of flash on a `raspberry-pi-pico` build of `samples/fixed.rb`
-  (36644 B against 36700 B) and no RAM, which is the six format strings.
-
-  What this core cannot be asked for is recorded in its
-  [README](gems/bareruby_prot-binding-arduino/README.md): PWM has a duty and no frequency, because
-  `analogWrite` picks one and offers no way to name another; the chip has pull-ups and no
-  pull-downs; `%lld` is not implemented by this libc; and `begin` has no build here at
-  all, because the core compiles with `-fno-exceptions` and this libc carries no
-  unwinder. On a Pico the exception mechanism is a decision with a price; here it is
-  simply absent.
-
-- **The on-board LED** (`samples/heartbeat.rb`) — `OnboardLED.new`, then `on`, `off` and
-  `write`. It is deliberately **not** a `GPIO` with a known pin number, because on a
-  board that has an LED it is frequently not a GPIO at all: a Pico W drives its through
-  the wireless chip, and GP25, where the plain Pico's LED sits, is that chip's select
-  line instead. Sharing GPIO's interface would only have hidden that.
-
-  **Which implementation a board takes is written down, not worked out.** How a board's
-  indicator is reached is not a fact about the board alone: the same LED is `gpio_put` and
-  `PICO_DEFAULT_LED_PIN` through pico-sdk, and `HAL_GPIO_WritePin` and `LD2_Pin` through a
-  CubeMX project. Nor is it a fact about the binding alone, because a Pico and a Pico W differ
-  under the very same SDK — one has its LED on a pin and the other behind a radio. It is a
-  fact about the two together, so it lives where the two meet:
-
-  ```ruby
-  # gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico_w.rb
-  module PicoSdkBinding
-    module PicoW
-      def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
-
-      def self.onboard_led_text = ONBOARD_LED_RADIO
-
-      def self.onboard_led_libraries = [RADIO_LIBRARY]
-    end
-
-    MACHINES[:pico_w] = PicoW
-  end
-  ```
-
-  A machine answers for itself, by naming what the binding beside it already carries. Nothing is
-  worked out: `binding.rb` holds the C++ and the names, exactly as it does for GPIO and
-  UART, and there is no branch in it that decides which board gets which. A machine a binding
-  cannot reach has no file rather than a wrong answer, and a board that needs the radio's
-  driver and its firmware blob linked says so itself rather than a build guessing from
-  what it got. So the same six lines of Ruby reach every supported on-board LED. A board with no
-  on-board LED is meant to accept all three calls and do nothing, so that the presence of
-  an indicator never decides whether a program compiles; every board target here has one,
-  so nothing exercises that.
-
-  Reaching the wireless LED means bringing the radio up and uploading its firmware, and
-  that costs **255 KB of flash**: `samples/heartbeat.rb` is 15336 B of text on a Pico and
-  270236 B on a Pico W. A program that never lights the LED links none of it, so the
-  charge falls on the feature rather than on the board.
-
-  Verified on hardware both ways round. The one program blinks a Pico, whose LED is GP25,
-  and a Pico 2 W, whose LED is on the radio — and on that same Pico 2 W,
-  `samples/blink.rb` writing GP25 leaves the LED dark. Nothing in the Ruby differs
-  between blinking and not except which class the LED is asked for. The Pico 2 and the
-  Pico W are built but not run: neither board is here. They are the non-wireless and
-  wireless halves of the pair already confirmed, so what is left unverified is the
-  combination rather than either mechanism.
-
-- **Targets** — one run compiles for as many machines as it is asked to. `host`, the two
-  Pico boards, the two Pico W boards, the NUCLEO board and the Mega 2560 are named on the
-  command line or in `target.yml`, and each gets its own directory under `build/`. The
-  Pico targets share one pico-sdk binding and differ only in the board handed to the SDK,
-  which is what makes a second chip a table entry rather than a second back end: one
-  first stage over `samples/blink.rb` produced both an RP2040 and an RP2350 `.uf2`,
-  Cortex-M0+ and Cortex-M33, from the same generated `main.cpp`. Both were flashed onto
-  real boards and run. One `bareruby build` of `samples/heartbeat.rb` against the three
-  entries on this desk takes 24 seconds and leaves an RP2040 `.uf2`, an RP2350 `.uf2` and
-  an ATmega2560 `.hex` — three chips, and the third shares no instruction set with the
-  other two. The Pico 2 board is a **Pico 2 W**, and it is where the naming rule stopped being
-  an argument and became an observation: `samples/blink.rb` writes GP25, the build and
-  the flash both succeed without a single warning, the program runs — and the LED stays
-  dark, because on that board the LED is on the wireless chip and not on GP25. The same
-  program on the Pico blinks. One chip, two boards, two outcomes, and nothing before the
-  hardware could tell them apart.
-
-- **What a peripheral call costs, and who removes it** (`samples/gpio_pico_loop.rb`) —
-  every GPIO a Pico 1 brings out to its header, pulsed one after another with nothing
-  between the writes, so the period of GP0 is one sweep and an oscilloscope reads the
-  cost straight off a pin.
-
-  A peripheral is a translation unit of its own, so `gp.write(1)` is a call across one
-  where the hardware asks for a single store. Measured on a real Pico, GP0 came out at
-  **137.07 kHz** — 7.295 µs a sweep, 912 cycles at 125 MHz, **140 ns and 17.5 cycles for
-  one write**, against the two-cycle store the chip is capable of.
-
-  **Nothing on this side can remove that call, and nothing on this side should.** The
-  caller and the callee are never in front of the compiler at the same time, so the one
-  party that has both is the linker — and it already knows how. `-flto` on the generated
-  units and on the link is the whole change; there is no inliner here, no `inline` hint
-  and no per-function rule. **This is what emitting C++ rather than instructions was
-  for**: the optimizer is somebody else's and already written.
-
-  The same board then reads **1.29–1.47 MHz** — about **ten times**. The two figures the
-  scope alternates between are one measurement, not noise: 1468.571 × 7 and 1285.000 × 8
-  are both 10.28 MHz, so it is quantizing a period of 681–778 ns at ±1 count. The loop
-  is 73 instructions where it was 209 plus 52 calls into a nine-instruction callee, and
-  the mask `1 << pin` has left the loop entirely — computed once per pin at the top and
-  held, so the body is two stores to the SIO and nothing else. Per write: **~14 ns, about
-  1.75 cycles**.
-
-  **The second chip answers the same question differently, and that is the more
-  interesting result.** A Pico 2 W runs the same program with the same 26 pins: 469
-  instructions a sweep become 68, and it goes from **263.6–270.0 kHz to 1.29–1.47 MHz —
-  about five times**, not ten. The RP2350's write is one `mcrr` to the GPIO coprocessor
-  rather than two stores to the SIO, and its out-of-line callee is six instructions where
-  the RP2040's is nine, so there was less call to remove in the first place.
-
-  What is left once it is removed is what differs. Per instruction the RP2040 costs the
-  same before and after — 1.35 cycles against 1.16–1.33 — while the **RP2350 goes from
-  1.20 to 1.60**. Its LTO'd loop is 52 `mcrr` out of 68 instructions where the baseline
-  was 52 out of 469: at 11% of the path the coprocessor write was hidden among ordinary
-  instructions, and at 76% it is the path. It costs about **2 cycles against the RP2040's
-  1.75**, so a 20% higher clock buys nothing here and **both chips land on the same
-  681–778 ns sweep**. That attribution is inferred from the two measurements rather than
-  measured on its own.
-
-  Which is the shape of the answer worth keeping: removing the calls moves the floor to
-  wherever the hardware's own cost is, and where that floor sits is a fact about the chip
-  that only appears once everything above it is gone.
-
-  **Only the units this build generated are given to it.** Asking it of the whole target
-  drags in the SDK's sources, and pico-sdk reaches its own stdio through `-Wl,--wrap`: a
-  wrapper nothing calls in the IR is dropped before the linker makes the reference that
-  would have kept it, and holding all 160 wrapped symbols down would link every one of
-  them into every program. That version built 31040 B against 27052 B. Confined to the
-  generated units it is **26552 B — smaller than not doing it at all**, because the calls
-  go and the callees go with them, and it is instruction-for-instruction as fast. The
-  boundary worth crossing was the one between generated units anyway; past it the build
-  belongs to somebody else.
-
-  It costs nothing anywhere else: `blink` 30580 → 30372 B of text, `fixed` 41256 → 40936,
-  `interrupt` 32012 → 31804, `avs` 32492 → 32448. Two grow — `tenji_int` 32228 → 32336
-  and `i2c` 93760 → 94336 — which is inlining trading size for speed where a call was
-  worth removing. On the RP2350 the same sample goes 29596 → 29252. The host build takes
-  it too, because one `g++` invocation is still not
-  one translation unit: all 24 host programs print byte-for-byte what they printed
-  before.
-
-  **The Arduino core and the CubeMX project do not get it here.** The Arduino core owns
-  its own compile options and offers no way to add one, which is the same delegation seen
-  from the other side. The CubeMX build does not link on this desk at all, before this
-  change or after, so there was nothing to measure and nothing was changed for it.
+## Two things worth knowing about the language
 
 Every object is a reference, which is what Ruby does (`samples/object.rb`). `b = a` names
 the object `a` names rather than a copy of it, a method is handed the caller's object and
@@ -430,7 +140,9 @@ keeping more than one mark, are left out on purpose — a single mark serves one
 loop, which is what these programs need. The name is provisional, and the leading `a`
 means nothing at all.
 
-The programs these milestones were verified with are in [`samples/`](samples/README.md),
+## The sample programs
+
+The programs the milestones were verified with are in [`samples/`](samples/README.md),
 which lists what each one covers and records what the two ported programs had to change.
 `ref.rb`, the representative program from the design documents, stays here at the root
 because it is what `bareruby compile` compiles when it is given no argument.
@@ -597,6 +309,49 @@ libraries — against what does the making.
 The rest of this file is what `bareruby` does, step by step, and how to install what it
 needs.
 
+### Where a project starts
+
+`bareruby new hello` writes a project. **It builds without being edited**: the record it
+comes with holds one entry — the machine doing the compiling, named `host` so that what it
+builds is at `build/host/` on every desk — and `app/main.rb` blinks the onboard LED, which
+on this machine is a stub that says on fd2 what it would have done. So the first thing a
+newcomer does succeeds, and it succeeds before any hardware has been bought.
+
+```
+hello/
+├── .gitignore          build/, dump/, .tools/
+├── Gemfile             what this is built from, and every board it could be built for
+├── Gemfile.lock
+├── README.md
+├── bin/bareruby        the binstub. The entrance from here on
+├── config/target.yml   which compositions this project is built for
+└── app/main.rb         the program
+```
+
+`new` writes nothing into a directory that already holds any of the files it would write.
+Those are the files a project is edited in — the program, the Gemfile the boards are
+uncommented in, the record — and `new NAME` is easy to type a second time, out of shell
+history or after a first attempt stopped partway. What is in the way is named, and the
+tree is left exactly as it was.
+
+**The Gemfile is the catalogue.** Every board this ecosystem reaches is a line in it,
+commented out, and uncommenting one is the whole cost of being able to build for that
+board. Nothing else holds that list, so there is no second copy to fall out of step —
+which is also why the list is only ever read by a person. A command that read those
+comment lines would be taking gem names apart, and a gem name is words rather than fields.
+`target list` answers the neighbouring question, what is *installed*, and that answer comes
+from the gems themselves.
+
+```sh
+./bareruby new hello
+cd hello
+bin/bareruby build                 # host. Unedited, and it runs
+$EDITOR Gemfile                    # uncomment a board
+bundle install
+bin/bareruby target add            # it can offer that board now
+bin/bareruby deploy
+```
+
 ### Saying which machines are here
 
 `config/target.yml` is not tracked *here*, because which machines are at this desk is true
@@ -629,18 +384,6 @@ questions that produces one afterwards, but the entry, being written:
 
   ↑↓ move   →  machines   ^C cancel
 ```
-
-A composition is three answers rather than one, and that is only visible when all three
-are in view as a single choice fills them in. **A field is settled the moment every
-candidate still in play agrees on it**: every machine in this family is reached through
-pico-sdk, so the binding is answered before any machine is named. A family holding one
-machine settles all three at once. It is a count of what the answers still allow rather
-than a rule about families — a family reached two ways stops settling a binding, with
-nothing here to change.
-
-Families stand to the left of the machines they hold, and moving right steps into them.
-**Choosing a family is a move rather than an answer**: it names no field of the entry, so
-answering it would be a transition that settles nothing.
 
 Dim means one thing throughout — nobody has said this yet — whether it is a value the
 cursor is resting on, a name being typed, or a field nothing has reached. Escape goes back
@@ -678,16 +421,6 @@ read off the machine in front of you, and an RP2040 answers with a different one
 BOOTSEL than while running — and it is not needed until two machines carrying one chip are
 attached at once, which flashing detects and prints the candidates for. The field is
 written empty, and filled in when that day comes.
-
-None of that is anything to look up, which is why it is asked for instead. Every entry has
-a machine, a name and a debug build, so those are asked by the command itself. What else a
-family needs — the path to a CubeMX project, how to optimize the build — is in that
-family's own `family.yml`, beside the binding that can build it, so a machine that does not
-exist yet is reached by adding a binding rather than by editing a list. It restates no
-composition: a family names targets, and their machine, binding and triple come from the
-binding's `targets.rb`, where they already are. The machine that needs no hardware is
-offered first and the rest are alphabetical, so anything attaching later has one obvious
-place to go. `./bareruby target list` prints them all.
 
 [`config/target.yml.sample`](config/target.yml.sample) documents every field, for reading
 a file back once it exists.
@@ -781,504 +514,28 @@ pico-sdk binding — the peripherals are reached through the SDK, which spells t
 way whichever chip is underneath — and differ only in the two words their `CMakeLists.txt`
 hands to it.
 
-Those two words are pico-sdk's, not the boards'. `PICO_BOARD` is what that SDK calls a
-board, and `PICO_PLATFORM` is not even the chip's name: an RP2350 answers to
-`rp2350-arm-s` or `rp2350-riscv` once which of its two instruction sets to build for is
-chosen. So they are kept where the machine and the binding meet rather than on the machine:
-
-```ruby
-# gems/bareruby_prot-binding-pico_sdk/lib/bareruby_prot/binding/pico_sdk/machine/pico2_w.rb
-def self.pico_board = "pico2_w"
-
-def self.pico_platform = "rp2350"
-```
-
-What is left on the board itself is what is true of it whoever asks — the key it is known
-by, and the chip it carries.
-
-`--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and
-the unwinder and its tables are left out. On a `raspberry-pi-pico` build of
-`samples/blink.rb` that is 15536 B of text against 10984 B, so the mechanism costs
-4552 B of flash and 316 B of RAM even in a program that never raises. Those two figures
-are exactly what the same pair cost under pico-sdk 1.5.1 (13236 B against 8684 B): the
-mechanism's price is the compiler's, not the SDK's.
-
-A program that actually raises pays far more. `bareruby_throw` pulls in the C++ ABI, and
-with it the terminate handler's name demangler and malloc: `samples/m25.rb` comes to 76068 B
-of text. That is why the throw lives in its own translation unit and is linked only into
-programs that reach it — `--gc-sections` cannot remove it once it is compiled in.
-
-An arena is the other thing here that is worth what it costs rather than free. The same
-six statements written twice — once against `Array.new(3, 0)`, once against `Arena::Array.new(3)`
-inside an arena block — come to 8364 B of text with the fixed-capacity array and 37036 B
-with the arena, both under `--no-exceptions`. The 28 KB between them is the exhaustion path:
-running out reaches `bareruby_panic`, and `fprintf` plus `exit` bring stdio with them. With
-exceptions enabled the same pair is 12884 B and 90604 B, and the further 50 KB is the
-guard — a scope holding an object with a destructor gives its function a cleanup landing
-pad, which references `__gxx_personality_v0` and drags in the same C++ ABI a `raise`
-does. Releasing the region when an exception leaves the block is what that buys.
-
-Those arena and string figures were taken against the earlier design, where an arena was an
-object a program named and passed. **They have not been re-measured since it became a form.**
-What moved is where the handle lives and how the block is entered, not what the region costs,
-so the comparison they draw should still hold — but nothing here has confirmed that.
-
-A variable-length string adds almost nothing to what the region already costs: six
-statements that create one, append to it twice and print it come to 37244 B of text under
-`--no-exceptions`, against the 37036 B the arena array's six cost above. The allocator and
-its panic path are what both are paying for. The interpolation form is the part worth
-counting — `Arena::String.new("readings: #{count}")` makes `vsnprintf` reachable and takes the same
-program to 43908 B, where that interpolation assigned to a fixed-capacity local costs
-17784 B and no region at all. (Those six figures come from throwaway programs that were
-never committed, and are the one set here still carrying its pico-sdk 1.5.1 measurement —
-what they compare is two ways of writing the same thing, which the SDK move shifts
-equally.) `samples/string.rb`, which uses every form, is 46780 B of text and 3344 B of
-`bss`, 1792 of which is the three regions it declares.
-
-`samples/uart_receive.rb` is 40004 B of text and 1812 B of `bss` under
-`--no-exceptions`; its region accounts for 256 B of the latter. The receive path therefore
-fits beside the arena and string runtime without introducing another large dependency.
-
-`samples/i2c.rb` is 40756 B of text and 1808 B of `bss` under `--no-exceptions`, and its
-`.uf2` is 73728 B. That includes mixed-output flattening, a write, and a register-select
-write followed by a repeated-start read.
-
-`samples/nilable.rb` is 39308 B of text and 1680 B of `bss` under `--no-exceptions`;
-its `.uf2` is 70656 B. The sample includes the arena and variable-length string runtime,
-so the tagged representation and its control flow fit within the cost already established
-for those M3 facilities.
+`--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and the
+unwinder and its tables are left out. It is worth several kilobytes of flash even in a
+program that never raises, and a great deal more in one that does — the figures are in
+[`HISTORY.md`](HISTORY.md#what-exceptions-cost).
 
 `-d` / `--debug` only affects the freestanding target. It turns on USB stdio, so
 `puts` reaches a USB serial port instead of being dropped, and — the reason it exists —
 the board **stays enumerated as a USB device while the program runs**, which is what
-lets `flash.sh` reflash it without the BOOTSEL button. It costs code size:
-
-| | default | `--debug` |
-| --- | --- | --- |
-| `.uf2` | 23040 B | 53248 B |
-| `text` (flash) | 15536 B | 30596 B |
-| `bss` (RAM) | 1484 B | 3604 B |
+lets `flash.sh` reflash it without the BOOTSEL button. It roughly doubles the image;
+[`HISTORY.md`](HISTORY.md#what---debug-costs) has the numbers.
 
 It needs the SDK's TinyUSB submodule. Without it the SDK builds a firmware identical to
 the default one and says so only in a warning, so `--debug` looks like it worked and the
 board never enumerates.
 
-Only Ruby is needed for this (Prism ships with Ruby 4.0). Every run rewrites two
-directories, neither of which is tracked in git — they are outputs, and they changed on
-every commit while they were:
-
-- `dump/` — one binary snapshot (`.bin`) and one inspector text dump (`.txt`) per
-  pass boundary. The pipeline reloads each representation from its own binary dump
-  before handing it to the next pass, so resumability and byte-level determinism are
-  exercised on every run.
-- `build/` — the first-stage artifacts: the peripheral binding (declaration plus one
-  implementation per kind of machine), the runtime, and one directory per selected
-  target holding `main.cpp`, the build manifest and, for a board, `CMakeLists.txt`.
-  **`build/` is deleted and regenerated on every run.**
-
-### Where the shipped C++ comes from
-
-Most of the C++ that lands in `build/` is carried by this repository rather than written
-line by line by the compiler, and where a piece of it lives says who it belongs to.
-
-What is the same everywhere belongs to the last pass and sits beside it in
-`lib/bareruby_prot/pass/pass_12_cpp_source_generator/` inside the compiler gem: the runtime
-proper — the arena, the strings, the fixed-point arithmetic — and the declarations every
-binding answers.
-
-What differs by what is being called sits in one directory per binding,
-`lib/bareruby_prot/binding/<binding>/` inside whichever gem carries it: `binding.rb`
-implements those declarations in its own words, `build.rb` writes down what the second
-stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a machine. Each names
-its own translation units, because the name a piece of C++ is written under belongs with
-that C++ and nowhere else.
-
-**Nothing outside that directory knows the binding is there.** Two more files finish it —
-`targets.rb`, which registers the machines it reaches and the compositions it can produce
-for them, and `family.yml`, which says how `target add` should offer them — and with those
-six the compiler names no binding at all. It finds them by looking, in every gem installed
-at the desk, under one path. **The binding that needs no hardware is found the same way as
-the rest**, because the compiler is a gem too and beside itself *is* where a gem lives.
-
-`gems/bareruby_prot-binding-pico_sdk/`, `gems/bareruby_prot-binding-arduino/` and
-`gems/bareruby_prot-binding-stm32cube/` are three that have left. They are gems, built and
-installed like any other, and the machines they reach arrive with them — four Raspberry Pi
-Pico boards from the first, `arduino-mega2560` from the second, `stm32-nucleo-f446re` from
-the third:
-
-```sh
-cd gems/bareruby_prot-binding-pico_sdk
-gem build bareruby_prot-binding-pico_sdk.gemspec
-GEM_HOME=../../.gems gem install --local bareruby_prot-binding-pico_sdk-0.0.1.gem
-```
-
-`.gems/` sits under the repository for the same reason `.tools/` does, and is gitignored
-for the same reason too. A desk that installs them the ordinary way is served as well;
-this only adds a place to look. **Uninstall one and its machines are gone from
-`target list`, while everything else still compiles** — which is what an add-on being an
-add-on means.
-
-Packaging the first asked two questions that a single tree never had to answer.
-
-**Where the SDK is.** `toolchain.rb` reached for `.tools/` by walking up out of its own
-directory, which works only while it is part of the checkout. It is found from where the
-command was run instead. An SDK is a gigabyte of somebody else's release; it belongs to
-the desk, not to the gem that asks for it.
-
-**What the compiler owes a binding.** Every binding reached the shared second-stage runner
-with a relative path. Once one is packaged elsewhere that path leads nowhere, and **what
-was a convenience becomes an interface**: it is published under `bareruby_prot/` now and
-is required by name. Nothing else crossed that line — one file was the whole of what a
-binding needs from this side.
-
-**Packaging the second asked neither of them again.** One line of the Arduino binding
-changed — the same `.tools/` walk, corrected the same way — and the interface the first
-one established held with nothing added to it. The rest is a directory move: the
-`arduino-mega2560` build comes out byte for byte identical, 2702 B of flash and 186 B of
-RAM for `samples/heartbeat.rb` and the same `.hex`. That is worth stating because the two
-bindings do not resemble each other. This one's second stage is not a file list but a
-sketch directory that `toolchain.rb` gathers, and its board is written to over a serial
-port `flash.rb` asks `arduino-cli` to identify. Neither arrangement needed anything of
-the compiler that the first had not already asked for.
-
-**The third found the other half of the first question.** `.tools/` was one thing a
-binding had been reaching for by walking up out of its own directory; the STM32Cube bridge
-reached for a second, and it is not the desk's — `cube.sh` picked up the generated headers
-from `build/` at the top of the checkout, which is the *first stage's output from this very
-run*. A gem cannot walk up to that either. They are found from the target's own directory
-now, one level up, which is the same place the source list already reaches the shared
-translation units at. **The correction is not a workaround: a build should find what it
-produced from what it produced, and reaching the checkout root for it was only ever
-right by accident.**
-
-The NUCLEO build comes out byte for byte identical across the move — 5416 B of text and
-1644 B of bss for `samples/heartbeat.rb`, the same ELF — and this is the binding with the
-most to travel: a bash bridge that synchronizes into a project this repository does not
-own, a header that project includes, and the two prose files that say how to prepare it.
-All of them are in the gem, because a desk that installs this binding cannot use it until
-it has read them.
-
-One edge is worth knowing. `target.yml` records a composition, not a gem, so uninstalling
-a binding a recorded target names leaves that record pointing at nothing. The run stops
-and says which composition went missing, and every other target builds once the entry is
-removed or the gem is back.
-
-### The compiler and the ecosystem, from two gems
-
-There is nothing left at the top of this repository that runs. Everything that does is a
-gem under `gems/`, and the two that are not add-ons are the two halves of the tool itself:
-
-| gem | what it is | what it holds |
-| --- | --- | --- |
-| `bareruby_prot-compiler` | the first stage | every pass, the intermediate representations, the language runtime, the vocabulary a composition is spelled in, and the one binding that needs no hardware |
-| `bareruby_prot` | everything after it | the one executable, what a desk is (`target.yml`), `target add`, starting a second stage, flashing |
-
-The line between them is the line between the two stages. **That was already the rule, and
-it was already being kept — what changed is that breaking it now means reaching across a
-gem boundary rather than typing a relative path.** It can still be done. It cannot be done
-quietly.
-
-`./bareruby` at the top is not the command. It reads the two gems out of the working tree,
-adds `.gems/` as a place to look, and then runs the executable the ecosystem gem ships, so
-that a checkout cannot drift from what a user gets.
-
-Running wholly from installed gems is the same commands through a binstub, and produces
-the same artifacts. This is also the only check that catches a `spec.files` that misses a
-file — nothing that runs from the working tree can:
-
-```sh
-(cd gems/bareruby_prot-compiler && gem build *.gemspec &&
- GEM_HOME=../../.gems gem install --local bareruby_prot-compiler-0.0.1.gem)
-(cd gems/bareruby_prot && gem build *.gemspec &&
- GEM_HOME=../../.gems gem install --local bareruby_prot-0.0.1.gem)
-
-GEM_HOME=$PWD/.gems .gems/bin/bareruby build samples/heartbeat.rb --target=mega
-```
-
-**What each side reached for by knowing where it was.** The pattern the bindings found
-turned out to be the whole story here too, and every remaining case was the same mistake:
-
-- `build/` and `dump/`, the compiler's own output, were found beside `compiler.rb`. A
-  compiler that is a gem would have written a program's C++ into the installed gem.
-- `target.yml`, the desk's record, was found beside `deployment.rb`. This one is worth
-  dwelling on: a gem looking beside itself finds no file, and *no file is the ordinary
-  case*. So nothing failed. `bareruby build --target=arduino-mega2560` exited zero and put
-  its artifact under the composition's name instead of the name the desk had given it,
-  and only a byte-comparison against the previous build caught it. **A path that is wrong
-  is loud; a path that is wrong where an empty answer is legal is silent.**
-- `ref.rb`, the default source, was found beside the executable.
-
-All three are found from the project root now, which is what they always meant. Where that
-root is, is the next section.
-
-**Looking in every gem means looking in copies of one.** A checkout that carries a gem in
-its working tree and has the same gem installed finds the same binding twice, and loading
-both redefines every constant in it — `host` did exactly this the moment the compiler
-became a gem that could also be installed. A binding is identified by the name of the
-directory its declaration sits in, and the first one found wins; the load path is searched
-before the installed gems, so a working tree beats a copy of itself.
-
-**Which bindings there are is asked once.** `target add` used to glob for `family.yml` on
-its own, which meant two searches that had to agree about what a binding is and where one
-may live. The compiler already answers that question, so the family a binding offers is
-read from beside the declaration it answered with.
-
-Nothing about a build changed. `samples/heartbeat.rb` produces the same `.hex` on the Mega
-2560 and the same ELF on the NUCLEO as before either gem existed, whether built from the
-working tree or from `.gems/bin/bareruby` with nothing but installed gems on the path.
-
-`reserved/` holds the notes for three bindings that do not exist yet — ESP-IDF, UEFI and
-WASI. They were filed under a binding directory that no longer has anywhere to be.
-
-### What a build is made of, and who brings it
-
-An SDK and a cross compiler are gigabytes of somebody else's release. **Which ones a board
-needs is the binding's answer; where they go and how the two shapes they come in are
-brought down is this side's.** The ecosystem never learns what pico-sdk is — it knows how
-to verify an archive against a hash and how to clone a repository at a commit, and a
-binding that needs neither does not use it. `arduino-cli` installs its own cores, and
-there is nothing here for it to fit into.
-
-The lock beside the binding is the whole of what is known:
-
-```yaml
-arm_gcc:
-  from: https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel
-  directory: common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
-  archives:
-    linux-x64:
-      file: arm-gnu-toolchain-13.2.rel1-x86_64-arm-none-eabi.tar.xz
-      sha256: 6cd1bbc1d9ae57312bcd169ae283153a9572bd6a8e4eeae2fedfbc33b115fdbb
-sdk:
-  github: raspberrypi/pico-sdk
-  tag: 2.3.0
-  commit: 98a542c1a62fb549ffb5d66a3e5892b06276b670
-  submodules:
-    lib/tinyusb: 86ad6e56c1700e85f1c5678607a762cfe3aa2f47
-    lib/cyw43-driver: 055d64274b014dd7b1c2fc94d26e8a18face7124
-```
-
-Nothing says `latest`. The archive is pinned by release and SHA-256 and the hash is not
-optional — what is being unpacked is a compiler, and it came off the network. The
-repository is pinned by tag *and* commit, because a tag that has been moved is the failure
-a tag alone cannot see, and its submodules by commit, because a submodule moved underneath
-a release is a different SDK with the same name.
-
-Two of the SDK's five submodules are taken. btstack, lwip and mbedtls are a Bluetooth and
-networking stack this compiler has no way to ask for, and they are most of what a full
-checkout weighs: **75 MB against the 129 MB a plain `git clone --recursive` leaves**.
-
-Three properties are worth stating because a build depends on them:
-
-- **A desk that already has one says so, and nothing is fetched.** `PICO_SDK_PATH` and
-  `PICO_TOOLCHAIN_PATH` still win, and then the store is not even created. Which variable
-  covers which thing is known in the binding and nowhere else, which is why the skipping
-  lives there rather than in the fetching.
-- **The second run is silent and touches no network.** This runs underneath every build; a
-  check that reached out would make every build pay for the first one's convenience. The
-  question "is it already here" is answered from the disk.
-- **It says what it is taking before it takes it.** A gigabyte should not start in silence.
-
-The move from the project's `.tools/` to the desk's store changes nothing that reaches a
-board. `samples/heartbeat.rb` built for the Pico both ways gives **the same `.uf2`, byte
-for byte**, the same 30324 B of text and 3604 B of bss, and the same ELF once stripped.
-The unstripped ELFs differ, and only there: debug information records where the SDK it was
-compiled against was sitting.
-
-### Where a project starts
-
-`bareruby new hello` writes a project. **It builds without being edited**: the record it
-comes with holds one entry — the machine doing the compiling, named `host` so that what it
-builds is at `build/host/` on every desk — and `app/main.rb` blinks the onboard LED, which
-on this machine is a stub that says on fd2 what it would have done. So the first thing a
-newcomer does succeeds, and it succeeds before any hardware has been bought.
-
-```
-hello/
-├── .gitignore          build/, dump/, .tools/
-├── Gemfile             what this is built from, and every board it could be built for
-├── Gemfile.lock
-├── README.md
-├── bin/bareruby        the binstub. The entrance from here on
-├── config/target.yml   which compositions this project is built for
-└── app/main.rb         the program
-```
-
-`new` writes nothing into a directory that already holds any of the files it would write.
-Those are the files a project is edited in — the program, the Gemfile the boards are
-uncommented in, the record — and `new NAME` is easy to type a second time, out of shell
-history or after a first attempt stopped partway. What is in the way is named, and the
-tree is left exactly as it was.
-
-**The Gemfile is the catalogue.** Every board this ecosystem reaches is a line in it,
-commented out, and uncommenting one is the whole cost of being able to build for that
-board. Nothing else holds that list, so there is no second copy to fall out of step —
-which is also why the list is only ever read by a person. A command that read those
-comment lines would be taking gem names apart, and a gem name is words rather than fields.
-`target list` answers the neighbouring question, what is *installed*, and that answer comes
-from the gems themselves.
-
-```sh
-./bareruby new hello
-cd hello
-bin/bareruby build                 # host. Unedited, and it runs
-$EDITOR Gemfile                    # uncomment a board
-bundle install
-bin/bareruby target add            # it can offer that board now
-bin/bareruby deploy
-```
-
-**Where the root is, is bundler's answer.** A project names the ecosystem in its Gemfile
-and runs it through the binstub beside it, so by the time the executable is running,
-something has already had to find the Gemfile. `config/target.yml`, the source compiled
-when none is named, `build/` and `dump/` are all found from there, and the process is
-stood at the root before the compiler is even loaded — a gem that knows nothing about
-projects needs to be told nothing if it is standing in the right place.
-
-That answers the silent failure the move to gems turned up. **A run that cannot find the
-root does not get as far as reading a record**, so a desk that has recorded nothing and a
-run that has lost its way stop being the same silence. Nothing here walks a tree looking
-for a marker, and nothing had to decide what would count as one — which matters precisely
-because the file worth finding is the file allowed to be missing.
-
-This checkout has a `Gemfile` of its own for that reason, and for no other: it runs its own
-commands, so it needs to be a root the same way a generated project is.
-
-Two things in the template cannot be the same on two desks and are written when the project
-is: which machine is doing the compiling, and where the gems come from. The second is a
-prototype's problem only — nothing here is published, so a project reads these gems from
-the checkout or the GEM_HOME it was made from, where a released one would name a version.
-
-Running it wholly from installed gems produces the same firmware, byte for byte:
-
-```sh
-for g in gems/*/; do (cd $g && gem build *.gemspec -o /tmp/$(basename $g).gem); done
-GEM_HOME=/tmp/gh gem install --local --no-document /tmp/*.gem
-GEM_HOME=/tmp/gh PATH=/tmp/gh/bin:$PATH bareruby new /tmp/installed
-```
-
-The template is files rather than strings, so what a user gets can be read as what it will
-be — and files are exactly what a `spec.files` can leave behind. Nothing requires them, so
-nothing in this repository would notice them missing; the project would simply come out
-empty, and only an install-and-run says so. The dot file is shipped as `gitignore` and
-renamed on the way out, because under its own name it would take effect here and hide the
-very files it is meant to carry.
-
-### A class the language offers, from a gem
-
-`gems/bareruby_prot-stdlib-i2c/` is the other half of the same idea. **`I2C` is not a
-class this compiler knows.** What may be said to a bus, what those calls lower to, what
-the generated header must declare, and which translation unit a binding has to supply once
-it is reached — all four arrive from the gem, and nothing on this side mentions I2C.
-
-```sh
-cd gems/bareruby_prot-stdlib-i2c
-gem build bareruby_prot-stdlib-i2c.gemspec
-GEM_HOME=../../.gems gem install --local bareruby_prot-stdlib-i2c-0.0.1.gem
-```
-
-Uninstall it and `samples/i2c.rb` no longer compiles, the header no longer declares
-`bareruby_i2c_t`, and **everything else compiles exactly as it did**.
-
-The part worth keeping is how a peripheral and a binding agree without knowing each other.
-The peripheral names its own C functions and asks for a unit by a key of its own choosing;
-the binding says which file answers that key. Neither names the other, and the compiler
-holds neither list:
-
-```ruby
-units: { i2c: %i[bareruby_i2c_init bareruby_i2c_write bareruby_i2c_read],
-         i2c_read: %i[bareruby_i2c_read] }        # what the peripheral asks for
-
-UNITS = { i2c: I2C_FILE, i2c_read: I2C_READ_FILE } # what the binding answers
-```
-
-**Both gems have to be installed for a program that uses a bus on a board to build**, and
-they meet only in the generated C++. `samples/i2c.rb` for `raspberry-pi-pico` is 49568 B
-of text and a 118272 B `.uf2`, built from a declaration in one gem and an implementation
-in another.
-
-A gem is a build, not a checkout: **editing one changes nothing until it is built and
-installed again.** That is the whole difference between the two halves of `gems/` and the
-rest of this repository.
-
-`GPIO` left the same way, and cost two things I2C had not.
-
-**A block had to be declarable.** `GPIO#on_interrupt` takes a zero-argument block and turns
-it into a function running in the realtime context, and the compiler used to find that by
-looking for this class and this method **by name**, in two passes. The handler, the context
-and the checks over it are the language's and stay here; what is declared is only that this
-method's block becomes one:
-
-```ruby
-on_interrupt: { function: :bareruby_gpio_on_interrupt, parameter_types: %i[Int32],
-                keywords: { edge: 0 }, block: :realtime_handler }
-```
-
-One kind of block is declarable, because one kind exists. A second arrives with the second
-method that needs it.
-
-**Every binding's C++ had to be split.** `gpio`, `pwm`, `uart` and `adc` shared one
-translation unit that was always linked. **A peripheral that can be uninstalled cannot
-share a file with one that cannot** — remove the declarations and an implementation is left
-with nothing to implement against. Each binding now carries GPIO in a unit of its own, asked
-for by the same key mechanism I2C uses.
-
-That split is not only about removability. `samples/heartbeat.rb` lights the on-board LED
-and never touches a pin, and on the Mega 2560 it fell from **4190 B of flash to 3496 B**:
-694 B that were being linked for a class the program does not name. The Pico builds are
-unchanged, where `--gc-sections` was already dropping it.
-
-`PWM` followed, and answered a question the first two had not raised: **a binding need not
-implement a peripheral at all.** A NUCLEO board reached through the STM32Cube HAL has no
-PWM, and now says so by having no file for that key rather than by an entry leading
-nowhere. What used to be a link error at the second stage is a refusal at the first.
-
-`UART` was the one that took two units rather than one — sending and receiving, because
-receiving answers a variable-length string and reaches the arena to do it. It also carried
-two things off that the compiler had been holding on its behalf: **which calls answer a
-variable-length string** (read off the declared return types now, rather than a list of
-function names), and **where a printf expansion's variable arguments begin** (a fact about
-that function's signature, so the function's own declaration says it).
-
-`ADC` went the same way, and needed nothing new: a table, a declaration, one unit. **That
-is the point at which the road was finished** — the third class through it asked no
-question the first two had not already answered.
-
-The Mega 2560 kept getting smaller as each class left the always-linked file:
-`samples/heartbeat.rb` went 4190 B → 3496 B → **2702 B of flash**, and 657 B → **186 B of
-SRAM** once `Serial` stopped being linked into a program that never prints. Roughly a third
-of the original build was machinery for classes the program does not name.
-
-`OnboardLED` went last and was the one that did not fit. Every other class asks a binding
-for a file; this one has no single file to ask for, because the same indicator is a pin on
-one board and a radio on another. **So the key resolves to a question rather than a name**
-— the binding answers `:onboard_led` by asking the cell where that machine and it meet, and
-that cell was already there, saying which C++ this board's LED needs and which library it
-drags in. Nothing about the mechanism is specific to indicators: a unit whose file the
-machine decides is now expressible, and this is the first one.
-
-With it gone, **the compiler holds no peripheral at all.** `Peripheral` went from 156 lines
-to 93 and is a registry with nothing registered in it until a gem arrives:
-
-```
-bareruby_prot-stdlib-gpio     bareruby_prot-stdlib-pwm    bareruby_prot-stdlib-adc
-bareruby_prot-stdlib-uart     bareruby_prot-stdlib-i2c    bareruby_prot-stdlib-onboard_led
-```
-
-Uninstall all six and the compiler still builds every program that keeps to the language —
-integers, classes, arrays, strings, arenas, `puts`, `sleep`. What it can no longer do is
-name a piece of hardware, because nothing installed has told it that hardware exists.
-
-`main.cpp`, the one C++ file that is written rather than carried, is rendered from the
-low-level IR; the binding it is built for supplies the entry point and says whether output has
-anywhere to go — and for a machine whose `main` is owned by someone else, the file is
-called `bareruby_program.cpp` instead, because this side does not name an entry point it
-does not own.
-
-What is left of the pass is the assembly: it asks the low-level IR what the program
-reaches for, asks each source for its files, and hands each target the ones it needs. All
-of it was one file until the C++ grew to two thirds of it, which is a poor place to read
-any of it from.
+Only Ruby is needed for the first stage (Prism ships with Ruby 4.0). Every run rewrites
+`dump/`, `.bareruby/` and `build/`, none of which is tracked in git — they are outputs,
+and they changed on every commit while they were.
+
+`dump/` holds one binary snapshot (`.bin`) and one inspector text dump (`.txt`) per pass
+boundary. The pipeline reloads each representation from its own binary dump before handing
+it to the next pass, so resumability and byte-level determinism are exercised on every run.
 
 ## Second stage: STM32Cube HAL
 
@@ -1511,63 +768,6 @@ gitignored; `bareruby` deletes it on the next run along with the rest of `build/
 `build/pico2-pico_sdk-thumbv8m.main-none-eabihf` is built by exactly the same commands with the same SDK — the
 board's `CMakeLists.txt` carries the whole of the difference.
 
-Output for `samples/blink.rb`, measured on both boards from the same first stage:
-
-| Property | `raspberry-pi-pico` | `raspberry-pi-pico2` |
-| --- | --- | --- |
-| `.uf2` size | 23040 B | 22016 B |
-| UF2 family id | `0xE48BFF56` (RP2040) | `0xE48BFF57` (RP2350 Arm-S) |
-| UF2 target address | `0x10000000` (XIP flash base) | `0x10000000` (XIP flash base) |
-| `text` / `data` / `bss` | 15536 B / 0 B / 1484 B | 14768 B / 0 B / 1100 B |
-
-`arm-none-eabi-objdump -d bareruby_program.elf` shows the blink loop as Cortex-M0+
-instructions on the Pico and Cortex-M33 on the Pico 2 — the latter reaches for `strd`,
-which the M0+ does not have — with `bareruby_main` inlined into `main` on both by the
-release build.
-
-### What the on-board LED costs
-
-`samples/heartbeat.rb` — six lines, `OnboardLED.new` and `on` / `off` — built for all
-four boards from one first stage:
-
-| | `text` | `bss` | `.uf2` |
-| --- | --- | --- | --- |
-| `raspberry-pi-pico` | 15336 B | 1484 B | 22528 B |
-| `raspberry-pi-pico-w` | **270236 B** | 4172 B | 532480 B |
-| `raspberry-pi-pico2` | 14636 B | 1100 B | 22016 B |
-| `raspberry-pi-pico2-w` | **267580 B** | 3532 B | 527872 B |
-
-The 255 KB is the radio: its LED cannot be reached without `cyw43_arch_init()`, and that
-uploads the firmware the CYW43 runs. It is the largest single cost this repository has
-measured, an order of magnitude past the exception mechanism's 4.5 KB, and it buys one
-LED. `pico_cyw43_arch_none` is linked only by a wireless target that actually lights the
-LED, so a program that does not is unaffected — `samples/blink.rb` for
-`raspberry-pi-pico2-w` still links no CYW43 at all.
-
-### What moving from pico-sdk 1.5.1 cost
-
-Everything above is measured under 2.3.0. The 1.5.1 figures are kept here because they
-are what M0 through M4 were recorded against, and because the difference is worth
-knowing: both sets below are the same commit, the same compiler and the same programs,
-built for `raspberry-pi-pico` with only `PICO_SDK_PATH` changed.
-
-| Program | 1.5.1 `text` / `bss` / `.uf2` | 2.3.0 `text` / `bss` / `.uf2` |
-| --- | --- | --- |
-| `blink.rb` | 13236 / 1476 / 26624 | 15536 / 1484 / 23040 |
-| `blink.rb --debug` | 27052 / 3968 / 54272 | 30596 / 3604 / 53248 |
-| `blink.rb --no-exceptions` | 8684 / 1160 / 17408 | 10984 / 1168 / 13824 |
-| `interrupt.rb` | 14588 / 1496 / 29184 | 17672 / 1508 / 27648 |
-| `nilable.rb --no-exceptions` | 37116 / 1672 / 74240 | 39308 / 1680 / 70656 |
-| `m25.rb` | 73848 / 1604 / 147968 | 76068 / 1616 / 144384 |
-| `i2c.rb` | 92140 / 1836 / 184320 | 94412 / 1848 / 180736 |
-
-2.3.0 costs 2.2 to 3.1 KB more flash across the board and leaves RAM essentially where it
-was. The `.uf2` files are nonetheless smaller, which is not a contradiction: `picotool`
-packs the image into fewer 512-byte UF2 blocks than the `elf2uf2` in 1.5.1 did — 45 blocks
-against 52 for the default blink — so the file shrinks while the program in it grows.
-
-1.5.1 cannot build `raspberry-pi-pico2` at all, so there is no column for it there.
-
 ## Flashing a Pico from WSL
 
 Windows owns the USB device until it is handed to WSL, so a Pico in BOOTSEL mode does
@@ -1681,44 +881,6 @@ Two traps worth knowing:
 - udev publishes `/dev/disk/by-label/RPI-RP2` slightly after the block device appears,
   so a mount issued immediately after a reset can lose the race. The script retries.
 
-Verified end to end on a Raspberry Pi Pico. With a default build, `2e8a:0003`
-disappears from `lsusb` after flashing and GP25 (the on-board LED) blinks at the
-500 ms period written in `samples/blink.rb`; the board presents no USB interface at all,
-which is correct with both stdio channels disabled, and the button is needed to flash
-again. With `-d` it comes back as `2e8a:000a` with a `/dev/ttyACM0`, and successive
-edits were flashed by rerunning `bareruby flash` alone — verified by changing the blink
-period to 100 ms and then 800 ms and watching the LED follow.
-
-Verified again on a **Pico 2 W**, which is an RP2350 board. `flash.sh` wrote the
-`raspberry-pi-pico2` image (`Model: Raspberry Pi RP2350`, `Board-ID: RP2350` out of the
-bootloader's `INFO_UF2.TXT`), the board left BOOTSEL and came back as `2e8a:0009` with a
-`/dev/ttyACM0`. A `-d` build of
-
-```ruby
-counter = 0
-
-loop do
-  counter += 1
-  puts "bareruby on rp2350: #{counter}"
-  sleep_ms(500)
-end
-```
-
-printed to that port continuously — 20 lines in 10 seconds, the counter advancing by 19,
-which is `sleep_ms(500)` keeping time on the hardware. Ruby to BRAST to TAST to LIR to
-C++ to an RP2350 running the result.
-
-The LED is the part worth recording. `samples/blink.rb` was flashed onto the same board,
-and a variant logging each write showed `gp25 high` / `gp25 low` alternating once a
-second on the serial port while **the LED stayed dark the whole time**. The writes reach
-GP25; on a Pico 2 W the LED is not there. Both boards then took the same `samples/blink.rb`
-from one `bareruby deploy` invocation, and the Pico blinked while the Pico 2 W did not.
-
-`samples/heartbeat.rb` closes that gap and was flashed onto both. The Pico blinks at the
-100 ms on / 900 ms off it asks for, reaching its LED through GP25; the Pico 2 W blinks
-the same way, reaching its LED through the radio. One program, two routes, and the
-program names neither.
-
 ## Versions this was verified against
 
 | Tool | Version |
@@ -1733,29 +895,10 @@ program names neither.
 | avr-g++ | 7.3.0 (atmel3.6.1-arduino7) |
 | STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
 | STM32CubeProgrammer | 2.23.0 |
-| STM32CubeIDE | 2.2.0 (the hardware runs below, and nothing since) |
+| STM32CubeIDE | 2.2.0 (the STM32 hardware runs, and nothing since) |
 | GNU Tools for STM32 | 14.3.1 (likewise) |
 
-The STM32 target is now built by the `arm-none-eabi-g++` in the table above, the same one
-the Pico boards use. The hardware runs recorded here came before that: their translation
-units and ELF were built with STM32CubeIDE's GNU Tools for STM32 14.3.1, and headless
-build, SWD programming, LD2, and USART2 were verified on a
-physical NUCLEO-F446RE. I2C was linked against STM32CubeF4 HAL 1.28.3 but has not yet
-been exercised with an external device.
+Which of these targets have actually run on a board, and which are built but never
+flashed, is recorded in
+[`HISTORY.md`](HISTORY.md#which-targets-have-actually-run).
 
-The Pico hardware run was done under pico-sdk 1.5.1, which is what the repository used at
-the time; the Pico 2 W run and the two-board run were done under 2.3.0.
-
-Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w` have run on
-real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
-because neither board is here.
-
-`arduino-mega2560` has run on real hardware as well. `samples/heartbeat.rb` blinks the
-board's LED at the 100 ms on / 900 ms off it asks for; `samples/features.rb`,
-`samples/fixed.rb` and `samples/string.rb` printed over the board's serial port and were
-compared line for line against the same programs run on the host, and against real Ruby
-where the two are meant to agree; and `samples/logger.rb` said `logger ready` through
-`uart.puts` and then said nothing for six seconds, which is a pulled-up input reading
-high some sixty times. The board is an ELEGOO MEGA 2560 R3 rather than the Arduino it
-copies — the same chip, the same bridge, and Arduino's own vendor and product ids, so
-nothing between the Ruby and the flash can tell the two apart.
