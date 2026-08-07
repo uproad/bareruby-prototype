@@ -7,3 +7,9 @@ targets:
   - raspberry-pi-pico2
   - raspberry-pi-pico2-w
 asks: []
+# What `debug: true` buys on these boards, said where the question is asked. It is the
+# one field whose answer decides how every later flash goes rather than how this one
+# build turns out, and the question alone does not look like it.
+debug_hint:
+  - "true keeps the board visible over USB while it runs, so the next flash needs no"
+  - "BOOTSEL button and puts reaches a serial port. It roughly doubles the image."
