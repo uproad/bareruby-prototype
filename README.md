@@ -85,8 +85,18 @@ next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing 
 than the board. [More below](#flashing-a-pico), including mounting without
 `sudo`.
 
-**macOS** — untried. `flash.sh` reads `/sys`, so flashing a Pico is Linux-only; `compile`
-and `build` reach for neither.
+**macOS** — nothing to set up, and one step less than Linux: the bootloader volume is
+mounted before the flasher runs, so no `fstab` line and no `sudo` are involved. Hold
+BOOTSEL while plugging the board in:
+
+```sh
+$ mount | grep msdos
+/dev/disk4s1 on /Volumes/NO NAME (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+```
+
+`NO NAME` rather than `RPI-RP2` because this macOS does not read the FAT label the
+bootloader sets. Nothing depends on the name. [More below](#on-macos), including the one
+thing not to ask macOS about.
 
 `deploy` fetches the SDK and the cross compiler the first time it needs them. What every
 verb does is [further down](#the-commands).
@@ -453,7 +463,7 @@ followed across a reset by its serial. An RP2350 happens to report the same numb
 both modes; do not rely on that.
 
 `flash.sh --list`, in the pico-sdk binding's directory, prints what is attached with
-serials and the `/etc/fstab` line for each.
+serials, and on Linux the `/etc/fstab` line for each.
 
 ### From WSL
 
@@ -474,14 +484,38 @@ board that stays plugged in: without it every reset drops the board out of WSL, 
 next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
 than the board.
 
+### On macOS
+
+There is nothing to arrange. macOS mounts the bootloader volume as it arrives, so the
+`fstab` line and the `sudo` re-exec below have no counterpart here — the flasher only has
+to find where the volume was put, and reads that out of the kernel's mount table. It waits
+for it, because the disk is registered as the device is enumerated and mounted a little
+after that by another process, which a board arriving out of a reset would otherwise
+outrun.
+
+Two things are worth knowing. The volume is `/Volumes/NO NAME`, so the board is identified
+through `ioreg` and the volume through its `INFO_UF2.TXT` rather than by name. And a
+*Disk Not Ejected Properly* notice at the end of every flash is what success looks like:
+the board reboots the instant the last block lands, so the volume cannot be handed back.
+Copying a `.uf2` across by hand, which is how Raspberry Pi documents it, produces the same
+notice.
+
+**Do not ask `diskutil` or `system_profiler` about an attached board.** Both walk the
+device to answer, so a mass storage device that has stopped replying makes them *hang*
+rather than fail — an uninterruptible wait that `kill -9` does not end either. A board in
+BOOTSEL can enter that state; unplug it and plug it back in with BOOTSEL held, which
+releases whatever was waiting on it. `ioreg` reads the kernel's registry instead and
+returns whatever the bus is doing, which is why it is the only thing the flasher asks.
+
 ### Without the BOOTSEL button
 
 A firmware built with `-d` keeps its USB CDC interface up, and pico-sdk reboots the board
 into BOOTSEL when that port is opened at 1200 baud. The flasher does this itself: with no
-bootloader volume present it looks for a `/dev/ttyACM*`, resets it, waits for the board to
-come back as mass storage, and writes. Edit, rebuild, rerun — no button, no replugging.
+bootloader volume present it looks for the port the firmware brought up — `/dev/ttyACM*`
+on Linux, `/dev/cu.usbmodem*` on macOS — resets it, waits for the board to come back as
+mass storage, and writes. Edit, rebuild, rerun — no button, no replugging.
 
-### Mounting without sudo
+### Mounting without sudo, on Linux
 
 Only the mount needs privileges. One line in `/etc/fstab` per board removes even that:
 
