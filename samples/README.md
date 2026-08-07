@@ -8,8 +8,9 @@ root:
 ruby compile.rb samples/blink.rb  # first stage only
 ```
 
-The toolchain, the build steps and the milestones these programs stand for are in the
-[top-level README](../README.md). `ref.rb` — the representative program from the design
+The toolchain and the build steps are in the [top-level README](../README.md), and the
+milestones these programs stand for are in [`HISTORY.md`](../HISTORY.md). `ref.rb` — the
+representative program from the design
 documents — stays at the repository root, because it is what `compile.rb` compiles when
 it is given no argument.
 
