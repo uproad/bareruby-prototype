@@ -523,6 +523,28 @@ from one `bareruby deploy` invocation, and the Pico blinked while the Pico 2 W d
 the same way, reaching its LED through the radio. One program, two routes, and the
 program names neither.
 
+### From a macOS host
+
+The same route was verified from **macOS** rather than Linux or WSL — Apple silicon,
+macOS 15 — on a Raspberry Pi Pico. Nothing in the build had to change: the darwin-arm64
+cross toolchain and pico-sdk 2.3.0 come from the same pinned `sources.lock.yml`, and
+`raspberry-pi-pico` built through to a `.uf2` unmodified.
+
+`flash.sh --list` found the board through `ioreg` — `E0C9125B0D9B rp2040 bootsel
+/dev/disk4s1` — and the volume macOS had already mounted at `/Volumes/NO NAME` answered
+`UF2 Bootloader v3.0`, `Model: Raspberry Pi RP2`, `Board-ID: RPI-RP2`. A `-d` build of
+`samples/blink.rb` (52736 bytes) was written from BOOTSEL, after which the board came back
+as `E6658C344B689A25 rp2040 running /dev/cu.usbmodem1201`: the flash id against the
+bootrom id, the two-serial behaviour Linux shows, seen here too. The default build
+(22528 bytes) was then written **without the button**, over the 1200-baud reset, and GP25
+blinked at the 500 ms period `samples/blink.rb` asks for. Afterwards `--list` reports
+nothing attached, which is correct for a default build.
+
+One thing macOS makes worse rather than easier: a board whose mass storage has stopped
+replying makes `diskutil` and `system_profiler` hang uninterruptibly, past `kill -9`,
+because both walk the device to answer. Everything the flasher asks about hardware goes to
+`ioreg`, which reads the kernel's registry and returns whatever the bus is doing.
+
 ### Which targets have actually run
 
 The STM32 target is now built by the `arm-none-eabi-g++` the
