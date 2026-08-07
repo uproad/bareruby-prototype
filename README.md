@@ -163,7 +163,9 @@ deploy: 1/3 · 15.4s
 
 A cell is `.` before its stage, seconds with a `+` while it runs, seconds when it is done,
 and `FAIL` when the stage refused. Every artifact is at `build/<target>/`, so the row says
-all of the path but the file name. **How far along a stage is, is not asked** — cmake
+all of the path but the file name. The last line says how it went once it is over —
+`deploy: success · 3/3 · 31.8s`, or `failed` where a target did not get through every
+stage it was asked for. **How far along a stage is, is not asked** — cmake
 counts translation units, and the link and the image that follow them are worth more than
 any of them, so a proportion taken from that count reads 90% for as long as it reads
 anything.

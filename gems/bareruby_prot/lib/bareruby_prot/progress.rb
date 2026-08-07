@@ -31,6 +31,8 @@ module BareRubyProt
     RUNNING = "+"
     PENDING = "."
     FAILED = "FAIL"
+    SUCCESS = "success"
+    FAILURE = "failed"
     COLUMN = 9
     COLUMNS = 80
     NAMES = 6
@@ -80,7 +82,10 @@ module BareRubyProt
       live? ? render : @out.puts("#{row.directory.ljust(names)}-> #{path}  #{@artifacts[row].last}")
     end
 
-    def finish = live? ? render : @out.puts(summary)
+    def finish
+      @ended = true
+      live? ? render : @out.puts(summary)
+    end
 
     def finished(row, stage, answer)
       @spent[[row, stage]] = Time.now - @started[[row, stage]]
@@ -178,7 +183,22 @@ module BareRubyProt
                 "#{said.ljust(5)}#{seconds(@spent[[row, stage]])}")
     end
 
-    def summary = "#{@command}: #{done}/#{@rows.length} · #{seconds(Time.now - @begun)}"
+    # The last line is the one left on the screen when everything else has scrolled past,
+    # so it is the one that says how it went. **Only once it is over**: a run still working
+    # has not failed, and a verdict standing over stages that have yet to happen would be
+    # saying it had.
+    def summary
+      "#{@command}: #{[verdict, "#{done}/#{@rows.length}", seconds(Time.now - @begun)].compact.join(' · ')}"
+    end
+
+    # Every target through every stage of what was asked for, or it did not do what was
+    # asked. A run that stopped early answers the same way as one that was refused: the
+    # stages it never reached are stages that did not happen.
+    def verdict
+      return unless @ended
+
+      done == @rows.length ? SUCCESS : FAILURE
+    end
 
     def done
       @rows.count do |row|
