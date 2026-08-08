@@ -17,5 +17,11 @@ Gem::Specification.new do |spec|
   # where they are, and to bundler a directory with no gemspec in it is not a gem.
   spec.files = Dir["*.gemspec"] + Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]
+  # **What this needs to be read at all.** The declaration form, the registry it registers
+  # into and the vocabulary it is written in are the first stage's, so a class is
+  # meaningless without it. A user never writes this line in a Gemfile: naming the class is
+  # what brings the compiler with it.
+  spec.add_dependency "bareruby_prot-compiler"
+
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

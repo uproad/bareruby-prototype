@@ -23,5 +23,12 @@ Gem::Specification.new do |spec|
   spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,sh,yml,erb}"] +
                ["README.md", "readme_jp.md", "setup.md", "build.md"]
   spec.require_paths = ["lib"]
+  # **What this needs to be read at all — both public faces.** A binding is written in the
+  # words of what it calls, which is the first stage's vocabulary, and it starts a second
+  # stage and writes a machine, which is the ecosystem's. Naming both is what the line
+  # crossed here costs; a user who uncomments this gem in a Gemfile gets both with it.
+  spec.add_dependency "bareruby_prot"
+  spec.add_dependency "bareruby_prot-compiler"
+
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end
