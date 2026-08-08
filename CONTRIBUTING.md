@@ -108,6 +108,20 @@ Two consequences are worth knowing:
   target names leaves that record pointing at nothing. The run stops and says which
   composition went missing, and every other target builds once the entry is removed or
   the gem is back.
+- **A binding that offers nothing is a broken gem, and stops at itself.** `family.yml` is
+  read straight from somebody else's gem, so it is the one place their mistake could take
+  a command down with it — and it did: one binding without an offer, and neither
+  `target add` nor `target list` worked for any of them. A binding that registers machines
+  and then offers no way to choose one is broken rather than answering, so it is said —
+  once, on `stderr`, naming the gem — and then left out while everything else answers as
+  usual. Missing, unreadable, or short of one of the three answers an offer is made of
+  (`key`, `label`, `targets`) are all the same situation: what the reader can do about it
+  is the same, and listing the ways to be wrong is writing a checker.
+
+  ```
+  WARN: family.yml is not readable in gem bareruby_prot-binding-acme_hal
+  (/home/you/.gem/.../lib/bareruby_prot/binding/acme_hal)
+  ```
 
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output
