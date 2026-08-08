@@ -28,17 +28,26 @@ module BareRubyProt
     # command is neither — all three would be asked for a root they have no reason to have,
     # and the first thing anyone types after installing is one of them. Named this way
     # round, a command that is not on this list is simply run where it was typed.
-    # `target add` writes into the project and `target list` reads the gems that are
-    # installed, so the verb is not enough to answer for both and the pair is named.
+    # `target add` writes into the project and `target list` says what that project could
+    # record, so both belong to one, and the verb is not enough to answer for either half
+    # of the pair on its own.
     ROOTED = ["compile", "build", "flash", "deploy", "init",
-              "target add", "tools install"].freeze
+              "target add", "target list", "tools install"].freeze
 
+    # **What a run can see is what this project's bundle holds.** A gem installed at the
+    # desk for some other project is not part of this answer — not even by existing. A
+    # desk carries several projects, each holding a version of the same gem, and a
+    # declaration that differs by a version is C++ that differs by a version: what would
+    # arrive is not a longer list but somebody else's program. Standing the run in the
+    # bundle is the whole of the answer, because then nothing downstream has to ask which
+    # gems were the project's — the ones it can reach are the only ones there are.
     def self.stand(arguments)
       return if (ROOTED & [arguments.first, arguments.take(2).join(" ")]).empty?
 
       # Named before the ground moves. A source given relative to where it was typed means
       # that place, not the root the next line steps to.
       arguments.map! { |word| word.end_with?(".rb") ? File.expand_path(word) : word }
+      Bundler.setup
       Dir.chdir(Bundler.root)
     end
   end

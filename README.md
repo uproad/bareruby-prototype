@@ -135,7 +135,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target list` | every machine that can be targeted, by family | no |
+| `target list` | every machine this project's Gemfile can target, by family | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
 | `--help` | the usage, on output, with a status that says nothing went wrong | no |

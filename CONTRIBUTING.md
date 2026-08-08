@@ -82,9 +82,16 @@ up out of a tree the build left. The one that needs no hardware has none of that
 **Nothing outside that directory knows the binding is there.** Two more files finish it —
 `targets.rb`, which registers the machines it reaches and the compositions it can produce
 for them, and `family.yml`, which says how `target add` should offer them — and with those
-six the compiler names no binding at all. It finds them by looking, in every gem installed
-at the desk, under one path. **The binding that needs no hardware is found the same way as
+six the compiler names no binding at all. It finds them by looking, in every gem this run
+can reach, under one path. **The binding that needs no hardware is found the same way as
 the rest**, because the compiler is a gem too and beside itself *is* where a gem lives.
+
+**Every gem this run can reach is every gem in this project's bundle**, which is not the
+same as every gem on the desk. A desk carries several projects, each holding its own
+version of the same binding, and a declaration that differs by a version is C++ that
+differs by a version — so what a neighbouring project installed must not reach this
+answer, not even by existing. The entrance stands the run in the bundle before anything is
+looked for, which is why nothing further down has to ask whose a gem is.
 
 Two consequences are worth knowing:
 
