@@ -81,12 +81,62 @@ module BareRubyProt
     # field is laid out empty and filled in when flashing says which one it needs.
     UNASKED = { "boards" => [] }.freeze
 
+    # What an offer is made of: the family's own short key, the heading a person reads, and
+    # the compositions to put under it. **A binding that cannot answer all three offers
+    # nothing**, and none of the three has a stand-in worth inventing — a heading made up
+    # here would make a gem that forgot one look like a gem that has one.
+    OFFERED = %w[key label targets].freeze
+
     def self.families
-      found = Target.declarations.map do |declaration|
-        YAML.safe_load_file(File.join(File.dirname(declaration), OFFER))
-      end
+      found = Target.declarations.filter_map { |declaration| offer_of(declaration) }
       own, rest = found.partition { |one| one["key"] == OWN }
       own + rest.sort_by { |one| one["label"] }
+    end
+
+    # **A gem that is not what it says it is stops at itself.** This is the one place
+    # somebody else's file is taken at its word, so it is the one place their mistake could
+    # take this command down with it — and it did: one binding without an offer, and
+    # neither `target add` nor `target list` worked for any of them.
+    #
+    # A binding that registers machines and then offers no way to choose one is a broken
+    # gem rather than a binding with an answer, which is why this is said rather than
+    # passed over. But it is not this program's fault and not the fault of whoever typed
+    # the command, so it is neither a backtrace nor a refusal: it is said once, the gem is
+    # left out, and everything else answers as usual.
+    #
+    # **A file that never arrived and a file that does not answer are different mistakes.**
+    # Nothing shipped is a packaging one — a gemspec listing `lib/**/*.rb` takes the binding
+    # and leaves its offer behind, and the gem looks complete from the working tree it was
+    # built in. Something shipped that does not answer is a content one, in a file that is
+    # there to be looked at. Different errands, so different sentences.
+    #
+    # Further than that is not worth telling apart: unreadable, and short of one of the
+    # three answers, send whoever wrote it to the same file — which is why asking for the
+    # three by name is enough of a check, and enumerating the ways to be wrong would be
+    # writing a checker.
+    def self.offer_of(declaration)
+      at = File.join(File.dirname(declaration), OFFER)
+      unless File.exist?(at)
+        warn "WARN: #{OFFER} not found in gem #{gem_of(declaration)}"
+        warn "(#{File.dirname(declaration)})"
+        return nil
+      end
+
+      # **Three ways a file that is there can fail to answer, and no fourth**: it is not
+      # YAML, it is not a mapping, or it is short of one of the three. Each arrives as its
+      # own kind, so asking for the three is the whole of the check. Anything else raised
+      # in here is this program's own mistake, and that is a backtrace rather than a
+      # sentence about somebody's gem.
+      Hash(YAML.safe_load_file(at)).tap { |offer| offer.fetch_values(*OFFERED) }
+    rescue Psych::Exception, TypeError, KeyError
+      warn "WARN: #{OFFER} is broken in gem #{gem_of(declaration)}"
+      warn "(#{File.dirname(declaration)})"
+      nil
+    end
+
+    def self.gem_of(declaration)
+      found = Gem.loaded_specs.values.find { |one| declaration.start_with?(one.full_gem_path) }
+      found&.name || File.basename(File.dirname(declaration))
     end
 
     def self.list
@@ -158,7 +208,9 @@ module BareRubyProt
       # way through the machines instead, and lives inside that one question.
       def steps = %w[machine name debug] + asks.map { |ask| ask["key"] } + ["confirm"]
 
-      def asks = family ? family["asks"] : []
+      # Asking nothing beyond the machine is the ordinary case, so a family that says
+      # nothing about it is one of those rather than one to complain about.
+      def asks = family ? family["asks"] || [] : []
 
       # **What a debug build buys is the binding's answer, so the binding is what says
       # it.** Only one of them means anything by the field: a pico-sdk firmware keeps its
