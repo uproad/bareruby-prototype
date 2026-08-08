@@ -266,14 +266,13 @@ everything after it. Dim means one thing throughout — nobody has said this yet
 writes is an entry:
 
 ```yaml
-bareruby:
-  targets:
-    - name: pico
-      machine: pico
-      binding: pico_sdk
-      triple: thumbv6m-none-eabi
-      debug: true
-      boards: []
+targets:
+  - name: pico
+    machine: pico
+    binding: pico_sdk
+    triple: thumbv6m-none-eabi
+    debug: true
+    boards: []
 ```
 
 An empty name writes the composition; Tab fills in the machine's own name instead. The
