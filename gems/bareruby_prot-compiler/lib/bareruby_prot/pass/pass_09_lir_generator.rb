@@ -2,7 +2,7 @@
 
 require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
-require_relative "pass_09_lir_generator/i2c_payload"
+require_relative "pass_09_lir_generator/bytes_sent"
 require_relative "pass_09_lir_generator/arena_storage"
 require_relative "pass_09_lir_generator/binding_storage"
 require_relative "pass_09_lir_generator/function_scope"
@@ -655,7 +655,7 @@ module BareRubyProt
           lower_function_call(callee, arguments)
         when :new, :binding_new then lower_constructor(callee, arguments, type)
         when :user_method, :binding_method, :binding_printf then lower_method_call(receiver, callee, arguments)
-        when :binding_i2c then lower_i2c_call(receiver, callee, arguments)
+        when :binding_payload then lower_payload_call(receiver, callee, arguments)
         end
       end
 
@@ -709,42 +709,33 @@ module BareRubyProt
                           @value_layout.value_type_of(callee[:return_type]))]
       end
 
-      # I2C's heterogeneous outputs become one arena string first, so the binding sees
-      # one byte pointer and one length and can keep the whole write in one transaction.
-      def lower_i2c_call(receiver, callee, arguments)
+      # **A call that sends bytes sends one pointer and one length**, however many values
+      # of whatever kinds the program listed: they become one string in the region first,
+      # so that the binding sees one transaction rather than a list. Where they begin, and
+      # whether the region is also handed over for what comes back, are both read off the
+      # declaration — this side recognises no class here.
+      def lower_payload_call(receiver, callee, arguments)
+        signature = Peripheral[callee[:owner]].method_signature(callee[:name])
         receiver_statements, receiver_expression = lower_expression(receiver)
-        arena, address, *rest = arguments
+        arena, *written = arguments
         arena_statements, arena_expression = lower_expression(arena)
-        address_statements, address_expression = lower_expression(address)
+        given_statements, given_expressions = lower_arguments(written[0...signature[:payload_from]])
+        sent_statements, sent_bytes, sent_length =
+          payload.flattened(@lir.reference_to(arena_expression), written[signature[:payload_from]..]) do |one|
+            lower_expression(one)
+          end
 
-        if callee[:name] == :read
-          length, *outputs = rest
-          length_statements, length_expression = lower_expression(length)
-        else
-          outputs = rest
-          length_statements = []
-        end
-
-        output_statements, output_bytes, output_length =
-          payload.flattened(@lir.reference_to(arena_expression), outputs) { |output| lower_expression(output) }
         binding_arguments = [@lir.reference_to(receiver_expression)]
-        if callee[:name] == :read
-          binding_arguments += [
-            @lir.reference_to(arena_expression), address_expression, length_expression,
-            output_bytes, output_length
-          ]
-        else
-          binding_arguments += [address_expression, output_bytes, output_length]
-        end
+        binding_arguments << @lir.reference_to(arena_expression) if signature[:return_type] == :arena_string
+        binding_arguments += given_expressions + [sent_bytes, sent_length]
 
-        statements = receiver_statements + arena_statements + address_statements +
-                     length_statements + output_statements
-        [statements, @lir.create_call(
-          callee[:function], binding_arguments, @value_layout.value_type_of(callee[:return_type])
-        )]
+        [receiver_statements + arena_statements + given_statements + sent_statements,
+         @lir.create_call(
+           callee[:function], binding_arguments, @value_layout.value_type_of(callee[:return_type])
+         )]
       end
 
-      def payload = I2cPayload.new(@lir, @tast, @value_layout, @function_scope)
+      def payload = BytesSent.new(@lir, @tast, @value_layout, @function_scope)
 
       def arena_storage = ArenaStorage.new(@lir, @function_scope, @value_layout)
 

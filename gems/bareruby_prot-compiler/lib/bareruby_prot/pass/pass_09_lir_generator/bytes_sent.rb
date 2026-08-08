@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
 module BareRubyProt
-  # The bytes one I2C call sends. A program writes whatever it has — an integer, a static
+  # The bytes one call sends. A program writes whatever it has — an integer, a static
   # string, a fixed-capacity array, an array or a string from a region — and all of it has
-  # to reach the bus as one contiguous sequence, because one call in Ruby is one
+  # to reach the other side as one contiguous sequence, because one call in Ruby is one
   # transaction on the wire. They are appended in order to a string taken from the region
   # the call was given, which is also what makes the length a run-time answer.
-  class I2cPayload
+  #
+  # **Which calls send bytes this way is not known here.** A declaration says where in a
+  # call's arguments they begin, and everything from there on arrives as one list.
+  class BytesSent
     def initialize(low_ir, typed_ast, value_layout, function_scope)
       @lir = low_ir
       @tast = typed_ast
@@ -14,8 +17,8 @@ module BareRubyProt
       @function_scope = function_scope
     end
 
-    # Each output is lowered as it is appended, by the block, because what an output is
-    # made of is the pass's recursion rather than this one's business.
+    # Each value is lowered as it is appended, by the block, because what one is made of
+    # is the pass's recursion rather than this one's business.
     def flattened(arena_reference, outputs, &lower)
       return [[], @lir.create_const_string(""), @lir.create_const_int(0, :int32)] if outputs.empty?
 

@@ -18,9 +18,20 @@ module BareRubyProt
       parameter_types: %i[Int32],
       keywords: { frequency: 100_000 }
     },
+    # **`payload_from` is where the bytes this call sends begin.** One call in Ruby is one
+    # transaction on the wire, so everything from that argument on — integers, strings,
+    # arrays, whatever the program had — reaches the bus as one contiguous sequence, and
+    # the binding is handed one pointer and one length. It is a fact about this call's
+    # shape, so it is said here rather than in a table the compiler keeps: a write sends
+    # everything after the address, and a read sends everything after the address and the
+    # length it asks for.
     methods: {
-      write: { function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32 },
-      read: { function: :bareruby_i2c_read, parameter_types: [], return_type: :arena_string }
+      write: {
+        function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32, payload_from: 1
+      },
+      read: {
+        function: :bareruby_i2c_read, parameter_types: [], return_type: :arena_string, payload_from: 2
+      }
     },
 
     # `require "i2c"` names no file to find. The class is built in wherever it came from,
