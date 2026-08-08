@@ -34,7 +34,7 @@ module BareRubyProt
     # is what happens after a build that worked, not the answer to whether it did — and a
     # run that reads the wrong one of those calls a failed build a success.
     def self.run(directory, options: {})
-      return false unless Toolchain.run(directory, Toolchain.recorded_command(directory), environment)
+      return false unless Toolchain.as_recorded(directory, environment)
 
       IMAGES.each do |image|
         made = File.join(directory, "build", image)

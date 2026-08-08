@@ -407,7 +407,10 @@ module BareRubyProt
 
     def self.key = :host
 
-    def self.toolchain = HostToolchain
+    # **No toolchain of its own**, which is what keeps this binding on one side of the
+    # line. One g++ invocation is what the manifest already says in full, so there is
+    # nothing left for a toolchain here to add — and a toolchain is where a binding would
+    # reach for the side of this that runs the second stage. This one never has to.
 
     def self.flash = HostFlash
 

@@ -11,6 +11,7 @@ require_relative "deployment"
 require_relative "catalog"
 require_relative "progress"
 require_relative "scaffold"
+require_relative "toolchain"
 require_relative "tools"
 
 module BareRubyProt
@@ -171,7 +172,7 @@ module BareRubyProt
         place(entry)
       end
       worked = @progress.at(:build, [entry]) do
-        entry.target.binding.toolchain.run(directory_of(entry), options: entry.options)
+        toolchain_of(entry).run(directory_of(entry), options: entry.options)
       end
       made(entry) if worked
       worked
@@ -286,7 +287,7 @@ module BareRubyProt
     # that made it: every artifact is at build/<target>/, so the row already says all of the
     # path but the file name.
     def made(entry)
-      made = entry.target.binding.toolchain.artifact(directory_of(entry))
+      made = toolchain_of(entry).artifact(directory_of(entry))
       kept = File.join(ARTIFACTS, entry.directory, File.basename(made))
       FileUtils.mkdir_p(File.dirname(kept))
       FileUtils.cp(made, kept)
@@ -294,6 +295,15 @@ module BareRubyProt
     end
 
     ARTIFACTS = File.expand_path("build", Dir.pwd)
+
+    # A binding with no toolchain is one whose second stage the manifest already describes
+    # in full, which is an answer rather than something missing: what to run and what it
+    # leaves behind are written down, and running them is this side's own work. A binding
+    # names a toolchain when it has something to add around that.
+    def toolchain_of(entry)
+      found = entry.target.binding
+      found.respond_to?(:toolchain) ? found.toolchain : Toolchain
+    end
 
     def debug?(entry) = @debug || entry.debug
 

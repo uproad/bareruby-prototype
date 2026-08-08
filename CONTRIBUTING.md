@@ -37,6 +37,14 @@ The line between them is the line between the two stages. Breaking it means reac
 across a gem boundary rather than typing a relative path: it can still be done, but it
 cannot be done quietly.
 
+**What crosses that line is a binding, never the compiler.** A binding is written in the
+words of what it calls on one side and starts a second stage on the other, so the gem that
+carries one carries both dependencies — which is why the compiler gem can only carry a
+binding that has no second stage of its own to start. The one that needs no hardware is
+carried there for that reason rather than by privilege: the moment it reached for the half
+that runs a second stage, the two gems depended on each other, and the first stage stopped
+being loadable on its own.
+
 `./bareruby` at the top is not the command. It reads the two gems out of the working tree,
 adds `.gems/` as a place to look, and then runs the executable the ecosystem gem ships, so
 that a checkout cannot drift from what a user gets.
@@ -61,6 +69,15 @@ implements those declarations in its own words, `build.rb` writes down what the 
 stage is, `toolchain.rb` runs it, and `flash.rb` puts the result on a machine. Each names
 its own translation units, because the name a piece of C++ is written under belongs with
 that C++ and nowhere else.
+
+**`toolchain.rb` is the one of those that a binding may leave out.** What to run and what
+that run leaves behind are already in the manifest `build.rb` wrote, and reading those two
+lines back is the ecosystem's own work rather than any machine's — so a binding with
+nothing to add around them declares no toolchain, and the default answers for it. A
+binding writes one when it has something of its own to say: paths an SDK has to be told
+before it will run, sources to gather where a build system expects them, images to bring
+up out of a tree the build left. The one that needs no hardware has none of that, and one
+`g++` line is the whole of its second stage.
 
 **Nothing outside that directory knows the binding is there.** Two more files finish it —
 `targets.rb`, which registers the machines it reaches and the compositions it can produce
