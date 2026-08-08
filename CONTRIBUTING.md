@@ -114,14 +114,26 @@ Two consequences are worth knowing:
   `target add` nor `target list` worked for any of them. A binding that registers machines
   and then offers no way to choose one is broken rather than answering, so it is said —
   once, on `stderr`, naming the gem — and then left out while everything else answers as
-  usual. Missing, unreadable, or short of one of the three answers an offer is made of
-  (`key`, `label`, `targets`) are all the same situation: what the reader can do about it
-  is the same, and listing the ways to be wrong is writing a checker.
+  usual.
+
+  **A file that never arrived and a file that does not answer are different mistakes**, so
+  they are said differently. Nothing shipped is a packaging one: a gemspec listing
+  `lib/**/*.rb` takes the binding and leaves its offer behind, and the gem looks complete
+  from the working tree it was built in. Something shipped that does not answer is a
+  content one, in a file that is there to be looked at.
 
   ```
-  WARN: family.yml is not readable in gem bareruby_prot-binding-acme_hal
+  WARN: family.yml not found in gem bareruby_prot-binding-acme_hal
+  (/home/you/.gem/.../lib/bareruby_prot/binding/acme_hal)
+
+  WARN: family.yml is broken in gem bareruby_prot-binding-acme_hal
   (/home/you/.gem/.../lib/bareruby_prot/binding/acme_hal)
   ```
+
+  Further than that is not told apart: unreadable, and short of one of the three answers an
+  offer is made of (`key`, `label`, `targets`), send whoever wrote it to the same file.
+  Asking for the three by name is the whole of the check; enumerating the ways to be wrong
+  would be writing a checker.
 
 `main.cpp`, the one C++ file that is written rather than carried, is rendered from the
 low-level IR; the binding it is built for supplies the entry point and says whether output

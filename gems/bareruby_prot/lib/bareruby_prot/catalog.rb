@@ -104,20 +104,27 @@ module BareRubyProt
     # the command, so it is neither a backtrace nor a refusal: it is said once, the gem is
     # left out, and everything else answers as usual.
     #
-    # How it is broken is not worth telling apart. Missing, unreadable, or short of an
-    # answer, what the reader can do about it is the same, and listing the ways to be
-    # wrong is writing a checker.
+    # **A file that never arrived and a file that does not answer are different mistakes.**
+    # Nothing shipped is a packaging one — a gemspec listing `lib/**/*.rb` takes the binding
+    # and leaves its offer behind, and the gem looks complete from the working tree it was
+    # built in. Something shipped that does not answer is a content one, in a file that is
+    # there to be looked at. Different errands, so different sentences.
+    #
+    # Further than that is not worth telling apart: unreadable, and short of one of the
+    # three answers, send whoever wrote it to the same file — which is why asking for the
+    # three by name is enough of a check, and enumerating the ways to be wrong would be
+    # writing a checker.
     def self.offer_of(declaration)
-      offer = YAML.safe_load_file(File.join(File.dirname(declaration), OFFER))
-      return offer if OFFERED.all? { |answer| offer[answer] }
+      at = File.join(File.dirname(declaration), OFFER)
+      unless File.exist?(at)
+        warn "WARN: #{OFFER} not found in gem #{gem_of(declaration)}"
+        warn "(#{File.dirname(declaration)})"
+        return nil
+      end
 
-      offering_nothing(declaration)
+      YAML.safe_load_file(at).tap { |offer| offer.fetch_values(*OFFERED) }
     rescue StandardError
-      offering_nothing(declaration)
-    end
-
-    def self.offering_nothing(declaration)
-      warn "WARN: #{OFFER} is not readable in gem #{gem_of(declaration)}"
+      warn "WARN: #{OFFER} is broken in gem #{gem_of(declaration)}"
       warn "(#{File.dirname(declaration)})"
       nil
     end
