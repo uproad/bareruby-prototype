@@ -14,9 +14,14 @@ module BareRubyProt
       # so is how a program reads the same here as it does under an interpreter that would
       # have had to load one. Which names those are is not a list this side keeps — each
       # peripheral says its own, so one that arrived from elsewhere is required the same way.
-      BUILTIN_REQUIRES = %w[spi machine].freeze
+      #
+      # **One name is this side's own.** What `machine` names — sleeping, and the delays
+      # around it — is the language's rather than any peripheral's, so nothing else can
+      # answer for it. A name no peripheral claims and this does not is a file, and looking
+      # for one is what happens next.
+      LANGUAGE_REQUIRES = %w[machine].freeze
 
-      def self.builtin_require?(name) = BUILTIN_REQUIRES.include?(name) ||
+      def self.builtin_require?(name) = LANGUAGE_REQUIRES.include?(name) ||
                                         Peripheral.required_names.include?(name)
 
       attr_reader :result, :notices

@@ -800,15 +800,6 @@ module BareRubyProt
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, type_environment:, span:)
         class_name = receiver_type[:class_name]
         if Peripheral.known?(class_name)
-          if class_name == :UART && %i[read gets].include?(name)
-            return infer_uart_receive_call(
-              receiver_tast, name, arguments, type_environment:, span:
-            )
-          end
-          if class_name == :I2C && %i[read write].include?(name)
-            return infer_i2c_call(receiver_tast, name, arguments, type_environment:, span:)
-          end
-
           signature = Peripheral[class_name].method_signature(name)
           printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)
@@ -817,8 +808,9 @@ module BareRubyProt
             )
           end
 
-          argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
-          return infer_binding_method_call(receiver_tast, class_name, name, argument_tasts, span)
+          return infer_binding_method_call(
+            receiver_tast, class_name, name, arguments, type_environment:, span:
+          )
         end
 
         argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
@@ -829,34 +821,6 @@ module BareRubyProt
           resolved.parameter_types, resolved.return_type
         )
         @tast.create_call(receiver_tast, callee, argument_tasts, nil, resolved.return_type, span)
-      end
-
-      # A received string belongs to the innermost active region. The region is an
-      # implementation argument only: the Ruby call keeps the standard UART read/gets
-      # shape while the generated binding receives somewhere to put the bytes.
-      def infer_uart_receive_call(receiver_tast, name, arguments, type_environment:, span:)
-        signature = Peripheral[:UART].method_signature(name)
-        arena = current_arena(span)
-        argument_tasts = [arena] + arguments.map { |argument| infer_node(argument, type_environment:) }
-        callee = @tast.create_callee(
-          :binding_method, :UART, name, signature[:function],
-          argument_types(argument_tasts), ArenaString.type(@tast)
-        )
-        @tast.create_call(receiver_tast, callee, argument_tasts, nil, ArenaString.type(@tast), span)
-      end
-
-      # I2C uses the current region both for a read result and for the temporary byte
-      # sequence that makes heterogeneous write arguments one bus transaction.
-      def infer_i2c_call(receiver_tast, name, arguments, type_environment:, span:)
-        signature = Peripheral[:I2C].method_signature(name)
-        argument_tasts = [current_arena(span)] +
-                         arguments.map { |argument| infer_node(argument, type_environment:) }
-        return_type = name == :read ? ArenaString.type(@tast) : :Int32
-        callee = @tast.create_callee(
-          :binding_i2c, :I2C, name, signature[:function],
-          argument_types(argument_tasts), return_type
-        )
-        @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
       end
 
       # Whichever region is current. A binding that needs somewhere to put what it receives
@@ -913,15 +877,38 @@ module BareRubyProt
         tasts
       end
 
-      def infer_binding_method_call(receiver_tast, class_name, name, argument_tasts, span)
+      # **What a peripheral call takes beyond what the program wrote is the declaration's
+      # answer, not a class this side recognises.** Two of them are stated there. A call
+      # that answers a variable-length string needs somewhere to put it, and the declared
+      # return type already says which calls those are. A call that gathers its trailing
+      # arguments into one byte sequence needs somewhere to build it, and the declaration
+      # says where those arguments begin. Either way the region is an implementation
+      # argument: the Ruby call keeps the shape the program wrote.
+      def infer_binding_method_call(receiver_tast, class_name, name, arguments, type_environment:, span:)
         signature = Peripheral[class_name].method_signature(name)
+        argument_tasts = written_arguments(arguments, signature[:payload_from], type_environment:)
+        argument_tasts = [current_arena(span)] + argument_tasts if region_of(signature)
+        return_type = answers_string?(signature) ? ArenaString.type(@tast) : signature[:return_type]
         callee = @tast.create_callee(
-          :binding_method, class_name, name, signature[:function],
-          signature[:parameter_types], signature[:return_type]
+          signature[:payload_from] ? :binding_payload : :binding_method,
+          class_name, name, signature[:function], argument_types(argument_tasts), return_type
         )
-        arguments = argument_tasts.map { |argument| ArenaString.bytes_of(@tast, argument) }
-        @tast.create_call(receiver_tast, callee, arguments, nil, signature[:return_type], span)
+        @tast.create_call(receiver_tast, callee, argument_tasts, nil, return_type, span)
       end
+
+      # What a variable-length string among the arguments is passed as. The ones gathered
+      # into a byte sequence are left whole, because gathering them is what the pass that
+      # builds the sequence does with them.
+      def written_arguments(arguments, payload_from, type_environment:)
+        arguments.each_with_index.map do |argument, index|
+          argument_tast = infer_node(argument, type_environment:)
+          payload_from && index >= payload_from ? argument_tast : ArenaString.bytes_of(@tast, argument_tast)
+        end
+      end
+
+      def answers_string?(signature) = signature[:return_type] == :arena_string
+
+      def region_of(signature) = answers_string?(signature) || !signature[:payload_from].nil?
 
       # A peripheral method whose declaration says its block becomes a realtime handler.
       # **Which methods those are is the peripheral's answer, not a name known here** — the

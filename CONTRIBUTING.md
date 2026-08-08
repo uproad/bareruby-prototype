@@ -149,7 +149,7 @@ translation unit with one that cannot — remove the declarations and an impleme
 left with nothing to implement against — so each binding carries each peripheral in a unit
 of its own, asked for by that same key.
 
-Three cases the six installed classes cover between them:
+Five cases the six installed classes cover between them:
 
 - **A block can be declared.** `GPIO#on_interrupt` takes a zero-argument block and turns
   it into a function running in the realtime context. The handler, the context and the
@@ -159,6 +159,21 @@ Three cases the six installed classes cover between them:
   ```ruby
   on_interrupt: { function: :bareruby_gpio_on_interrupt, parameter_types: %i[Int32],
                   keywords: { edge: 0 }, block: :realtime_handler }
+  ```
+
+- **A call that answers a variable-length string is handed somewhere to put it.** The
+  declared return type is the whole of what says so — `read` and `gets` on a serial line
+  answer `:arena_string`, and the region reaches the binding as an argument the program
+  never wrote. Nothing here recognises a class by name to decide it.
+
+- **A call can send whatever the program had as one sequence of bytes.** `payload_from`
+  says where those arguments begin, and everything from there on — integers, strings,
+  arrays, a string built in a region — is gathered into one string first, so the binding
+  is handed one pointer and one length. One call in Ruby is one transaction on the wire.
+
+  ```ruby
+  write: { function: :bareruby_i2c_write, parameter_types: [], return_type: :Int32,
+           payload_from: 1 }        # everything after the address is the payload
   ```
 
 - **A binding need not implement a peripheral at all.** A NUCLEO board reached through the
