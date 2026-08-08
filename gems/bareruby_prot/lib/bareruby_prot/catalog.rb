@@ -81,12 +81,50 @@ module BareRubyProt
     # field is laid out empty and filled in when flashing says which one it needs.
     UNASKED = { "boards" => [] }.freeze
 
+    # What an offer is made of: the family's own short key, the heading a person reads, and
+    # the compositions to put under it. **A binding that cannot answer all three offers
+    # nothing**, and none of the three has a stand-in worth inventing — a heading made up
+    # here would make a gem that forgot one look like a gem that has one.
+    OFFERED = %w[key label targets].freeze
+
     def self.families
-      found = Target.declarations.map do |declaration|
-        YAML.safe_load_file(File.join(File.dirname(declaration), OFFER))
-      end
+      found = Target.declarations.filter_map { |declaration| offer_of(declaration) }
       own, rest = found.partition { |one| one["key"] == OWN }
       own + rest.sort_by { |one| one["label"] }
+    end
+
+    # **A gem that is not what it says it is stops at itself.** This is the one place
+    # somebody else's file is taken at its word, so it is the one place their mistake could
+    # take this command down with it — and it did: one binding without an offer, and
+    # neither `target add` nor `target list` worked for any of them.
+    #
+    # A binding that registers machines and then offers no way to choose one is a broken
+    # gem rather than a binding with an answer, which is why this is said rather than
+    # passed over. But it is not this program's fault and not the fault of whoever typed
+    # the command, so it is neither a backtrace nor a refusal: it is said once, the gem is
+    # left out, and everything else answers as usual.
+    #
+    # How it is broken is not worth telling apart. Missing, unreadable, or short of an
+    # answer, what the reader can do about it is the same, and listing the ways to be
+    # wrong is writing a checker.
+    def self.offer_of(declaration)
+      offer = YAML.safe_load_file(File.join(File.dirname(declaration), OFFER))
+      return offer if OFFERED.all? { |answer| offer[answer] }
+
+      offering_nothing(declaration)
+    rescue StandardError
+      offering_nothing(declaration)
+    end
+
+    def self.offering_nothing(declaration)
+      warn "WARN: #{OFFER} is not readable in gem #{gem_of(declaration)}"
+      warn "(#{File.dirname(declaration)})"
+      nil
+    end
+
+    def self.gem_of(declaration)
+      found = Gem.loaded_specs.values.find { |one| declaration.start_with?(one.full_gem_path) }
+      found&.name || File.basename(File.dirname(declaration))
     end
 
     def self.list
@@ -158,7 +196,9 @@ module BareRubyProt
       # way through the machines instead, and lives inside that one question.
       def steps = %w[machine name debug] + asks.map { |ask| ask["key"] } + ["confirm"]
 
-      def asks = family ? family["asks"] : []
+      # Asking nothing beyond the machine is the ordinary case, so a family that says
+      # nothing about it is one of those rather than one to complain about.
+      def asks = family ? family["asks"] || [] : []
 
       # **What a debug build buys is the binding's answer, so the binding is what says
       # it.** Only one of them means anything by the field: a pico-sdk firmware keeps its
