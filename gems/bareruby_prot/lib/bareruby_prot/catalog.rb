@@ -122,8 +122,13 @@ module BareRubyProt
         return nil
       end
 
-      YAML.safe_load_file(at).tap { |offer| offer.fetch_values(*OFFERED) }
-    rescue StandardError
+      # **Three ways a file that is there can fail to answer, and no fourth**: it is not
+      # YAML, it is not a mapping, or it is short of one of the three. Each arrives as its
+      # own kind, so asking for the three is the whole of the check. Anything else raised
+      # in here is this program's own mistake, and that is a backtrace rather than a
+      # sentence about somebody's gem.
+      Hash(YAML.safe_load_file(at)).tap { |offer| offer.fetch_values(*OFFERED) }
+    rescue Psych::Exception, TypeError, KeyError
       warn "WARN: #{OFFER} is broken in gem #{gem_of(declaration)}"
       warn "(#{File.dirname(declaration)})"
       nil
