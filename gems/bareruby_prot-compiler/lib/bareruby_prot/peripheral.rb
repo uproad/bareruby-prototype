@@ -86,7 +86,21 @@ module BareRubyProt
     # from them once loaded.
     INSTALLED = "bareruby_prot/stdlib/*.rb"
 
-    def self.load_installed = Gem.find_files(INSTALLED).sort.each { |one| require one }
+    # **A class is found once even when it is reachable twice.** Looking in every gem means
+    # looking in copies of one: a checkout that carries a gem in its working tree and has
+    # the same gem installed sees both. Which class a declaration is for is the name it is
+    # filed under, and the first one found wins — the load path is searched before the
+    # installed gems, so a working tree beats a copy of itself. **A binding says the same
+    # thing with the name of a directory**, because that is the shape it comes in; a class
+    # comes as one file, so the file is what names it.
+    #
+    # Loading in name order after that is what keeps the compiler's answer the same
+    # wherever the copies happened to be found.
+    def self.installed = Gem.find_files(INSTALLED).uniq { |one| named(one) }.sort_by { |one| named(one) }
+
+    def self.named(declaration) = File.basename(declaration, ".rb")
+
+    def self.load_installed = installed.each { |one| require one }
   end
 end
 
