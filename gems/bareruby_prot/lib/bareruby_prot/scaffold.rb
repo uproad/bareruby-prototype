@@ -15,18 +15,16 @@ module BareRubyProt
   # its record, its sources — is decided by that Gemfile existing.
   #
   # The template is files rather than strings, so what a user gets can be read as what it
-  # will be. Two things in it are not the same on two desks and are written here: where
-  # the gems come from, and which machine is doing the compiling.
+  # will be. One thing in it is not the same on two desks and is written here: which
+  # machine is doing the compiling. Where the gems come from is the same everywhere — the
+  # Gemfile names the repository — so what this writes is a project any desk can build,
+  # including one that has never held a checkout of this.
   class Scaffold
     TEMPLATE = File.expand_path("../../new_template", __dir__)
 
     # A dot file cannot be shipped under its own name: it would take effect in the
     # repository that ships it, and hide from git the very files it is meant to carry.
     RENAMED = { "gitignore" => ".gitignore" }.freeze
-
-    # Where the gems are read from. The prototype publishes nothing, so a project points
-    # at the checkout its `new` came out of. Released, this is what a version would be.
-    GEMS = File.expand_path("../../..", __dir__)
 
     def self.run(arguments) = new(arguments.first).run
 
@@ -77,7 +75,7 @@ module BareRubyProt
       FileUtils.cp_r(File.join(TEMPLATE, "."), @directory)
     end
 
-    # The two answers no template can hold, and the one name no gem may be shipped under.
+    # The one answer no template can hold, and the one name no gem may be shipped under.
     #
     # **The template says which files these are, not the directory they were copied into.**
     # Asking the destination what it holds makes the work depend on what was already there,
@@ -93,9 +91,7 @@ module BareRubyProt
          .map { |name| at(name) }.select { |path| File.file?(path) }
     end
 
-    def filled(text)
-      text.gsub("__GEMS__", GEMS).gsub("__TRIPLE__", Target["host"].isa.triple)
-    end
+    def filled(text) = text.gsub("__TRIPLE__", Target["host"].isa.triple)
 
     def at(name) = File.join(@directory, name)
 

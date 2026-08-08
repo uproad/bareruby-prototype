@@ -227,6 +227,12 @@ commented out, and uncommenting one is the whole cost of being able to build for
 board. `new` writes nothing into a directory that already holds any of the files it would
 write; what is in the way is named, and the tree is left as it was.
 
+**The project does not belong to the checkout it came out of.** Its Gemfile names this
+repository, so `bundle install` is the whole of what a desk that has never cloned anything
+has to run — the gems are fetched from here, `bareruby_prot-compiler` among them, without
+being named. A project can be committed, moved, or handed to someone else, and it still
+builds. Nothing has to be installed by hand for any of that.
+
 ## Recording which machines are here
 
 `config/target.yml` says which compositions to build for. It is not tracked in this
