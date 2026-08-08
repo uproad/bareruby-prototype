@@ -93,6 +93,10 @@ Two consequences are worth knowing:
   loading both redefines every constant in it. A binding is identified by the name of the
   directory its declaration sits in, and the first one found wins; the load path is
   searched before the installed gems, so a working tree beats a copy of itself.
+  **A standard class answers the same question with the name of its file**, because that
+  is the shape it comes in — one class, one file, in a directory it shares with the
+  others. Loading them in name order after that is what keeps the answer the same
+  wherever the copies were found.
 - **`target.yml` records a composition, not a gem**, so uninstalling a binding a recorded
   target names leaves that record pointing at nothing. The run stops and says which
   composition went missing, and every other target builds once the entry is removed or
