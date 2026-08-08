@@ -353,10 +353,7 @@ module BareRubyProt
       # Every directory an entry already claims: the name it was given, or the composition
       # it falls back to, alongside what reached it.
       def claimed
-        return [] unless File.exist?(Deployment::FILE)
-
-        recorded = YAML.safe_load_file(Deployment::FILE).dig("bareruby", "targets") || []
-        recorded.map do |one|
+        Deployment.recorded.map do |one|
           { "name" => one["name"] || COMPOSITION.map { |field| one[field] }.join("-"),
             "binding" => one["binding"] }
         end

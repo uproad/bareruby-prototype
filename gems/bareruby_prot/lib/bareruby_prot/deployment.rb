@@ -35,12 +35,17 @@ module BareRubyProt
       def directory = name || target.directory
     end
 
-    def self.entries
+    # **The record as it was written, and the only place that knows how to read it.** What
+    # a desk recorded is one key at the top of one file; everything that asks it anything —
+    # what to build, and which names are already spoken for — asks here. A second reader
+    # with its own idea of the shape is a reader that can be wrong on its own.
+    def self.recorded
       return [] unless File.exist?(FILE)
 
-      recorded = YAML.safe_load_file(FILE)["targets"] || []
-      recorded.map { |record| entry_of(record) }
+      YAML.safe_load_file(FILE)["targets"] || []
     end
+
+    def self.entries = recorded.map { |record| entry_of(record) }
 
     def self.entry_of(record)
       Entry.new(
