@@ -25,7 +25,7 @@ module BareRubyProt
 
     def self.run(directory, options: {})
       gather(directory)
-      return false unless Toolchain.run(directory, Toolchain.recorded_command(directory), environment)
+      return false unless Toolchain.as_recorded(directory, environment)
 
       IMAGES.each do |made, kept|
         path = File.join(directory, made)

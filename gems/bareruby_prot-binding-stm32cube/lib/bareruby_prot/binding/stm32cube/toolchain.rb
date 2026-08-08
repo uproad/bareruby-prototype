@@ -22,8 +22,7 @@ module BareRubyProt
       return absent("the pinned #{family} SDK", cube) unless File.directory?(cube)
       return absent("the pinned ARM toolchain", "#{prefix}-g++") unless File.executable?("#{prefix}-g++")
 
-      Toolchain.run(directory, Toolchain.recorded_command(directory),
-                    { "TOOLCHAIN" => prefix, "CUBE" => cube })
+      Toolchain.as_recorded(directory, { "TOOLCHAIN" => prefix, "CUBE" => cube })
     end
 
     def self.prefix
