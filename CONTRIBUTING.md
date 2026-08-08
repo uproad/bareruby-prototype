@@ -291,8 +291,16 @@ see it.
 
 ```sh
 for g in gems/*/; do (cd $g && gem build *.gemspec -o /tmp/$(basename $g).gem); done
+GEM_HOME=$PWD/.gems gem install --local --no-document /tmp/bareruby_prot-compiler.gem
+GEM_HOME=$PWD/.gems gem install --local --no-document /tmp/bareruby_prot.gem
 GEM_HOME=$PWD/.gems gem install --local --no-document /tmp/bareruby_prot*.gem
 ```
+
+**The two halves go in first, in that order, because everything says what it needs.** An
+add-on names both of them and the ecosystem names the compiler, and a local install
+resolves nothing over the network: a gem whose dependencies are not installed yet is
+refused, and the count at the end is quietly short of what was asked for. Installing them
+first is all it takes — the third command then puts in everything, the two included.
 
 `.gems/` is gitignored and sits under the repository for the same reason `.tools/` does. A
 desk that installs them the ordinary way is served as well; this only adds a place to
