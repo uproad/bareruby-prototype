@@ -20,10 +20,12 @@ module BareRubyProt
       #include <string.h>
       #include "bareruby_board.h"
 
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+      void bareruby_uart_init(
+          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
           self->id = id;
           self->baud = baud;
           self->parity = parity;
+          self->stop_bits = stop_bits;
           UART_HandleTypeDef *port = bareruby_board_uart(id);
           uint32_t hal_parity = UART_PARITY_NONE;
           if (parity == 1) {
@@ -33,16 +35,17 @@ module BareRubyProt
           } else if (parity != 0) {
               bareruby_board_fault();
           }
+          uint32_t hal_stop_bits = stop_bits == 2 ? UART_STOPBITS_2 : UART_STOPBITS_1;
 
           uint32_t word_length = hal_parity == UART_PARITY_NONE ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
           if (port->Init.BaudRate != (uint32_t)baud || port->Init.Parity != hal_parity ||
-              port->Init.WordLength != word_length) {
+              port->Init.WordLength != word_length || port->Init.StopBits != hal_stop_bits) {
               if (HAL_UART_DeInit(port) != HAL_OK) {
                   bareruby_board_fault();
               }
               port->Init.BaudRate = (uint32_t)baud;
               port->Init.WordLength = word_length;
-              port->Init.StopBits = UART_STOPBITS_1;
+              port->Init.StopBits = hal_stop_bits;
               port->Init.Parity = hal_parity;
               port->Init.Mode = UART_MODE_TX_RX;
               port->Init.HwFlowCtl = UART_HWCONTROL_NONE;
@@ -80,7 +83,9 @@ module BareRubyProt
               bareruby_board_uart(self->id), (uint8_t *)payload, transmitted, HAL_MAX_DELAY);
       }
 
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+      /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the
+         moment a program touches the buffered receive side. */
+      __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return __HAL_UART_GET_FLAG(bareruby_board_uart(self->id), UART_FLAG_RXNE) != RESET ? 1 : 0;
       }
 
@@ -331,6 +336,10 @@ module BareRubyProt
       void bareruby_asleep_us(int32_t microseconds) {
           bareruby_machine_delay_us(microseconds);
       }
+
+      int32_t bareruby_ticks_ms(void) {
+          return (int32_t)HAL_GetTick();
+      }
     CPP
 
     UART_RECEIVE = <<~CPP
@@ -407,7 +416,11 @@ module BareRubyProt
           }
           uint32_t status = port->Instance->SR;
           if (status & (USART_SR_RXNE | USART_SR_ORE)) {
-              bareruby_uart_interrupt_push((uint8_t)(port->Instance->DR & 0xFFu));
+              uint8_t byte = (uint8_t)(port->Instance->DR & 0xFFu);
+              /* A byte whose parity failed is discarded, as Arduino's core does. */
+              if ((status & USART_SR_PE) == 0u) {
+                  bareruby_uart_interrupt_push(byte);
+              }
           }
       }
 
@@ -477,7 +490,12 @@ module BareRubyProt
           bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
       }
 
+      /* The ring has one consumer. A registered handler is it, and the drain assembles
+         lines; without one the bytes wait for the read family below. */
       extern "C" void bareruby_uart_interrupt_drain(void) {
+          if (bareruby_uart_interrupt.handler == NULL) {
+              return;
+          }
           while (bareruby_uart_interrupt.tail != bareruby_uart_interrupt.head) {
               uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
               bareruby_uart_interrupt.tail = (uint8_t)(bareruby_uart_interrupt.tail + 1u);
@@ -485,19 +503,52 @@ module BareRubyProt
           }
       }
 
-      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
+      /* The first touch of the receive side — a registration or a buffered read — is
+         what arms the interrupt and so what buys the ring. */
+      static void bareruby_uart_interrupt_attach(bareruby_uart_t *self) {
+          if (bareruby_uart_interrupt.port != NULL) {
+              return;
+          }
           UART_HandleTypeDef *port = bareruby_board_uart(self->id);
-          bareruby_uart_interrupt.handler = handler;
           bareruby_uart_interrupt.port = port;   /* published before the IRQ can fire */
           IRQn_Type interrupt = bareruby_uart_interrupt_irq(port->Instance);
 
-          /* A byte left over from before the registration is not a line. Priority 2
+          /* A byte left over from before the arming is not received data. Priority 2
              matches the GPIO EXTI precedent. */
           __HAL_UART_FLUSH_DRREGISTER(port);
           __HAL_UART_ENABLE_IT(port, UART_IT_RXNE);
           HAL_NVIC_ClearPendingIRQ(interrupt);
           HAL_NVIC_SetPriority(interrupt, 2, 0);
           HAL_NVIC_EnableIRQ(interrupt);
+      }
+
+      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
+          bareruby_uart_interrupt.handler = handler;
+          bareruby_uart_interrupt_attach(self);
+      }
+
+      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_attach(self);
+          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+              return -1;
+          }
+          uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
+          bareruby_uart_interrupt.tail = (uint8_t)(bareruby_uart_interrupt.tail + 1u);
+          return (int32_t)byte;
+      }
+
+      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_attach(self);
+          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+              return -1;
+          }
+          return (int32_t)bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
+      }
+
+      /* The strong definition; the polling one in the uart unit is weak. */
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_attach(self);
+          return (int32_t)(uint8_t)(bareruby_uart_interrupt.head - bareruby_uart_interrupt.tail);
       }
     CPP
 

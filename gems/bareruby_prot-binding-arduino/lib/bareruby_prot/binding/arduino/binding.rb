@@ -90,15 +90,19 @@ module BareRubyProt
           }
       }
 
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+      void bareruby_uart_init(
+          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
           self->id = id;
           self->baud = baud;
           self->parity = parity;
-          uint8_t configuration = SERIAL_8N1;
+          self->stop_bits = stop_bits;
+          uint8_t configuration;
           if (parity == 1) {
-              configuration = SERIAL_8E1;
+              configuration = stop_bits == 2 ? SERIAL_8E2 : SERIAL_8E1;
           } else if (parity == 2) {
-              configuration = SERIAL_8O1;
+              configuration = stop_bits == 2 ? SERIAL_8O2 : SERIAL_8O1;
+          } else {
+              configuration = stop_bits == 2 ? SERIAL_8N2 : SERIAL_8N1;
           }
           bareruby_uart_port(self)->begin((unsigned long)baud, configuration);
       }
@@ -123,7 +127,10 @@ module BareRubyProt
           (void)bareruby_uart_write(self, payload);
       }
 
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+      /* Weak for the same shape the other bindings have, though HardwareSerial's own
+         count is already the buffered answer; the uart_interrupt unit's override only
+         adds the arming touch. */
+      __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return (int32_t)bareruby_uart_port(self)->available();
       }
 
@@ -295,6 +302,10 @@ module BareRubyProt
       void bareruby_asleep_us(int32_t microseconds) {
           bareruby_asleep_until((uint32_t)microseconds);
       }
+
+      int32_t bareruby_ticks_ms(void) {
+          return (int32_t)millis();
+      }
     CPP
 
     UART_RECEIVE = <<~CPP
@@ -390,9 +401,11 @@ module BareRubyProt
           bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
       }
 
+      /* The core's buffer has one consumer. A registered handler is it, and the drain
+         assembles lines; without one the bytes wait for the read family below. */
       extern "C" void bareruby_uart_interrupt_drain(void) {
           HardwareSerial *port = bareruby_uart_interrupt.port;
-          if (port == NULL) {
+          if (port == NULL || bareruby_uart_interrupt.handler == NULL) {
               return;
           }
           while (port->available() > 0) {
@@ -400,14 +413,34 @@ module BareRubyProt
           }
       }
 
+      static HardwareSerial *bareruby_uart_interrupt_attach(bareruby_uart_t *self) {
+          if (bareruby_uart_interrupt.port == NULL) {
+              switch (self->id) {
+              case 1: bareruby_uart_interrupt.port = &Serial1; break;
+              case 2: bareruby_uart_interrupt.port = &Serial2; break;
+              case 3: bareruby_uart_interrupt.port = &Serial3; break;
+              default: bareruby_uart_interrupt.port = &Serial; break;
+              }
+          }
+          return bareruby_uart_interrupt.port;
+      }
+
       void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
           bareruby_uart_interrupt.handler = handler;
-          switch (self->id) {
-          case 1: bareruby_uart_interrupt.port = &Serial1; break;
-          case 2: bareruby_uart_interrupt.port = &Serial2; break;
-          case 3: bareruby_uart_interrupt.port = &Serial3; break;
-          default: bareruby_uart_interrupt.port = &Serial; break;
-          }
+          bareruby_uart_interrupt_attach(self);
+      }
+
+      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->read();
+      }
+
+      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->peek();
+      }
+
+      /* The strong definition; the polling one in the uart unit is weak. */
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->available();
       }
     CPP
 

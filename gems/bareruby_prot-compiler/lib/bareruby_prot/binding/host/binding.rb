@@ -80,11 +80,14 @@ module BareRubyProt
           fputs("\\")\\n", stderr);
       }
 
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+      void bareruby_uart_init(
+          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
           self->id = id;
           self->baud = baud;
           self->parity = parity;
-          fprintf(stderr, "uart_init(id=%d, baud=%d, parity=%d)\\n", (int)id, (int)baud, (int)parity);
+          self->stop_bits = stop_bits;
+          fprintf(stderr, "uart_init(id=%d, baud=%d, parity=%d, stop_bits=%d)\\n",
+                  (int)id, (int)baud, (int)parity, (int)stop_bits);
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -105,7 +108,9 @@ module BareRubyProt
           bareruby_trace_payload("uart_printf", self, payload);
       }
 
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+      /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the
+         moment a program touches the buffered receive side. */
+      __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           fprintf(stderr, "uart_bytes_available(id=%d) -> 0\\n", (int)self->id);
           return 0;
       }
@@ -174,6 +179,7 @@ module BareRubyProt
       #include <stdio.h>
       #include <stdlib.h>
       #include <string.h>
+      #include <time.h>
 
       /* The uart_interrupt unit overrides this when a program says on_line; otherwise
          sleep drains nothing and pays one empty call. */
@@ -181,6 +187,14 @@ module BareRubyProt
 
       void bareruby_startup(void) {
           fprintf(stderr, "startup()\\n");
+      }
+
+      /* A clock read is not an event, so it leaves no trace: a timeout loop would flood
+         stderr with lines that say only that time passed. */
+      int32_t bareruby_ticks_ms(void) {
+          struct timespec now;
+          clock_gettime(CLOCK_MONOTONIC, &now);
+          return (int32_t)((int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000);
       }
 
 
@@ -261,10 +275,12 @@ module BareRubyProt
       }
     CPP
 
-    # The receive interrupt, hosted: there is no wire to interrupt from, so registration
-    # puts stdin into non-blocking mode and the drain plays the ISR's part — reading
-    # whatever has arrived into the ring, then assembling lines exactly as a board does,
-    # so CRLF, the 255-byte cap and the overlong discard behave byte for byte the same.
+    # The receive side an interrupt feeds, hosted: there is no wire to interrupt from, so
+    # the first touch — a registration or a buffered read — puts stdin into non-blocking
+    # mode, and the pump plays the ISR's part, reading whatever has arrived into the ring.
+    # With a handler registered the drain assembles lines exactly as a board does, so
+    # CRLF, the 255-byte cap and the overlong discard behave byte for byte the same;
+    # without one the bytes stay in the ring for read_byte, peek and bytes_available.
     UART_INTERRUPT = <<~CPP
       #include "bareruby_binding.h"
 
@@ -273,13 +289,14 @@ module BareRubyProt
       #include <unistd.h>
 
       typedef struct {
-          volatile uint8_t data[256];   /* the 256 bytes on_line costs */
+          volatile uint8_t data[256];   /* the 256 bytes the receive side costs */
           volatile uint8_t head;        /* producer-owned */
           volatile uint8_t tail;        /* drain-owned */
           char line[256];               /* the view a handler is handed points here */
           int32_t line_length;
           bool discarding;              /* an overlong line, thrown away to the next LF */
           bareruby_uart_line_handler_t handler;
+          bool attached;
       } bareruby_uart_interrupt_t;
 
       static bareruby_uart_interrupt_t bareruby_uart_interrupt;
@@ -291,6 +308,23 @@ module BareRubyProt
           }
           bareruby_uart_interrupt.data[bareruby_uart_interrupt.head] = byte;
           bareruby_uart_interrupt.head = next;
+      }
+
+      static void bareruby_uart_interrupt_pump(void) {
+          if (!bareruby_uart_interrupt.attached) {
+              bareruby_uart_interrupt.attached = true;
+              fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+          }
+          unsigned char chunk[64];
+          for (;;) {
+              ssize_t received = read(STDIN_FILENO, chunk, sizeof(chunk));
+              if (received <= 0) {
+                  break;
+              }
+              for (ssize_t index = 0; index < received; ++index) {
+                  bareruby_uart_interrupt_push(chunk[index]);
+              }
+          }
       }
 
       static void bareruby_uart_interrupt_trace_line(const char *bytes, int32_t length) {
@@ -337,16 +371,15 @@ module BareRubyProt
           bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
       }
 
+      /* The ring has one consumer. A registered handler is it, and the drain assembles
+         lines; without one the bytes wait for the read family below. */
       extern "C" void bareruby_uart_interrupt_drain(void) {
-          unsigned char chunk[64];
-          for (;;) {
-              ssize_t received = read(STDIN_FILENO, chunk, sizeof(chunk));
-              if (received <= 0) {
-                  break;
-              }
-              for (ssize_t index = 0; index < received; ++index) {
-                  bareruby_uart_interrupt_push(chunk[index]);
-              }
+          if (!bareruby_uart_interrupt.attached) {
+              return;
+          }
+          bareruby_uart_interrupt_pump();
+          if (bareruby_uart_interrupt.handler == NULL) {
+              return;
           }
           while (bareruby_uart_interrupt.tail != bareruby_uart_interrupt.head) {
               uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
@@ -357,8 +390,40 @@ module BareRubyProt
 
       void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
           bareruby_uart_interrupt.handler = handler;
-          fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+          bareruby_uart_interrupt_pump();
           fprintf(stderr, "uart_on_line(id=%d)\\n", (int)self->id);
+      }
+
+      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_pump();
+          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+              fprintf(stderr, "uart_read_byte(id=%d) -> -1\\n", (int)self->id);
+              return -1;
+          }
+          uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
+          bareruby_uart_interrupt.tail = (uint8_t)(bareruby_uart_interrupt.tail + 1u);
+          fprintf(stderr, "uart_read_byte(id=%d) -> %d\\n", (int)self->id, (int)byte);
+          return (int32_t)byte;
+      }
+
+      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_pump();
+          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+              fprintf(stderr, "uart_peek(id=%d) -> -1\\n", (int)self->id);
+              return -1;
+          }
+          int32_t byte = (int32_t)bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
+          fprintf(stderr, "uart_peek(id=%d) -> %d\\n", (int)self->id, (int)byte);
+          return byte;
+      }
+
+      /* The strong definition; the polling one in the uart unit is weak. */
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          bareruby_uart_interrupt_pump();
+          int32_t depth =
+              (int32_t)(uint8_t)(bareruby_uart_interrupt.head - bareruby_uart_interrupt.tail);
+          fprintf(stderr, "uart_bytes_available(id=%d) -> %d\\n", (int)self->id, (int)depth);
+          return depth;
       }
     CPP
 
