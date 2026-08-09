@@ -44,6 +44,13 @@ struct: :bareruby_uart_t,
         },
         clear_tx_buffer: {
           function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
+        },
+        # The receive interrupt. Enabling it is what buys the 256-byte ring the binding
+        # keeps filled from its ISR; the block runs later, in thread mode while sleep_ms
+        # waits, handed each completed line as a borrowed view of the binding's buffer.
+        on_line: {
+          function: :bareruby_uart_on_line, parameter_types: [], return_type: :Nil,
+          block: :realtime_handler, block_parameter_types: %i[StringView]
         }
       },
     # Where the expansion's variable arguments begin. It is a fact about this function's
@@ -69,12 +76,16 @@ struct: :bareruby_uart_t,
       void bareruby_uart_flush(bareruby_uart_t *self);
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
+
+      typedef void (*bareruby_uart_line_handler_t)(bareruby_string_view_t *line);
+      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler);
     CPP
     units: {
       uart: %i[bareruby_uart_init bareruby_uart_write bareruby_uart_puts
                bareruby_uart_printf bareruby_uart_bytes_available bareruby_uart_can_read_line
                bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer],
-      uart_receive: %i[bareruby_uart_read bareruby_uart_gets]
+      uart_receive: %i[bareruby_uart_read bareruby_uart_gets],
+      uart_interrupt: %i[bareruby_uart_on_line]
     }
   )
 end
