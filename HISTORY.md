@@ -156,6 +156,28 @@ README lists.
   family does not drain, a full ring drops bytes silently, and a view stored past its
   block dangles by design. On the NUCLEO-F446RE the sample builds to 20,064 B of ELF
   text and 2,272 B of bss; verified on host, built for every board of all four bindings.
+- **M6 — Arduino HardwareSerial-shaped receive** (`samples/uart_buffered.rb`): the
+  definition was pinned first — everything Arduino's HardwareSerial can receive — which
+  shrank the problem to exactly four pieces, because that framework does no framing at
+  all: an ISR-fed ring, non-blocking reads over it, a clock for the timeout family, and
+  the stop bit `begin()`'s config byte carries. So: `UART.new` takes `stop_bits:` (1 or
+  2, applied per platform as `UART_STOPBITS_2` / `uart_set_format` — which also made the
+  Pico binding stop ignoring parity — / `SERIAL_8N2`-family constants); `read_byte` and
+  `peek` answer the next byte or -1 without blocking or an arena; `bytes_available`
+  answers the ring's depth — its polling definition in the always-linked uart unit turned
+  weak, and the uart_interrupt unit carries the strong override, so a program that never
+  buffers keeps the hardware flag and pays nothing; and bare `ticks_ms` reads
+  milliseconds since boot into an Int32 (HAL_GetTick / to_ms_since_boot / millis /
+  CLOCK_MONOTONIC), so Arduino's `setTimeout`/`readBytesUntil`/`parseInt` family needs no
+  declarations of its own — the sample composes readBytesUntil from the primitives in
+  eight lines of Ruby. The receive side arms on first touch — a registration or a
+  buffered read — which is now the one moment the 256-byte ring is bought; the ring keeps
+  one consumer, a registered on_line handler taking precedence over the read family, and
+  the ISRs discard parity-failed bytes as Arduino's core does. Known divergences,
+  recorded: 5–7 data bits are not offered (the F4's UART cannot), one receive port per
+  program where Arduino serves four, and `read`/`gets` stay on their blocking
+  hardware path rather than the ring. Verified on host including the timeout path;
+  built for every board of all four bindings.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under

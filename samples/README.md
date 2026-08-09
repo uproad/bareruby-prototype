@@ -23,6 +23,7 @@ it is given no argument.
 | `logger.rb` | Demo 3 — UART, interpolation, `if`, folded constant flags |
 | `uart_receive.rb` | UART `read` and `gets` returning variable-length strings from the current arena |
 | `uart_on_line.rb` | UART receive interrupt: `on_line` handing each completed line to a realtime handler as a `StringView`, drained while `sleep_ms` waits |
+| `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
 | `i2c.rb` | I2C mixed-output write and repeated-start read returning a variable-length string |
 | `nilable.rb` | `nil`, inferred `T?`, tagged values, `nil?`, local `&.`, `if`/`while` narrowing, `||`, missing `else`, and assignment on one path |
 | `definite_assignment.rb` | `T?` for locals first assigned in an `if` or `while`, a missing-`else` `if` value, and an ivar not assigned on every `initialize` path. Matches Ruby |
