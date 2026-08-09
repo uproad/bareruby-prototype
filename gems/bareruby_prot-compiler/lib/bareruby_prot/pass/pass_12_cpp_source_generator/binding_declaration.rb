@@ -45,6 +45,7 @@ module BareRubyProt
       void bareruby_asleep(int32_t seconds);
       void bareruby_asleep_ms(int32_t milliseconds);
       void bareruby_asleep_us(int32_t microseconds);
+      int32_t bareruby_ticks_ms(void);
 
       #ifdef __cplusplus
       }
