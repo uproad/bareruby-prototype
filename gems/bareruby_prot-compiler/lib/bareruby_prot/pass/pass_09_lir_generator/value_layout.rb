@@ -7,6 +7,7 @@ module BareRubyProt
   # holds the ones it has already answered for and hands out the same one again.
   class ValueLayout
     STRING_STRUCT = :bareruby_string_t
+    STRING_VIEW_STRUCT = :bareruby_string_view_t
     ARRAY_STRUCT = :bareruby_arena_array_t
 
     def initialize(low_ir)
@@ -59,6 +60,10 @@ module BareRubyProt
     # here reads a field of it.
     def arena_string_type = @lir.pointer_type(@lir.struct_type(STRING_STRUCT))
 
+    # A view is the pointer a binding handed a handler, never a copy: the bytes it names
+    # stay the binding's, and the header declares the struct — nothing here reads a field.
+    def string_view_type = @lir.pointer_type(@lir.struct_type(STRING_VIEW_STRUCT))
+
     def absent(type)
       @lir.create_brace_init(
         [@lir.create_const_bool(false), zero_value(value_type_of(type[:inner]))], type_of(type)
@@ -99,6 +104,7 @@ module BareRubyProt
       when :array then array_struct_type(type)
       when :arena_array then arena_array_type
       when :arena_string then arena_string_type
+      when :string_view then string_view_type
       when :nilable then nilable_struct_type(type)
       else @lir.struct_type(type[:struct] || type[:class_name])
       end

@@ -94,25 +94,31 @@ module BareRubyProt
       end
 
       # The handler, the realtime context it carries and the checks that follow (pass 11)
-      # are the language's. **What is registered with is the node's to say** — it arrived
-      # from the peripheral's declaration and is not a name known here.
+      # are the language's. **What is registered with is the node's to say** — the
+      # registration arguments and the handler's parameters both arrived from the
+      # peripheral's declaration and are not names known here.
       def lower_interrupt(node)
-        receiver, events, block, function, = @tast.children_of(node)
+        receiver, arguments, block, function, = @tast.children_of(node)
         handler_name = :"bareruby_interrupt_handler_#{@interrupt_functions.length}"
         parameters, body, = @tast.children_of(block)
-        raise "a realtime handler takes a zero-argument block" unless parameters.empty?
 
         receiver_statements, receiver_expression = lower_expression(receiver)
-        events_statements, events_expression = lower_expression(events)
+        lowered_arguments = arguments.map { |argument| lower_expression(argument) }
         @interrupt_functions << with_function(nil, :Nil) {
+          lir_parameters = parameters.map do |parameter|
+            binding, type = @tast.children_of(parameter)
+            @function_scope.declare(binding[:name])
+            { name: binding[:name], type: @binding_storage.type_of(binding, type) }
+          end
           statements = predeclare_nilable_locals(body) + body.flat_map { |statement| lower_statement(statement) }
-          @lir.create_function(handler_name, [], :void, statements + [@lir.create_return(nil)], context: :realtime)
+          @lir.create_function(handler_name, lir_parameters, :void, statements + [@lir.create_return(nil)], context: :realtime)
         }
 
-        receiver_statements + events_statements + [@lir.create_expression(
+        receiver_statements + lowered_arguments.flat_map(&:first) + [@lir.create_expression(
           @lir.create_call(
             function,
-            [@lir.reference_to(receiver_expression), events_expression, @lir.create_function_reference(handler_name)], :void
+            [@lir.reference_to(receiver_expression)] + lowered_arguments.map(&:last) +
+              [@lir.create_function_reference(handler_name)], :void
           )
         )]
       end
