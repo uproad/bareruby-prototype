@@ -81,13 +81,15 @@ module BareRubyProt
       }
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
+          bareruby_uart_t *self, int32_t id, int32_t baud,
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
           self->id = id;
           self->baud = baud;
-          self->parity = parity;
+          self->data_bits = data_bits;
           self->stop_bits = stop_bits;
-          fprintf(stderr, "uart_init(id=%d, baud=%d, parity=%d, stop_bits=%d)\\n",
-                  (int)id, (int)baud, (int)parity, (int)stop_bits);
+          self->parity = parity;
+          fprintf(stderr, "uart_init(id=%d, baud=%d, data_bits=%d, stop_bits=%d, parity=%d)\\n",
+                  (int)id, (int)baud, (int)data_bits, (int)stop_bits, (int)parity);
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -122,6 +124,18 @@ module BareRubyProt
 
       void bareruby_uart_flush(bareruby_uart_t *self) {
           fprintf(stderr, "uart_flush(id=%d)\\n", (int)self->id);
+      }
+
+      /* Nothing is held back here: a write reaches the descriptor before it returns, so
+         the send side owes the wire nothing by the time this can be asked. */
+      int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
+          fprintf(stderr, "uart_bytes_to_write(id=%d) -> 0\\n", (int)self->id);
+          return 0;
+      }
+
+      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+          fprintf(stderr, "uart_send_break(id=%d, milliseconds=%d)\\n",
+                  (int)self->id, (int)milliseconds);
       }
 
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {

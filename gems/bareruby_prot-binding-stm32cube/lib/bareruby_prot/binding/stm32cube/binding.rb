@@ -21,11 +21,13 @@ module BareRubyProt
       #include "bareruby_board.h"
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
+          bareruby_uart_t *self, int32_t id, int32_t baud,
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
           self->id = id;
           self->baud = baud;
-          self->parity = parity;
+          self->data_bits = data_bits;
           self->stop_bits = stop_bits;
+          self->parity = parity;
           UART_HandleTypeDef *port = bareruby_board_uart(id);
           uint32_t hal_parity = UART_PARITY_NONE;
           if (parity == 1) {
@@ -37,7 +39,16 @@ module BareRubyProt
           }
           uint32_t hal_stop_bits = stop_bits == 2 ? UART_STOPBITS_2 : UART_STOPBITS_1;
 
-          uint32_t word_length = hal_parity == UART_PARITY_NONE ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
+          /* **On an F4 the word length counts the parity bit.** So the frame this device
+             can produce is the sum of the two, and only 8 and 9 exist -- UART_WORDLENGTH_7B
+             arrives with the L4 / G4 / F7 generations, not here. 7E1 is therefore an 8-bit
+             word with parity on, and 7N1, 6 and 5 have no spelling at all. A frame this
+             device cannot produce is refused rather than replaced. */
+          int32_t frame_bits = data_bits + (hal_parity == UART_PARITY_NONE ? 0 : 1);
+          if (frame_bits != 8 && frame_bits != 9) {
+              bareruby_board_fault();
+          }
+          uint32_t word_length = frame_bits == 8 ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
           if (port->Init.BaudRate != (uint32_t)baud || port->Init.Parity != hal_parity ||
               port->Init.WordLength != word_length || port->Init.StopBits != hal_stop_bits) {
               if (HAL_UART_DeInit(port) != HAL_OK) {
@@ -87,6 +98,28 @@ module BareRubyProt
          moment a program touches the buffered receive side. */
       __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return __HAL_UART_GET_FLAG(bareruby_board_uart(self->id), UART_FLAG_RXNE) != RESET ? 1 : 0;
+      }
+
+      /* The HAL transmits by blocking, so nothing is queued behind the call. What can
+         still be owed is the frame in the shift register: TC falls while it goes out. */
+      int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
+          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          return __HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET ? 1 : 0;
+      }
+
+      /* **SBK sends exactly one break character**, and an F4 has no bit that holds the
+         line low for an arbitrary span. So the requested time is served by sending break
+         characters until it has passed -- the line is low for very nearly the whole of
+         it, with one character's worth of idle between. */
+      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          bareruby_uart_flush(self);
+          uint32_t deadline = HAL_GetTick() + (uint32_t)(milliseconds > 0 ? milliseconds : 0);
+          do {
+              port->Instance->CR1 |= USART_CR1_SBK;
+              while ((port->Instance->CR1 & USART_CR1_SBK) != 0u) {
+              }
+          } while ((int32_t)(deadline - HAL_GetTick()) > 0);
       }
 
       bool bareruby_uart_can_read_line(bareruby_uart_t *self) {

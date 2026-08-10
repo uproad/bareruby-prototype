@@ -94,14 +94,18 @@ module BareRubyProt
       #include "pico/stdlib.h"
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
+          bareruby_uart_t *self, int32_t id, int32_t baud,
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
           self->id = id;
           self->baud = baud;
-          self->parity = parity;
+          self->data_bits = data_bits;
           self->stop_bits = stop_bits;
+          self->parity = parity;
           uart_inst_t *port = (id == 0) ? uart0 : uart1;
           uart_init(port, (uint)baud);
-          uart_set_format(port, 8, stop_bits == 2 ? 2 : 1,
+          /* The PL011 takes the data bits as their own field, 5 through 8, so the frame
+             asked for goes straight through. */
+          uart_set_format(port, (uint)data_bits, stop_bits == 2 ? 2 : 1,
                           parity == 1 ? UART_PARITY_EVEN
                                       : (parity == 2 ? UART_PARITY_ODD : UART_PARITY_NONE));
           gpio_set_function((id == 0) ? 0u : 4u, GPIO_FUNC_UART);
@@ -136,6 +140,22 @@ module BareRubyProt
          moment a program touches the buffered receive side. */
       __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return uart_is_readable(bareruby_uart_port(self)) ? 1 : 0;
+      }
+
+      /* The SDK writes by blocking, so nothing waits behind the call. What can still be
+         owed is what the transmit FIFO holds: BUSY stays set while it drains. */
+      int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
+          return (uart_get_hw(bareruby_uart_port(self))->fr & UART_UARTFR_BUSY_BITS) ? 1 : 0;
+      }
+
+      /* The PL011 holds the line low for as long as BRK is set, so the requested span is
+         served exactly. */
+      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+          uart_inst_t *port = bareruby_uart_port(self);
+          uart_tx_wait_blocking(port);
+          hw_set_bits(&uart_get_hw(port)->lcr_h, UART_UARTLCR_H_BRK_BITS);
+          sleep_ms((uint32_t)(milliseconds > 0 ? milliseconds : 0));
+          hw_clear_bits(&uart_get_hw(port)->lcr_h, UART_UARTLCR_H_BRK_BITS);
       }
 
       bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
