@@ -90,15 +90,19 @@ module BareRubyProt
           }
       }
 
-      void bareruby_uart_init(bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity) {
+      void bareruby_uart_init(
+          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
           self->id = id;
           self->baud = baud;
           self->parity = parity;
-          uint8_t configuration = SERIAL_8N1;
+          self->stop_bits = stop_bits;
+          uint8_t configuration;
           if (parity == 1) {
-              configuration = SERIAL_8E1;
+              configuration = stop_bits == 2 ? SERIAL_8E2 : SERIAL_8E1;
           } else if (parity == 2) {
-              configuration = SERIAL_8O1;
+              configuration = stop_bits == 2 ? SERIAL_8O2 : SERIAL_8O1;
+          } else {
+              configuration = stop_bits == 2 ? SERIAL_8N2 : SERIAL_8N1;
           }
           bareruby_uart_port(self)->begin((unsigned long)baud, configuration);
       }
@@ -123,7 +127,10 @@ module BareRubyProt
           (void)bareruby_uart_write(self, payload);
       }
 
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+      /* Weak for the same shape the other bindings have, though HardwareSerial's own
+         count is already the buffered answer; the uart_interrupt unit's override only
+         adds the arming touch. */
+      __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return (int32_t)bareruby_uart_port(self)->available();
       }
 
@@ -237,6 +244,10 @@ module BareRubyProt
 
 
 
+      /* The uart_interrupt unit overrides this when a program says on_line; otherwise
+         sleep drains nothing and pays one empty call per millisecond. */
+      extern "C" __attribute__((weak)) void bareruby_uart_interrupt_drain(void) {}
+
       /* delayMicroseconds takes an unsigned int, which is 16 bits here, and is accurate
          only well below its top. So a long wait is spent in whole milliseconds and the
          remainder is what the core is asked for. */
@@ -250,12 +261,21 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep(int32_t seconds) {
-          delay((unsigned long)seconds * 1000ul);
+      /* The signed-difference comparison carries a millis() wrap, as the asleep mark
+         below does with micros(). */
+      void bareruby_sleep_ms(int32_t milliseconds) {
+          uint32_t deadline = millis() + (uint32_t)(milliseconds > 0 ? milliseconds : 0);
+          for (;;) {
+              bareruby_uart_interrupt_drain();
+              if ((int32_t)(deadline - millis()) <= 0) {
+                  break;
+              }
+              delay(1);
+          }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          delay((unsigned long)milliseconds);
+      void bareruby_sleep(int32_t seconds) {
+          bareruby_sleep_ms(seconds > 0 ? seconds * 1000 : 0);
       }
 
       /* One mark serves all three units, counted in microseconds since the core started
@@ -281,6 +301,10 @@ module BareRubyProt
 
       void bareruby_asleep_us(int32_t microseconds) {
           bareruby_asleep_until((uint32_t)microseconds);
+      }
+
+      int32_t bareruby_ticks_ms(void) {
+          return (int32_t)millis();
       }
     CPP
 
@@ -323,6 +347,100 @@ module BareRubyProt
               bareruby_string_append_byte(result, byte);
           } while (byte != '\\n');
           return result;
+      }
+    CPP
+
+    # The receive interrupt. **The ISR here is HardwareSerial's own** — the core defines
+    # ISR(USARTn_RX_vect) for every port and Serial is always linked as the console, so a
+    # vector of this unit's own would be a duplicate-vector link error. The core's
+    # interrupt-filled rx buffer stands in for the ring the other bindings keep, and the
+    # drain empties it in thread mode into the same line assembly, so LF/CRLF, the
+    # 255-byte cap and the overlong discard behave byte for byte the same.
+    UART_INTERRUPT = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <Arduino.h>
+
+      typedef struct {
+          char line[256];               /* the 256 bytes on_line costs; the view points here */
+          int32_t line_length;
+          bool discarding;              /* an overlong line, thrown away to the next LF */
+          bareruby_uart_line_handler_t handler;
+          HardwareSerial *port;
+      } bareruby_uart_interrupt_t;
+
+      static bareruby_uart_interrupt_t bareruby_uart_interrupt;
+
+      static void bareruby_uart_interrupt_line_byte(uint8_t byte) {
+          if (byte == '\\n') {
+              if (bareruby_uart_interrupt.discarding) {
+                  bareruby_uart_interrupt.discarding = false;
+                  bareruby_uart_interrupt.line_length = 0;
+                  return;
+              }
+              int32_t length = bareruby_uart_interrupt.line_length;
+              if (length > 0 && bareruby_uart_interrupt.line[length - 1] == '\\r') {
+                  length -= 1;
+              }
+              bareruby_uart_interrupt.line[length] = '\\0';
+              bareruby_uart_interrupt.line_length = 0;
+              if (bareruby_uart_interrupt.handler != NULL) {
+                  bareruby_string_view_t view = {bareruby_uart_interrupt.line, length};
+                  bareruby_uart_interrupt.handler(&view);
+              }
+              return;
+          }
+          if (bareruby_uart_interrupt.discarding) {
+              return;
+          }
+          if (bareruby_uart_interrupt.line_length == 255) {   /* a line is at most 255 bytes */
+              bareruby_uart_interrupt.discarding = true;
+              bareruby_uart_interrupt.line_length = 0;
+              return;
+          }
+          bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
+      }
+
+      /* The core's buffer has one consumer. A registered handler is it, and the drain
+         assembles lines; without one the bytes wait for the read family below. */
+      extern "C" void bareruby_uart_interrupt_drain(void) {
+          HardwareSerial *port = bareruby_uart_interrupt.port;
+          if (port == NULL || bareruby_uart_interrupt.handler == NULL) {
+              return;
+          }
+          while (port->available() > 0) {
+              bareruby_uart_interrupt_line_byte((uint8_t)port->read());
+          }
+      }
+
+      static HardwareSerial *bareruby_uart_interrupt_attach(bareruby_uart_t *self) {
+          if (bareruby_uart_interrupt.port == NULL) {
+              switch (self->id) {
+              case 1: bareruby_uart_interrupt.port = &Serial1; break;
+              case 2: bareruby_uart_interrupt.port = &Serial2; break;
+              case 3: bareruby_uart_interrupt.port = &Serial3; break;
+              default: bareruby_uart_interrupt.port = &Serial; break;
+              }
+          }
+          return bareruby_uart_interrupt.port;
+      }
+
+      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
+          bareruby_uart_interrupt.handler = handler;
+          bareruby_uart_interrupt_attach(self);
+      }
+
+      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->read();
+      }
+
+      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->peek();
+      }
+
+      /* The strong definition; the polling one in the uart unit is weak. */
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_interrupt_attach(self)->available();
       }
     CPP
 
@@ -385,6 +503,7 @@ module BareRubyProt
     GPIO_FILE = "bareruby_binding_gpio_arduino.cpp"
     PERIPHERAL_FILE = "bareruby_binding_arduino.cpp"
     UART_RECEIVE_FILE = "bareruby_binding_uart_receive_arduino.cpp"
+    UART_INTERRUPT_FILE = "bareruby_binding_uart_interrupt_arduino.cpp"
     I2C_FILE = "bareruby_binding_i2c_arduino.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_arduino.cpp"
 
@@ -424,6 +543,7 @@ module BareRubyProt
       PWM_FILE => PWM,
       PERIPHERAL_FILE => PERIPHERAL,
       UART_RECEIVE_FILE => UART_RECEIVE,
+      UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
       ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN
@@ -431,7 +551,7 @@ module BareRubyProt
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
-    UNITS = { onboard_led: :onboard_led_file, gpio: GPIO_FILE, adc: ADC_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+    UNITS = { onboard_led: :onboard_led_file, gpio: GPIO_FILE, adc: ADC_FILE, uart: UART_FILE, uart_receive: UART_RECEIVE_FILE, uart_interrupt: UART_INTERRUPT_FILE, pwm: PWM_FILE, i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
 
     # A unit is usually one file. **Some are the machine's answer instead** — an
     # indicator is reached through a pin on one board and through a radio on another, so

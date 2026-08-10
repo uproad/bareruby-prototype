@@ -160,10 +160,10 @@ module BareRubyProt
       end
 
       def inline_interrupt(node)
-        receiver, events, block, function, type = @tast.children_of(node)
+        receiver, arguments, block, function, type = @tast.children_of(node)
         parameters, body, block_type = @tast.children_of(block)
         @tast.create_interrupt(
-          inline_node(receiver), inline_node(events),
+          inline_node(receiver), arguments.map { |argument| inline_node(argument) },
           @tast.create_block(parameters, inline_body(body), block_type, span_of(block)),
           function, type, span_of(node)
         )

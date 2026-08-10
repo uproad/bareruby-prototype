@@ -128,6 +128,56 @@ README lists.
   no generalized interrupt API, and no production diagnostics. Built with pico-sdk
   2.3.0, the sample produced a 27,648 B UF2 with 17,672 B of ELF text and 1,508 B of bss;
   it was built but not hardware-flashed.
+- **M5 — UART receive interrupts** (`samples/uart_on_line.rb`):
+  `uart.on_line { |line| ... }` generalizes the M4 machinery — a realtime handler's
+  parameters are now the declaration's to state, as `block_parameter_types:` beside the
+  block kind, and the registration arguments between the receiver and the handler come
+  from the declared keywords rather than a fixed `edge` slot, so GPIO's shape is one case
+  of the form rather than the form. The handler is handed each completed line as a
+  `StringView` — a new non-owning type, a pointer and a length into the binding's buffer,
+  declared in the binding header together with its one operation
+  (`bareruby_text_view_equal`, deliberately named outside the `bareruby_string_` family
+  so a view never links the string runtime or the arena) — and answers `==`/`!=` against
+  a static string, nothing else. Enabling the interrupt is what buys the memory: the new
+  `uart_interrupt` unit holds a static 256-byte ring the ISR pushes received bytes into
+  and a 256-byte line-assembly buffer the view points at, linked only when a program says
+  `on_line`. All policy — LF/CRLF framing, the trailing newline stripped, the 255-byte
+  cap with overlong lines discarded to the next newline, the handler call itself — runs
+  in thread mode: `bareruby_sleep_ms`/`bareruby_sleep` became drain loops calling a hook
+  the always-linked unit declares `__attribute__((weak))` as a no-op and the interrupt
+  unit overrides, the STM32 startup-file move made at the unit boundary. Per platform:
+  STM32Cube installs strong `USARTx_IRQHandler`s reading SR then DR (guarded by which
+  instances the device header defines — an F401 has no USART3/UART4/UART5), pico-sdk uses
+  `irq_set_exclusive_handler` plus `uart_set_irq_enables`, the Arduino binding
+  deliberately takes no vector — HardwareSerial's own interrupt-filled buffer stands in
+  for the ring and the drain empties it — and the hosted binding plays the ISR itself
+  from non-blocking stdin, so `printf 'ON\r\nOFF\n' |` exercises the whole path without
+  hardware. Still provisional, as M4 was: one registration per program, the `asleep`
+  family does not drain, a full ring drops bytes silently, and a view stored past its
+  block dangles by design. On the NUCLEO-F446RE the sample builds to 20,064 B of ELF
+  text and 2,272 B of bss; verified on host, built for every board of all four bindings.
+- **M6 — Arduino HardwareSerial-shaped receive** (`samples/uart_buffered.rb`): the
+  definition was pinned first — everything Arduino's HardwareSerial can receive — which
+  shrank the problem to exactly four pieces, because that framework does no framing at
+  all: an ISR-fed ring, non-blocking reads over it, a clock for the timeout family, and
+  the stop bit `begin()`'s config byte carries. So: `UART.new` takes `stop_bits:` (1 or
+  2, applied per platform as `UART_STOPBITS_2` / `uart_set_format` — which also made the
+  Pico binding stop ignoring parity — / `SERIAL_8N2`-family constants); `read_byte` and
+  `peek` answer the next byte or -1 without blocking or an arena; `bytes_available`
+  answers the ring's depth — its polling definition in the always-linked uart unit turned
+  weak, and the uart_interrupt unit carries the strong override, so a program that never
+  buffers keeps the hardware flag and pays nothing; and bare `ticks_ms` reads
+  milliseconds since boot into an Int32 (HAL_GetTick / to_ms_since_boot / millis /
+  CLOCK_MONOTONIC), so Arduino's `setTimeout`/`readBytesUntil`/`parseInt` family needs no
+  declarations of its own — the sample composes readBytesUntil from the primitives in
+  eight lines of Ruby. The receive side arms on first touch — a registration or a
+  buffered read — which is now the one moment the 256-byte ring is bought; the ring keeps
+  one consumer, a registered on_line handler taking precedence over the read family, and
+  the ISRs discard parity-failed bytes as Arduino's core does. Known divergences,
+  recorded: 5–7 data bits are not offered (the F4's UART cannot), one receive port per
+  program where Arduino serves four, and `read`/`gets` stay on their blocking
+  hardware path rather than the ring. Verified on host including the timeout path;
+  built for every board of all four bindings.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under

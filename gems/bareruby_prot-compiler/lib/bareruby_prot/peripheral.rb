@@ -43,7 +43,8 @@ module BareRubyProt
     # one kind — `:realtime_handler`, whose block becomes an independent function running
     # in the realtime context — because one kind is what exists. A second arrives with the
     # second method that needs it, and not before: a shape drawn from one example is a
-    # shape drawn again at the second.
+    # shape drawn again at the second. What the handler is handed, if anything, is the
+    # declaration's to say too, as `block_parameter_types:` beside the kind.
     def block_of(name) = @methods.dig(name, :block)
 
     def variadic_from(name) = @variadic[name]

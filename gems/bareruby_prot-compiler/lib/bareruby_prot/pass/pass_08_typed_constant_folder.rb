@@ -176,10 +176,10 @@ module BareRubyProt
       end
 
       def fold_interrupt(node)
-        receiver, events, block, function, type = @tast.children_of(node)
+        receiver, arguments, block, function, type = @tast.children_of(node)
         parameters, body, block_type = @tast.children_of(block)
         @tast.create_interrupt(
-          fold_node(receiver), fold_node(events),
+          fold_node(receiver), arguments.map { |argument| fold_node(argument) },
           @tast.create_block(parameters, fold_body(body), block_type, span_of(block)),
           function, type, span_of(node)
         )

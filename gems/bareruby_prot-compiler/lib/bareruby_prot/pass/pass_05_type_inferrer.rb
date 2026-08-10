@@ -10,6 +10,7 @@ require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
+require_relative "pass_05_type_inferrer/string_view"
 require_relative "pass_05_type_inferrer/arena_array"
 
 module BareRubyProt
@@ -576,6 +577,8 @@ module BareRubyProt
             infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, type_environment:, span:)
           elsif ArenaString.type?(receiver_type)
             infer_arena_string_method_call(name, receiver_tast, arguments, type_environment:, span:)
+          elsif StringView.type?(receiver_type)
+            infer_string_view_method_call(name, receiver_tast, arguments, type_environment:, span:)
           elsif Fixed.conversion?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
           elsif operator?(name)
@@ -700,6 +703,16 @@ module BareRubyProt
         comparison = COMPARISON_OPERATORS.include?(name)
         arguments = [receiver_tast, text_of(source, type_environment:)]
         call = string_call(name, function, arguments, comparison ? :Bool : ArenaString.type(@tast), span)
+        name == :!= ? negate(call, span) : call
+      end
+
+      # A view compares against a static string through a helper the header carries,
+      # deliberately outside the string runtime: the bytes are a binding's, not a region's.
+      def infer_string_view_method_call(name, receiver_tast, arguments, type_environment:, span:)
+        raise "a string view answers == and !=, not #{name}" unless %i[== !=].include?(name)
+
+        call = string_call(name, StringView::EQUAL_FUNCTION,
+                           [receiver_tast, text_of(arguments.first, type_environment:)], :Bool, span)
         name == :!= ? negate(call, span) : call
       end
 
@@ -921,15 +934,29 @@ module BareRubyProt
         Peripheral[receiver_type[:class_name]].block_of(name) == :realtime_handler
       end
 
+      # The registration arguments and the handler's parameters are both the declaration's
+      # answer: keywords become trailing positionals as everywhere else, and a declared
+      # block parameter type names what the binding will hand the handler. The handler
+      # still sees no outer names — its parameters are the only ones it starts with.
       def infer_realtime_handler_call(receiver_type, receiver_tast, name, arguments, block,
                                       type_environment:, span:)
         signature = Peripheral[receiver_type[:class_name]].method_signature(name)
-        events = resolve_keywords(arguments, signature[:keywords] || { edge: 0 },
-                                  type_environment:, span:).first
+        registration = resolve_keywords(arguments, signature[:keywords] || {}, type_environment:, span:)
         parameters, body = @bareruby_ast.children_of(block)
-        typed_body = infer_body(body, type_environment: type_environment.without_locals)
-        typed_block = @tast.create_block(parameters, typed_body, :Nil, span_of(block))
-        @tast.create_interrupt(receiver_tast, events, typed_block, signature[:function], :Nil, span)
+        parameter_types = (signature[:block_parameter_types] || [])
+                          .map { |declared| StringView.block_parameter_type(@tast, declared) }
+        handler_environment = type_environment.without_locals
+        bindings = parameters.zip(parameter_types).map do |parameter, type|
+          binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
+          handler_environment.bind(binding[:name], binding, type)
+          binding
+        end
+        typed_body = infer_body(body, type_environment: handler_environment)
+        typed_parameters = bindings.zip(parameters, parameter_types).map do |binding, parameter, type|
+          @tast.create_parameter(binding, type, span_of(parameter))
+        end
+        typed_block = @tast.create_block(typed_parameters, typed_body, :Nil, span_of(block))
+        @tast.create_interrupt(receiver_tast, registration, typed_block, signature[:function], :Nil, span)
       end
 
       def infer_module_function_call(module_name, name, arguments, type_environment:, span:)
