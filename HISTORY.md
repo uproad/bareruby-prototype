@@ -174,10 +174,37 @@ README lists.
   buffered read — which is now the one moment the 256-byte ring is bought; the ring keeps
   one consumer, a registered on_line handler taking precedence over the read family, and
   the ISRs discard parity-failed bytes as Arduino's core does. Known divergences,
-  recorded: 5–7 data bits are not offered (the F4's UART cannot), one receive port per
-  program where Arduino serves four, and `read`/`gets` stay on their blocking
-  hardware path rather than the ring. Verified on host including the timeout path;
-  built for every board of all four bindings.
+  recorded: one receive port per program where Arduino serves four, and `read`/`gets`
+  stay on their blocking hardware path rather than the ring. Verified on host including
+  the timeout path; built for every board of all four bindings.
+  *The "5–7 data bits are not offered (the F4's UART cannot)" recorded here was wrong on
+  both halves; see the entry below.*
+- **The frame the guideline states** (`samples/uart_format.rb`): the UART class was read
+  against the standard it claims to follow, and against PicoRuby, and **the class was the
+  one that had been dropping things**. `stop_bits:`, arrived at above by way of Arduino's
+  `begin()` config byte, turns out to be a name and a default the guideline and PicoRuby
+  both already carry; nothing was invented. Missing outright were `data_bits:`,
+  `bytes_to_write` and `send_break`, all three of which the guideline states.
+  **The claim that the F4 cannot offer 7 data bits was wrong**: an F4's word length counts
+  the parity bit, so `UART_WORDLENGTH_8B` with parity on *is* 7E1 — the binding simply
+  never used that combination. What an F4 truly cannot spell is 5, 6, and 7 without
+  parity. And it was the wrong place to decide from: pico-sdk takes 5..8 in a field of its
+  own and Arduino's core spells all four, so **letting the narrowest binding fix the API
+  throws away what the other two hold natively**. So the frame is asked for, and a device
+  that cannot produce it **refuses** (`bareruby_board_fault`) rather than sending a
+  different one — a wrong frame is rubbish on the wire and there is nowhere safe to fall,
+  which is what separates this from the LED that no-ops on a board without one.
+  Per platform: pico-sdk passes the three fields straight to `uart_set_format`; the
+  Arduino config byte is built from its bit fields (data bits in 2..1, stop in 3, parity
+  in 5..4) instead of a table of thirty-six names; the F4 sums data and parity and admits
+  only 8 or 9. `send_break` cost the most per platform — the PL011 holds BRK for exactly
+  as long as asked, an F4 has only `SBK` (one break character) so the span is served by
+  repeating it, and **Arduino's core has no break at all**, so the pin is taken back from
+  the transmitter and held low, which is the one place the frame kept in the struct is
+  read back. On pico1h the sample builds to 40,864 B of text and 3,608 B of bss (73,728 B
+  UF2), on the Mega a 16,148 B hex. Verified on host; built for pico1h, pico2w and
+  mega2560. **The refusal path is not exercised** — no STM32 target on this desk — and
+  no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
