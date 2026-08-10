@@ -18,7 +18,10 @@ struct: :bareruby_uart_t,
       constructor: {
         function: :bareruby_uart_init,
         parameter_types: %i[Int32],
-        keywords: { baud: 115_200, parity: 0, stop_bits: 1 }
+        # The frame, in the order the standard guideline states it. A binding that cannot
+        # produce the frame asked for refuses; it never quietly sends a different one,
+        # because a wrong frame is rubbish on the wire and there is nowhere safe to fall.
+        keywords: { baud: 115_200, data_bits: 8, stop_bits: 1, parity: 0 }
       },
       methods: {
         # puts and write on a UART take the same printf expansion as the global puts.
@@ -48,6 +51,14 @@ struct: :bareruby_uart_t,
         clear_rx_buffer: {
           function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :Nil
         },
+        # What the send side still owes the wire, and the break the standard guideline
+        # defines. bytes_to_write is the counterpart of bytes_available.
+        bytes_to_write: {
+          function: :bareruby_uart_bytes_to_write, parameter_types: [], return_type: :Int32
+        },
+        send_break: {
+          function: :bareruby_uart_send_break, parameter_types: %i[Int32], return_type: :Nil
+        },
         clear_tx_buffer: {
           function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
         },
@@ -67,12 +78,14 @@ struct: :bareruby_uart_t,
       typedef struct {
           int32_t id;
           int32_t baud;
-          int32_t parity;
+          int32_t data_bits;
           int32_t stop_bits;
+          int32_t parity;
       } bareruby_uart_t;
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits);
+          bareruby_uart_t *self, int32_t id, int32_t baud,
+          int32_t data_bits, int32_t stop_bits, int32_t parity);
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
@@ -82,6 +95,8 @@ struct: :bareruby_uart_t,
       int32_t bareruby_uart_read_byte(bareruby_uart_t *self);
       int32_t bareruby_uart_peek(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
+      int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self);
+      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds);
       bool bareruby_uart_can_read_line(bareruby_uart_t *self);
       void bareruby_uart_flush(bareruby_uart_t *self);
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
@@ -93,7 +108,8 @@ struct: :bareruby_uart_t,
     units: {
       uart: %i[bareruby_uart_init bareruby_uart_write bareruby_uart_puts
                bareruby_uart_printf bareruby_uart_bytes_available bareruby_uart_can_read_line
-               bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer],
+               bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer
+               bareruby_uart_bytes_to_write bareruby_uart_send_break],
       uart_receive: %i[bareruby_uart_read bareruby_uart_gets],
       uart_interrupt: %i[bareruby_uart_on_line bareruby_uart_read_byte bareruby_uart_peek]
     }

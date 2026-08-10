@@ -90,21 +90,33 @@ module BareRubyProt
           }
       }
 
+      /* The core spells the whole frame as one byte, and the constants are laid out so
+         that the three fields are separate bits: data bits in 2..1, stop bits in 3,
+         parity in 5..4. Building the byte beats a table of thirty-six names. */
+      static uint8_t bareruby_uart_configuration(
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
+          uint8_t configuration = (uint8_t)((data_bits - 5) << 1);
+          if (stop_bits == 2) {
+              configuration |= 0x08;
+          }
+          if (parity == 1) {
+              configuration |= 0x20;
+          } else if (parity == 2) {
+              configuration |= 0x30;
+          }
+          return configuration;
+      }
+
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud, int32_t parity, int32_t stop_bits) {
+          bareruby_uart_t *self, int32_t id, int32_t baud,
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
           self->id = id;
           self->baud = baud;
-          self->parity = parity;
+          self->data_bits = data_bits;
           self->stop_bits = stop_bits;
-          uint8_t configuration;
-          if (parity == 1) {
-              configuration = stop_bits == 2 ? SERIAL_8E2 : SERIAL_8E1;
-          } else if (parity == 2) {
-              configuration = stop_bits == 2 ? SERIAL_8O2 : SERIAL_8O1;
-          } else {
-              configuration = stop_bits == 2 ? SERIAL_8N2 : SERIAL_8N1;
-          }
-          bareruby_uart_port(self)->begin((unsigned long)baud, configuration);
+          self->parity = parity;
+          bareruby_uart_port(self)->begin(
+              (unsigned long)baud, bareruby_uart_configuration(data_bits, stop_bits, parity));
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -132,6 +144,39 @@ module BareRubyProt
          adds the arming touch. */
       __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           return (int32_t)bareruby_uart_port(self)->available();
+      }
+
+      /* availableForWrite reports the room left in the core's send ring, so what is still
+         owed is the ring's size less that room, plus the frame in the shift register --
+         which the core does not expose, so it is not counted. */
+      int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
+          return (int32_t)(SERIAL_TX_BUFFER_SIZE - 1 - bareruby_uart_port(self)->availableForWrite());
+      }
+
+      /* **The core offers no break at all.** An AVR sends one by taking the pin back from
+         the transmitter and holding it low, so that is what this does: drain, release the
+         port, drive the pin, and start it again from what the program asked for -- which
+         is the one place the frame kept in the struct is read back. */
+      static uint8_t bareruby_uart_transmit_pin(const bareruby_uart_t *self) {
+          switch (self->id) {
+          case 1: return 18;
+          case 2: return 16;
+          case 3: return 14;
+          default: return 1;
+          }
+      }
+
+      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+          HardwareSerial *port = bareruby_uart_port(self);
+          uint8_t pin = bareruby_uart_transmit_pin(self);
+          port->flush();
+          port->end();
+          pinMode(pin, OUTPUT);
+          digitalWrite(pin, LOW);
+          delay((unsigned long)(milliseconds > 0 ? milliseconds : 0));
+          digitalWrite(pin, HIGH);
+          port->begin((unsigned long)self->baud,
+                      bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
       }
 
       bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
