@@ -206,18 +206,25 @@ module BareRubyProt
     # A tool that refuses has already said why, so its refusal is passed to the shell as a
     # status rather than dressed up as an error of this program's own.
     #
-    # **One board at a time, whatever the run was told about jobs.** Everything above this
-    # is files, and files can be kept apart; this is a bootloader volume mounted at a
-    # place the desk names, and a board reached by noticing which one appeared in
-    # BOOTSEL since a moment ago. Two of those at once take each other's volume and
-    # attribute each other's board — which writes an image to hardware nobody named.
+    # **Written at the same time, one process per target, as everything above it is.** The
+    # two things that made this the one stage that could not be were both about a board
+    # being found rather than about writing one: a bootloader volume went to the one place
+    # the desk named for all of them, and a board was followed across its reset by
+    # noticing which one appeared in BOOTSEL since a moment ago — the whole bus read to
+    # answer a question about one board. A line in fstab per board answers the first, and
+    # the port a board is plugged into answers the second. Neither leaves anything for two
+    # runs to take from each other.
+    #
+    # **A board still takes its image one block at a time from one writer**, and the boards
+    # of a single entry are still written in turn: the row is the unit of the table, and
+    # several identical boards are one row.
     def flash
       planned = entries
       return nothing if planned.empty?
 
       showing(planned, %i[tools flash])
       fetched(planned)
-      planned.all? { |entry| flashed(entry) } ? 0 : 1
+      Jobs.run(planned, limit: limit(planned), progress: @progress) { |entry| flashed(entry) } ? 0 : 1
     end
 
     def flashed(entry)
