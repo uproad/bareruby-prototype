@@ -553,6 +553,34 @@ against 52 for the default blink — so the file shrinks while the program in it
 
 1.5.1 cannot build `raspberry-pi-pico2` at all, so there is no column for it there.
 
+### What building the targets at once is worth
+
+A run used to compile and build one recorded target, then the next. Nothing was shared
+between them by then — what they build with is fetched once before any of them start, and
+each compiles into a root only it writes — and cmake is given no `-j`, so each build was
+occupying one core of a desk with 28 of them. They are now built at the same time, one
+process per target.
+
+The four targets in this checkout's record, `ref.rb`, a cold `.bareruby/` each time, on a
+28-core desk:
+
+| Run | Wall clock |
+| --- | --- |
+| `build --jobs=1` (what it did before) | 20.3s |
+| `build` (four at once) | 8.6s |
+
+The four builds are 0.2s (host), 0.6s (mega2560), 8.3s (pico1h) and 8.6s (pico2w), so the
+run now costs the longest of them rather than their sum. A desk with more boards of the
+same kind gains proportionally more; one with a single target gains nothing, which is the
+same run it was.
+
+**What is built does not change.** Compiling the same program twice hashes identically
+across `.bareruby/`, and `--jobs=1` and the default produce the same artifacts byte for
+byte. Boards are still written one at a time: a bootloader volume is mounted at a place
+the desk names, and a board is found by noticing which one appeared in BOOTSEL since a
+moment ago, so two flashes at once would take each other's volume and attribute each
+other's board.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

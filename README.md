@@ -154,6 +154,18 @@ thing in one verb and another in the next would be a difference nobody can be to
 **`build/` holds what was built, and nothing else** — one file per recorded target. Everything
 else, the generated C++ and the tree a toolchain leaves behind, lives under `.bareruby/`.
 
+**Targets are built at the same time, each in a process of its own.** What they build with
+is fetched once before any of them start, and each compiles into a root only it writes, so
+from there down they share nothing — and cmake is given no `-j`, so a board's build was
+occupying one core of a desk that has many. Four targets that took 19.9s end to end take
+8.6s, which is the longest single build plus a fraction. `--jobs=N` says how many at once;
+without it, as many as there are targets, up to the number of cores.
+
+**Boards are written one at a time regardless.** Everything above `flash` is files, and
+files can be kept apart. A bootloader volume is mounted at a place the desk names, and a
+board is found by noticing which one appeared in BOOTSEL since a moment ago — two of those
+at once would take each other's volume and attribute each other's board.
+
 A run says which stage each target is in and how long it has been there, redrawing the
 table in place while it works. The stages are the verbs it stacked, so `deploy` has four
 columns and `compile` has one:
@@ -162,10 +174,10 @@ columns and `compile` has one:
 $ bin/bareruby deploy
 bareruby deploy app/main.rb · 3 targets
 TARGET      TOOLS  COMPILE    BUILD    FLASH  ARTIFACT
-pico1h       0.1s     0.1s     6.8s     9.9s  bareruby_program.uf2  70.5 KB
-pico2w       0.1s     0.1s    7.2s+        .
-mega2560     0.1s        .        .        .
-deploy: 1/3 · 15.4s
+pico1h       0.1s     0.1s     8.7s        .  bareruby_program.uf2  70.5 KB
+pico2w       0.1s     0.1s    8.9s+        .
+mega2560     0.1s     0.1s     0.6s        .  bareruby_program.hex  9.1 KB
+deploy: 0/3 · 9.2s
 ```
 
 A cell is `.` before its stage, seconds with a `+` while it runs, seconds when it is done,
@@ -179,8 +191,9 @@ anything.
 
 Anything else with something to say — a notice from a pass, a build system that refused,
 the script naming the board it wrote — says it above the table, which keeps scrolling as
-a log does. Where there is no terminal to redraw, in a pipe or in CI, there is no table:
-each stage says one line as it finishes.
+a log does, with the target's name in front of it so that a complaint is about a board
+rather than about a run. Where there is no terminal to redraw, in a pipe or in CI, there
+is no table: each stage says one line as it finishes.
 
 Four things go wrong, and the advice differs. Three are in the record:
 
@@ -213,7 +226,7 @@ on this machine is a stub that says on fd2 what it would have done.
 
 ```
 hello/
-├── .gitignore          build/, dump/, .tools/
+├── .gitignore          build/, .bareruby/, .tools/
 ├── Gemfile             what this is built from, and every board it could be built for
 ├── Gemfile.lock
 ├── README.md
@@ -376,7 +389,7 @@ build/pico/
 build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
 ```
 
-## Two flags
+## Three flags
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and the
 unwinder and its tables are left out. It is worth several kilobytes of flash even in a
@@ -388,6 +401,12 @@ reaches a USB serial port instead of being dropped, and — the reason it exists
 **stays enumerated as a USB device while the program runs**, which is what lets it be
 reflashed without the BOOTSEL button. It roughly doubles the image;
 [`HISTORY.md`](HISTORY.md#what---debug-costs) has the numbers.
+
+`--jobs=N` says how many targets to build at once, each in a process of its own. Without
+it, a run takes as many as there are targets, up to the number of cores on the desk;
+`--jobs=1` puts them back end to end. It changes nothing about what is built — the same
+artifacts, byte for byte — only how long the run takes. Boards are written one at a time
+whatever it says.
 
 ## What a build reaches for
 
@@ -443,9 +462,7 @@ set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT
 
 What is not fetched is what the desk brings to any work at all: `ruby`, `make`, `cmake`,
 `git`. Only Ruby is needed for the first stage — Prism ships with Ruby 4.0. Every run
-rewrites `dump/`, `.bareruby/` and `build/`, none of which is tracked; `dump/` holds one
-binary snapshot and one text dump per pass boundary, and the pipeline reloads each
-representation from its own dump before the next pass.
+rewrites `.bareruby/` and `build/`, neither of which is tracked.
 
 ## Per-target notes
 

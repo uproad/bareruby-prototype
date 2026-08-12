@@ -9,6 +9,7 @@ require "bareruby_prot/compiler"
 
 require_relative "deployment"
 require_relative "catalog"
+require_relative "jobs"
 require_relative "progress"
 require_relative "scaffold"
 require_relative "toolchain"
@@ -57,6 +58,9 @@ module BareRubyProt
                             entry recorded there is worked on.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
+        --jobs=N            How many targets to build at once, each in a process of its
+                            own. Without it, as many as there are targets, up to the
+                            number of cores. Boards are written one at a time regardless.
     USAGE
 
     def self.run(arguments) = new(arguments).run
@@ -68,6 +72,8 @@ module BareRubyProt
       @exceptions = @arguments.delete("--no-exceptions").nil?
       @target_options = @arguments.grep(/\A#{Target::OPTION_PREFIX}/)
       @arguments -= @target_options
+      @jobs_options = @arguments.grep(/\A#{Jobs::OPTION_PREFIX}/)
+      @arguments -= @jobs_options
     end
 
     # The table is finished here rather than by the command that drew it, because deploy is
@@ -146,29 +152,47 @@ module BareRubyProt
 
     def compiled(entry)
       @progress.at(:compile, [entry]) do
-        compile_for([entry.target], debug: debug?(entry))
-        place(entry)
+        compile_for([entry.target], debug: debug?(entry), into: root_of(entry))
       end
     end
 
     # What compile does, and then a toolchain over each of what it produced. The output is
     # cleared once for the command rather than once for each entry, which is what lets
     # entries that cannot share a compilation still share a directory to compile into.
+    #
+    # **Each target is worked on in a process of its own**, because from here down there is
+    # nothing left that two of them share: what they build with is already fetched, and
+    # each compiles into a root only it writes. What is left is a build system that uses
+    # one core and is asked for one target at a time, which is a wait as long as all of
+    # them added together for no reason but the shape of the run.
     def build
       planned = entries
       return nothing if planned.empty?
 
       showing(planned, %i[tools compile build])
       Compiler.clear_output
-      planned.all? { |entry| built(entry) } ? 0 : 1
+      fetched(planned)
+      Jobs.run(planned, limit: limit(planned), progress: @progress) { |entry| built(entry) } ? 0 : 1
     end
 
-    # The three stages one entry passes through, each timed where it happens. Fetching is
-    # asked for one entry at a time rather than once for all of them so that the wait lands
-    # on the row that waited; it is the same question asked repeatedly, and a binding whose
-    # tools are already here answers it without reaching anywhere.
+    def limit(planned)
+      Jobs.limit(@jobs_options.last&.delete_prefix(Jobs::OPTION_PREFIX), planned)
+    end
+
+    # **Everything the run will reach for, fetched once, before any of the work that
+    # reaches for it.** The store is one directory on the desk and one SDK serves every
+    # entry that names its binding, so asking entry by entry is asking the same question
+    # repeatedly — and asking it from more than one place at a time is two runs unpacking
+    # a gigabyte into the same name. One fetch, on one row of the table that spans them
+    # all, is both the honest account of the wait and the thing that makes what follows
+    # safe to do at once.
+    def fetched(planned)
+      @progress.at(:tools, planned) { Tools.install(planned.map(&:target)) }
+    end
+
+    # The two stages one entry passes through after what it builds with is already here,
+    # each timed where it happens.
     def built(entry)
-      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
       compiled(entry)
       worked = @progress.at(:build, [entry]) do
         toolchain_of(entry).run(directory_of(entry), options: entry.options)
@@ -181,16 +205,22 @@ module BareRubyProt
     # deliberate: it repeats a deployment without compiling it again.
     # A tool that refuses has already said why, so its refusal is passed to the shell as a
     # status rather than dressed up as an error of this program's own.
+    #
+    # **One board at a time, whatever the run was told about jobs.** Everything above this
+    # is files, and files can be kept apart; this is a bootloader volume mounted at a
+    # place the desk names, and a board reached by noticing which one appeared in
+    # BOOTSEL since a moment ago. Two of those at once take each other's volume and
+    # attribute each other's board — which writes an image to hardware nobody named.
     def flash
       planned = entries
       return nothing if planned.empty?
 
       showing(planned, %i[tools flash])
+      fetched(planned)
       planned.all? { |entry| flashed(entry) } ? 0 : 1
     end
 
     def flashed(entry)
-      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
       @progress.at(:flash, [entry]) do
         entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
                                                             options: entry.options)
@@ -309,27 +339,26 @@ module BareRubyProt
 
     def debug?(entry) = @debug || entry.debug
 
-    def directory_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.name)
-
-    # **The compiler names its output after the composition, and this side renames it to
-    # the entry.** That is a boundary rather than a leftover vocabulary: a compiler that
-    # knows nothing about desks cannot be handed a name a desk invented, and two entries
-    # built from one composition — a debug one and a release one — must not land in one
-    # place. What a person reads is the name they wrote.
+    # **An entry compiles into a root of its own, named after the entry.** The name is the
+    # one word a person meets this entry by, so it is the one the machinery is filed
+    # under — and it is also the only thing that tells two entries of one composition
+    # apart, which a debug build and a release build of the same board are.
     #
-    # **A name may already be the one the compiler used.** Leaving the name blank in
-    # `target add` writes the composition out, which is that same word — and moving a
-    # directory onto itself is deleting what was just built.
-    def place(entry)
-      return if entry.name == entry.target.directory
+    # **The root is the entry's, not the composition's**, because the runtime C++ sits at
+    # the top of it. A root shared between entries would have those files written again by
+    # every compilation into it, while some other entry was building from them. One root
+    # each is what makes two entries able to be compiled at the same time.
+    def root_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.name)
 
-      FileUtils.rm_rf(directory_of(entry))
-      FileUtils.mv(File.join(Compiler::COMPILE_DIRECTORY, entry.target.directory),
-                   directory_of(entry))
-    end
+    # **The compiler names the directory after the composition, and this side lets it.**
+    # It is inside the entry's root rather than beside it, so what a person navigates to
+    # is still the name they wrote; the composition is spelled one level further in,
+    # where the machinery is, and reaching the runtime from there is `..` exactly as the
+    # manifests were written to expect.
+    def directory_of(entry) = File.join(root_of(entry), entry.target.directory)
 
-    def compile_for(targets, debug:)
-      Compiler.new(source, targets:, debug:, exceptions: @exceptions).run
+    def compile_for(targets, debug:, into:)
+      Compiler.new(source, targets:, debug:, exceptions: @exceptions, into:).run
     end
 
     # Named from the project root, like everything else a run reaches for that it did not

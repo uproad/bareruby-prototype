@@ -50,7 +50,7 @@ adds `.gems/` as a place to look, and then runs the executable the ecosystem gem
 that a checkout cannot drift from what a user gets.
 
 Everything either half reaches for is found **from the project root** rather than from
-beside its own source — `build/`, `dump/`, `config/target.yml` and the default `ref.rb`.
+beside its own source — `build/`, `.bareruby/`, `config/target.yml` and the default `ref.rb`.
 Where that root is, is [bundler's answer](#where-a-project-starts).
 
 ## Where the shipped C++ comes from
@@ -411,9 +411,8 @@ gitignored, because which machines are at this desk is true of the desk.
    executable: fd1 is `puts` and fd2 is the peripheral call trace. A sample that needs
    input takes it on stdin.
 3. **Regression.** Every other program in `samples/`, and `ref.rb`, still compiles.
-4. **Determinism.** Compile the same program twice and compare hashes across `dump/` and
-   `.bareruby/`. They must match — which also confirms that each pass boundary can be
-   reloaded from its own dump.
+4. **Determinism.** Compile the same program twice and compare hashes across `.bareruby/`.
+   They must match.
 5. **Board build.** `./bareruby build --target=<the entry for that board>` through to the
    `.uf2`, `.hex` or ELF, and record `text`, `bss` and artifact size per board in
    [`HISTORY.md`](HISTORY.md). Where `--no-exceptions` changes the answer, measure both.
