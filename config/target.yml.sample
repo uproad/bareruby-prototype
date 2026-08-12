@@ -54,8 +54,8 @@
 #             bootrom's id while it is in BOOTSEL and the flash id once it is running, so
 #             one written down here matches in one of those states and not in the other —
 #             which looks exactly like the board having been unplugged. An RP2350 reports
-#             one number for both. Run target/binding/pico_sdk/flash.sh --list to see what is
-#             attached and what each answers to right now.
+#             one number for both. There is nothing to look up to fill this in: flashing
+#             refuses when two boards carry one chip and prints the serials it found.
 #   options:  optional. What only this desk knows, passed to the binding that needs it.
 #
 # The first three fields of an entry are true of the project; boards and options are true

@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # Flash a .uf2 onto one attached Raspberry Pi Pico board.
 #
-#     target/binding/pico_sdk/flash.sh [--board SERIAL] [path/to/firmware.uf2]
-#     target/binding/pico_sdk/flash.sh --list
+#     flash.sh [--board SERIAL] path/to/firmware.uf2
+#     flash.sh --list
+#
+# **This is shipped inside a gem, so where it is depends on the desk.** `bareruby deploy`
+# runs it and never has to be told; run by hand, it is found with
+#
+#     bundle exec gem contents bareruby_prot-binding-pico_sdk | grep flash.sh
+#
+# and every line it prints about itself names the path it was actually run from.
 #
 # Several boards can stay attached at once. Which one receives the firmware follows
 # from the firmware itself: a .uf2 carries the family id of the chip it was built for,
 # and only boards carrying that chip are considered. Two boards of the same chip — a
 # Pico and a Pico W, a Pico 2 and a Pico 2 W — cannot be told apart that way, which is
-# the whole reason a target is a board and not a chip. Name one of them with --board
-# SERIAL; `--list` prints the serials.
+# the whole reason a target is a board and not a chip. Reached through `bareruby`, which
+# has no --board of its own, the serial goes under `boards:` in the entry in
+# config/target.yml; run by hand, --board says it. `--list` prints the serials either way,
+# and so does the refusal when there is more than one candidate.
 #
 # A board runs the firmware it was given, and a default build presents no USB interface
 # at all, so it is invisible here until BOOTSEL is held. A --debug build stays visible
@@ -32,7 +41,6 @@
 # is for, that the volume really is a bootloader, and the copy.
 set -euo pipefail
 
-HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 BESIDE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 case "$(uname -s)" in
@@ -73,7 +81,17 @@ if [ -n "$LIST" ]; then
     exit 0
 fi
 
-UF2="${UF2:-$HERE/build/pico-pico_sdk-thumbv6m-none-eabi/bareruby_program.uf2}"
+# **There is no image to fall back on.** What was built is at build/<name>/ in whichever
+# project asked for it, under the name that project's record gave the entry — which is
+# exactly what a script shipped in a gem cannot know. It used to guess one, and the guess
+# named a directory beside this file that has never existed on any desk.
+if [ -z "$UF2" ]; then
+    echo "flash: say which image to write." >&2
+    echo "       ${BASH_SOURCE[0]} path/to/firmware.uf2" >&2
+    echo "       \`bareruby deploy\` builds one and hands it over; by hand it is at" >&2
+    echo "       build/<the entry's name>/bareruby_program.uf2 in the project." >&2
+    exit 1
+fi
 
 if [ ! -f "$UF2" ]; then
     echo "flash: no such file: $UF2" >&2
@@ -98,16 +116,18 @@ count=$(printf '%s' "$candidates" | grep -c . || true)
 
 if [ "$count" -eq 0 ]; then
     echo "flash: no attached board carries $CHIP." >&2
-    echo "       Run 'target/binding/pico_sdk/flash.sh --list' to see what is attached. A board running a" >&2
-    echo "       default build shows nothing until BOOTSEL is held." >&2
+    echo "       Run '${BASH_SOURCE[0]} --list' to see what is attached." >&2
+    echo "       A board running a default build shows nothing until BOOTSEL is held." >&2
     exit 1
 fi
 
 if [ "$count" -gt 1 ]; then
     echo "flash: $count boards carry $CHIP, so the image does not say which one to use." >&2
     echo "$candidates" | while read -r serial _ state node; do
-        echo "         --board $serial   ($state, $node)" >&2
+        echo "         $serial   ($state, $node)" >&2
     done
+    echo "       Put one serial under 'boards:' in that target's entry in config/target.yml." >&2
+    echo "       Running this script by hand, --board SERIAL says it instead." >&2
     exit 1
 fi
 
