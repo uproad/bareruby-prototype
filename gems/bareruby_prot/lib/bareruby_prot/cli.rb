@@ -9,6 +9,7 @@ require "bareruby_prot/compiler"
 
 require_relative "deployment"
 require_relative "catalog"
+require_relative "jobs"
 require_relative "progress"
 require_relative "scaffold"
 require_relative "toolchain"
@@ -57,6 +58,9 @@ module BareRubyProt
                             entry recorded there is worked on.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
+        --jobs=N            How many targets to build at once, each in a process of its
+                            own. Without it, as many as there are targets, up to the
+                            number of cores. Boards are written one at a time regardless.
     USAGE
 
     def self.run(arguments) = new(arguments).run
@@ -68,6 +72,8 @@ module BareRubyProt
       @exceptions = @arguments.delete("--no-exceptions").nil?
       @target_options = @arguments.grep(/\A#{Target::OPTION_PREFIX}/)
       @arguments -= @target_options
+      @jobs_options = @arguments.grep(/\A#{Jobs::OPTION_PREFIX}/)
+      @arguments -= @jobs_options
     end
 
     # The table is finished here rather than by the command that drew it, because deploy is
@@ -153,6 +159,12 @@ module BareRubyProt
     # What compile does, and then a toolchain over each of what it produced. The output is
     # cleared once for the command rather than once for each entry, which is what lets
     # entries that cannot share a compilation still share a directory to compile into.
+    #
+    # **Each target is worked on in a process of its own**, because from here down there is
+    # nothing left that two of them share: what they build with is already fetched, and
+    # each compiles into a root only it writes. What is left is a build system that uses
+    # one core and is asked for one target at a time, which is a wait as long as all of
+    # them added together for no reason but the shape of the run.
     def build
       planned = entries
       return nothing if planned.empty?
@@ -160,7 +172,11 @@ module BareRubyProt
       showing(planned, %i[tools compile build])
       Compiler.clear_output
       fetched(planned)
-      planned.all? { |entry| built(entry) } ? 0 : 1
+      Jobs.run(planned, limit: limit(planned), progress: @progress) { |entry| built(entry) } ? 0 : 1
+    end
+
+    def limit(planned)
+      Jobs.limit(@jobs_options.last&.delete_prefix(Jobs::OPTION_PREFIX), planned)
     end
 
     # **Everything the run will reach for, fetched once, before any of the work that
@@ -189,6 +205,12 @@ module BareRubyProt
     # deliberate: it repeats a deployment without compiling it again.
     # A tool that refuses has already said why, so its refusal is passed to the shell as a
     # status rather than dressed up as an error of this program's own.
+    #
+    # **One board at a time, whatever the run was told about jobs.** Everything above this
+    # is files, and files can be kept apart; this is a bootloader volume mounted at a
+    # place the desk names, and a board reached by noticing which one appeared in
+    # BOOTSEL since a moment ago. Two of those at once take each other's volume and
+    # attribute each other's board — which writes an image to hardware nobody named.
     def flash
       planned = entries
       return nothing if planned.empty?
