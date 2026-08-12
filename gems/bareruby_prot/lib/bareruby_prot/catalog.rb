@@ -87,6 +87,12 @@ module BareRubyProt
     # here would make a gem that forgot one look like a gem that has one.
     OFFERED = %w[key label targets].freeze
 
+    # **Which gem an offer came out of is answered here and not asked for again.** It is
+    # the one fact about a family that the family's own file cannot state — a gem does not
+    # know its own name from the inside, and a file that claimed one could claim somebody
+    # else's. The declaration's path knows, and this is the only place holding it.
+    GEM = "gem"
+
     def self.families
       found = Target.declarations.filter_map { |declaration| offer_of(declaration) }
       own, rest = found.partition { |one| one["key"] == OWN }
@@ -127,21 +133,38 @@ module BareRubyProt
       # own kind, so asking for the three is the whole of the check. Anything else raised
       # in here is this program's own mistake, and that is a backtrace rather than a
       # sentence about somebody's gem.
-      Hash(YAML.safe_load_file(at)).tap { |offer| offer.fetch_values(*OFFERED) }
+      Hash(YAML.safe_load_file(at))
+        .tap { |offer| offer.fetch_values(*OFFERED) }
+        .merge(GEM => gem_of(declaration))
     rescue Psych::Exception, TypeError, KeyError
       warn "WARN: #{OFFER} is broken in gem #{gem_of(declaration)}"
       warn "(#{File.dirname(declaration)})"
       nil
     end
 
+    # **A gem is under its directory, not under a name its name begins with.** Every gem
+    # here is `bareruby_prot` followed by what it adds, so comparing text alone makes the
+    # ecosystem gem the answer for all of them — `bareruby_prot-binding-pico_sdk/lib/…`
+    # starts with `bareruby_prot` and always did. The separator is what makes the
+    # comparison about directories rather than about spelling.
+    #
+    # The fallback is the binding's own directory name, which is what there is to say when
+    # a declaration is not under any loaded gem — a working tree run straight off the load
+    # path. It is not a gem name and does not pretend to be one.
     def self.gem_of(declaration)
-      found = Gem.loaded_specs.values.find { |one| declaration.start_with?(one.full_gem_path) }
+      found = Gem.loaded_specs.values.find { |one| declaration.start_with?("#{one.full_gem_path}/") }
       found&.name || File.basename(File.dirname(declaration))
     end
 
+    # **Every heading says which gem it came out of.** What this command can offer is
+    # exactly what is installed, and a machine missing from it is almost never a machine
+    # this ecosystem cannot reach — it is a line still commented out in the Gemfile. Naming
+    # the gem beside each family is what makes that legible without a second catalogue to
+    # disagree with the first: the reader sees which gems answered, and so which one did
+    # not.
     def self.list
       families.each do |family|
-        puts family["label"]
+        puts "#{family['label']}  (#{family[GEM]})"
         family["targets"].each do |name|
           spelling = Deployment.spelling(Target[name])
           puts "  #{name}"

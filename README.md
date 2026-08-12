@@ -135,7 +135,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target list` | every machine this project's Gemfile can target, by family | no |
+| `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
 | `--help` | the usage, on output, with a status that says nothing went wrong | no |
@@ -317,7 +317,20 @@ with none, every recorded entry is worked on. The names above are this desk's �
 add` asks, suggests one, and writes it.
 
 **A composition is what an entry spells out, and it has a name of its own that no command
-line takes.** There are seven, and `bareruby target list` prints them by family:
+line takes.** There are seven, and `bareruby target list` prints them by family, each
+family saying which gem it came out of — so a board that is missing from that list is
+almost always a line still commented out in the Gemfile rather than a board this
+ecosystem cannot reach:
+
+```
+none  (bareruby_prot-compiler)
+  host
+    machine: none  binding: host  triple: x86_64-pc-linux
+
+Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
+  raspberry-pi-pico
+    machine: pico  binding: pico_sdk  triple: thumbv6m-none-eabi
+```
 
 | Composition | Machine | Chip |
 | --- | --- | --- |
