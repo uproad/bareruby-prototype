@@ -30,7 +30,8 @@
 #   debug:    optional. `true` or `1` and nothing else means a debug build.
 #   boards:   optional, and usually best left out. With nothing here the one attached
 #             board the artifact fits is found and written to, because the image says
-#             which chip it is for. Name serials only when two boards carry the same chip.
+#             which chip it is for. Name serials only when two boards carry the same chip,
+#             and then flashing has already printed the ones it found.
 #   options:  optional. What only this desk knows, passed to the binding that needs it.
 #
 # The first three lines of an entry are true of this project; `boards` and `options` are

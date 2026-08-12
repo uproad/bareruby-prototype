@@ -517,17 +517,26 @@ says which one, and given nothing to go on the flasher refuses to guess:
 
 ```
 flash: 2 boards carry rp2040, so the image does not say which one to use.
-         --board E6625888179C592E   (running, /dev/ttyACM1)
-         --board E0C9125B0D9B       (bootsel, /dev/sdf1)
+         E6625888179C592E   (running, /dev/ttyACM1)
+         E0C9125B0D9B       (bootsel, /dev/sdf1)
+       Put one serial under 'boards:' in that target's entry in config/target.yml.
 ```
+
+The serials it prints are the answer to the question it asked, so nothing has to be looked
+up to get past it.
 
 **An RP2040 reports a different serial in BOOTSEL than while running** — the bootrom's id
 against the flash id pico-sdk reads. Both are stable per board, but a board cannot be
 followed across a reset by its serial. An RP2350 happens to report the same number in
 both modes; do not rely on that.
 
-`flash.sh --list`, in the pico-sdk binding's directory, prints what is attached with
-serials, and on Linux the `/etc/fstab` line for each.
+`flash.sh --list` prints what is attached with serials, and on Linux the `/etc/fstab` line
+for each. **It is shipped inside the pico-sdk binding gem**, so where it is depends on the
+desk — `deploy` runs it and never has to be told, and by hand it is found with:
+
+```sh
+bundle exec gem contents bareruby_prot-binding-pico_sdk | grep flash.sh
+```
 
 ### From WSL
 
