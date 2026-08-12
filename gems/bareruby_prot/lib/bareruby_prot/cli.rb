@@ -159,15 +159,24 @@ module BareRubyProt
 
       showing(planned, %i[tools compile build])
       Compiler.clear_output
+      fetched(planned)
       planned.all? { |entry| built(entry) } ? 0 : 1
     end
 
-    # The three stages one entry passes through, each timed where it happens. Fetching is
-    # asked for one entry at a time rather than once for all of them so that the wait lands
-    # on the row that waited; it is the same question asked repeatedly, and a binding whose
-    # tools are already here answers it without reaching anywhere.
+    # **Everything the run will reach for, fetched once, before any of the work that
+    # reaches for it.** The store is one directory on the desk and one SDK serves every
+    # entry that names its binding, so asking entry by entry is asking the same question
+    # repeatedly — and asking it from more than one place at a time is two runs unpacking
+    # a gigabyte into the same name. One fetch, on one row of the table that spans them
+    # all, is both the honest account of the wait and the thing that makes what follows
+    # safe to do at once.
+    def fetched(planned)
+      @progress.at(:tools, planned) { Tools.install(planned.map(&:target)) }
+    end
+
+    # The two stages one entry passes through after what it builds with is already here,
+    # each timed where it happens.
     def built(entry)
-      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
       compiled(entry)
       worked = @progress.at(:build, [entry]) do
         toolchain_of(entry).run(directory_of(entry), options: entry.options)
@@ -185,11 +194,11 @@ module BareRubyProt
       return nothing if planned.empty?
 
       showing(planned, %i[tools flash])
+      fetched(planned)
       planned.all? { |entry| flashed(entry) } ? 0 : 1
     end
 
     def flashed(entry)
-      @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
       @progress.at(:flash, [entry]) do
         entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
                                                             options: entry.options)
