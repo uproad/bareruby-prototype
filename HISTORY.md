@@ -576,10 +576,61 @@ same run it was.
 
 **What is built does not change.** Compiling the same program twice hashes identically
 across `.bareruby/`, and `--jobs=1` and the default produce the same artifacts byte for
-byte. Boards are still written one at a time: a bootloader volume is mounted at a place
-the desk names, and a board is found by noticing which one appeared in BOOTSEL since a
-moment ago, so two flashes at once would take each other's volume and attribute each
-other's board.
+byte.
+
+### What writing the boards at once is worth, and what it cost to get there
+
+Two Pico boards on one desk — an RP2040 and an RP2350, both running a `--debug` build, so
+both reset into BOOTSEL over USB rather than by hand:
+
+| Run | Wall clock |
+| --- | --- |
+| `flash --jobs=1` | 28.3s |
+| `flash`, both from a running firmware | 10 to 14s |
+| `flash`, both already in BOOTSEL | 1.6 to 2.6s |
+
+**Finding the board, not writing it, was what stood in the way.** Three things had to be
+answered first, and two of them were live defects that only a run writing two boards at
+once could show.
+
+1. **A board was followed across its reset by having appeared** — the BOOTSEL board that
+   was not there a moment ago. That reads the whole bus to answer a question about one
+   board, so two boards reset together could each be handed the other's. It is followed by
+   the port it is plugged into instead. A board keeps that; it does not keep its serial,
+   which an RP2040 reports as the bootrom's id in BOOTSEL and the flash id once pico-sdk is
+   running. Measured across a reset, the port held (`1-1` before and after, ten samples
+   either side) while the serial went from `E6625888179C592E` to `E0C9125B0D9B`.
+2. **udev's `/dev/disk/by-id` link outlives the board it names.** The kernel hands a node
+   name to the next board as soon as the one holding it leaves, and the link published for
+   the board that left still points there until udev catches up. Waiting for *any* link to
+   resolve to the node is therefore satisfied by the stale one. In a recorded run this put
+   an RP2350 target on an RP2040's volume — `Board-ID: RPI-RP2` under the row for the
+   RP2350. What is waited for now is the link that names *this* board, resolving to this
+   node.
+3. **The fstab lookup resolved every line to a device and compared nodes**, which asks the
+   same question of the same stale state, so a board could be handed the mount point of a
+   board that had left. The line is found by the by-id path that carries the board's own
+   serial, compared as text.
+
+**And the volume is asked which chip it is before anything is written to it.** Everything
+above identifies a board through the kernel and through udev, and those two are not
+published at the same instant. The `Model:` line in `INFO_UF2.TXT` is the board itself
+answering, on the volume about to be written; an image for the wrong chip is refused there
+rather than written.
+
+**Under WSL, resetting several boards at once is not reliable.** The boards reach WSL
+through usbipd, and a board that resets into BOOTSEL re-enumerates as a different USB
+device that has to be attached again. Two of them at once is more than that kept up with
+here: one board was observed to stay out of WSL for the whole of a sixty-second window,
+and the run gave up on it. This is the same fragility the README already records for a
+single board, met from a different direction — it is WSL plumbing rather than the board or
+the flasher.
+
+**It is not peculiar to writing several at once.** The same loss was recorded during a
+`--jobs=1` run, which resets one board at a time: the board took longer to come back than
+the run waits, and the row failed. Resetting two together makes it likelier rather than
+possible. Boards already in BOOTSEL never reset and never meet it, and a desk reaching its
+boards without usbipd has none of this.
 
 ## Verified on hardware
 

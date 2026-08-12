@@ -16,8 +16,7 @@ FALLBACK_MOUNT_POINT=/mnt/pico
 MOUNT=/usr/bin/mount
 UMOUNT=/usr/bin/umount
 
-# The bootloader and the running firmware announce the same chip under different ids,
-# and the flash id is the same in both, so a board keeps one identity across a reset.
+# The bootloader and the running firmware announce the same chip under different ids.
 chip_of_bootsel_model() {
     case "$1" in
         RP2) echo rp2040 ;;
@@ -44,8 +43,15 @@ usb_directory_of() {
     [ -e "$directory/serial" ] && echo "$directory"
 }
 
-# One line per attached board: SERIAL CHIP STATE NODE. A board in BOOTSEL is named by
-# its partition, a running one by the serial port its firmware brought up.
+# One line per attached board: SERIAL CHIP STATE NODE PORT. A board in BOOTSEL is named
+# by its partition, a running one by the serial port its firmware brought up.
+#
+# **PORT is where the board is plugged in, and it is the one thing that survives a
+# reset.** The kernel names a USB device after the path through the hubs that reaches it
+# — `1-2` is the second port of the first bus — and a board that reboots into its
+# bootloader comes back on the same one. Its serial does not: an RP2040 reports the
+# bootrom's id in BOOTSEL and the flash id once pico-sdk is running, and those are two
+# different numbers for one board.
 attached_boards() {
     local device model usb serial tty product
     for device in /sys/block/sd*; do
@@ -55,7 +61,8 @@ attached_boards() {
         usb=$(usb_directory_of "$device/device") || continue
         [ -n "$usb" ] || continue
         serial=$(cat "$usb/serial")
-        echo "$serial $(chip_of_bootsel_model "$model") bootsel /dev/$(basename "$device")1"
+        echo "$serial $(chip_of_bootsel_model "$model") bootsel" \
+             "/dev/$(basename "$device")1 $(basename "$usb")"
     done
     for tty in /dev/ttyACM*; do
         [ -c "$tty" ] || continue
@@ -65,20 +72,24 @@ attached_boards() {
         product=$(cat "$usb/idProduct" 2>/dev/null) || continue
         serial=$(cat "$usb/serial" 2>/dev/null) || continue
         [ -n "$serial" ] || continue
-        echo "$serial $(chip_of_usb_product "$product") running $tty"
+        echo "$serial $(chip_of_usb_product "$product") running $tty $(basename "$usb")"
     done
 }
 
 # The by-id path carries the serial, so it names one physical board even when two of
 # them label their bootloader volume after the same chip.
-fstab_line_for() {
+disk_link_for() {
     local serial=$1 chip=$2 model
     case "$chip" in
         rp2040) model=RP2 ;;
         rp2350) model=RP2350 ;;
         *) model=RP2 ;;
     esac
-    echo "/dev/disk/by-id/usb-RPI_${model}_${serial}-0:0-part1 /mnt/pico-${serial:0:8} vfat noauto,user,umask=000 0 0"
+    echo "/dev/disk/by-id/usb-RPI_${model}_${serial}-0:0-part1"
+}
+
+fstab_line_for() {
+    echo "$(disk_link_for "$1" "$2") /mnt/pico-${1:0:8} vfat noauto,user,umask=000 0 0"
 }
 
 # What --list adds here: the line that keeps this board out of sudo next time.
@@ -105,29 +116,43 @@ reset_advice() {
     echo "       ('usbipd attach --wsl --busid <id>' on the Windows side)." >&2
 }
 
-# The block device appears before udev publishes /dev/disk, and the fstab lines name
-# the volume through it, so resolving them the moment the board is found loses the race
-# and looks like "this board has no line".
+# The block device appears before udev publishes /dev/disk, and the fstab lines name the
+# volume through it, so resolving them the moment the board is found loses the race and
+# looks like "this board has no line".
+#
+# **What is waited for is the link that names this board, pointing at this node.** Waiting
+# for any link to point here is not the same question, and it is answered wrongly the
+# moment two boards are written at once: the kernel reuses a node name as soon as the
+# board that had it leaves, and the link udev published for that board still points there
+# until udev catches up. A board then finds a link that resolves to its own node, follows
+# it to an fstab line belonging to the board that left, and mounts the other board's
+# volume. Naming the board asks about one board, and waiting until the answer is this
+# node waits out udev rather than racing it.
 wait_for_disk_link() {
-    local attempt link target
-    target=$(readlink -f "$1")
-    for attempt in $(seq 20); do
-        for link in /dev/disk/by-id/* /dev/disk/by-label/*; do
-            [ -e "$link" ] || continue
-            [ "$(readlink -f "$link")" = "$target" ] && return 0
-        done
+    local partition=$1 link=$2 attempt target
+    target=$(readlink -f "$partition")
+    for attempt in $(seq 40); do
+        [ -e "$link" ] && [ "$(readlink -f "$link")" = "$target" ] && return 0
         sleep 0.5
     done
     return 1
 }
 
 # Ask fstab where this board goes rather than assuming one place serves every board.
+#
+# **The line is found by the path that names the board, spelled as written.** Resolving
+# each line to a device and comparing nodes is the same question the block layer answers,
+# and it answers it about now: a node that has just been handed to another board is still
+# named by the link udev published for the board that left, so a resolving lookup can
+# match a line belonging to a board that is no longer there. The by-id path carries the
+# board's own serial, so comparing it as text asks about the board rather than about what
+# is currently at a node. It is the path `--list` hands out, which is where these lines
+# come from.
 fstab_mount_point() {
-    local device point target
-    target=$(readlink -f "$1")
+    local wanted=$1 device point
     while read -r device point _; do
         case "$device" in "" | \#*) continue ;; esac
-        [ "$(readlink -f "$device" 2>/dev/null)" = "$target" ] || continue
+        [ "$device" = "$wanted" ] || continue
         echo "$point"
         return 0
     done < /etc/fstab
@@ -148,10 +173,11 @@ mount_with_retry() {
 }
 
 open_volume() {
-    local partition=$1 serial=$2 chip=$3 fstab_point
-    wait_for_disk_link "$partition" || true
+    local partition=$1 serial=$2 chip=$3 link fstab_point
+    link=$(disk_link_for "$serial" "$chip")
+    wait_for_disk_link "$partition" "$link" || true
     VOLUME=$FALLBACK_MOUNT_POINT
-    fstab_point=$(fstab_mount_point "$partition") && VOLUME=$fstab_point || fstab_point=""
+    fstab_point=$(fstab_mount_point "$link") && VOLUME=$fstab_point || fstab_point=""
 
     echo "flash: mount     $VOLUME"
     mountpoint -q "$VOLUME" && "$UMOUNT" "$VOLUME"

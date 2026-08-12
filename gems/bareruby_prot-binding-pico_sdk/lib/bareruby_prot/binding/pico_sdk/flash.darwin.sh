@@ -29,44 +29,50 @@ chip_of_usb_product() {
     esac
 }
 
-# One line per thing a Raspberry Pi USB device presents: SERIAL PRODUCT KIND NAME.
+# One line per thing a Raspberry Pi USB device presents: SERIAL PRODUCT KIND NAME PORT.
 #
 # A device's own properties are printed before its children, so the serial and the
 # product id standing above a BSD name are that name's — which is the whole of the
 # lookup, and the reason this is one pass rather than a query per board. A hub's subtree
 # holds the devices below it and each of those is matched in its own right, so every
 # board is reached twice and the duplicates are dropped at the end.
+#
+# **The location id is where the board is plugged in.** It encodes the path through the
+# hubs that reaches the device, so it is the same number before and after a reset into
+# BOOTSEL, which the serial is not: an RP2040 reports the bootrom's id in the bootloader
+# and the flash id once pico-sdk is running.
 usb_nodes() {
     ioreg -c IOUSBHostDevice -r -l -w 0 | awk -v vendor="$VENDOR" '
         /"idVendor" = /          { device = $NF; next }
         /"idProduct" = /         { product = $NF; next }
+        /"locationID" = /        { location = $NF; next }
         /"USB Serial Number" = / { serial = $NF; gsub(/"/, "", serial); next }
         device != vendor         { next }
-        /"BSD Name" = /          { name = $NF; gsub(/"/, "", name); print serial, product, "disk", name; next }
-        /"IOCalloutDevice" = /   { name = $NF; gsub(/"/, "", name); print serial, product, "tty", name; next }
+        /"BSD Name" = /          { name = $NF; gsub(/"/, "", name); print serial, product, "disk", name, location; next }
+        /"IOCalloutDevice" = /   { name = $NF; gsub(/"/, "", name); print serial, product, "tty", name, location; next }
     ' | sort -u
 }
 
-# One line per attached board: SERIAL CHIP STATE NODE. A board in BOOTSEL is named by
-# its partition, a running one by the serial port its firmware brought up — the same two
-# answers the Linux side gives, so that flash.sh needs to know which system it is on
-# only to source this file.
+# One line per attached board: SERIAL CHIP STATE NODE PORT. A board in BOOTSEL is named
+# by its partition, a running one by the serial port its firmware brought up, and both by
+# where they are plugged in — the same answers the Linux side gives, so that flash.sh
+# needs to know which system it is on only to source this file.
 #
 # The bootloader's disk is published under both its whole-disk name and its partition's,
 # and the volume is on the first partition, so the whole disk is what is matched and the
 # partition is named from it.
 attached_boards() {
-    local serial product kind name chip counted
-    usb_nodes | while read -r serial product kind name; do
+    local serial product kind name location chip counted
+    usb_nodes | while read -r serial product kind name location; do
         chip=$(chip_of_usb_product "$product")
         [ "$chip" != unknown ] || continue
         case "$kind" in
             disk)
                 counted=${name#disk}
                 case "$counted" in "" | *[!0-9]*) continue ;; esac
-                echo "$serial $chip bootsel /dev/${name}s1"
+                echo "$serial $chip bootsel /dev/${name}s1 $location"
                 ;;
-            tty) echo "$serial $chip running $name" ;;
+            tty) echo "$serial $chip running $name $location" ;;
         esac
     done
 }

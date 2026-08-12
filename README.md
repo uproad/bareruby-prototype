@@ -161,10 +161,24 @@ occupying one core of a desk that has many. Four targets that took 19.9s end to 
 8.6s, which is the longest single build plus a fraction. `--jobs=N` says how many at once;
 without it, as many as there are targets, up to the number of cores.
 
-**Boards are written one at a time regardless.** Everything above `flash` is files, and
-files can be kept apart. A bootloader volume is mounted at a place the desk names, and a
-board is found by noticing which one appeared in BOOTSEL since a moment ago — two of those
-at once would take each other's volume and attribute each other's board.
+**The boards are written at the same time too.** Two boards took 28.3s end to end and take
+10 to 14s together. What had to change first was not the writing but the finding: a board
+used to be followed across its reset by noticing which one appeared in BOOTSEL since a
+moment ago, which reads the whole bus to answer a question about one board. It is followed
+by the port it is plugged into instead — the one thing it keeps, where its serial is not
+(an RP2040 reports the bootrom's id in BOOTSEL and the flash id once pico-sdk is running).
+A line in `/etc/fstab` per board, which `--list` hands out, gives each one a mount point of
+its own, and the volume is asked which chip it belongs to before anything is written to it.
+
+**Under WSL, writing several boards at once is less reliable than writing one.** The boards
+reach WSL through [usbipd](#from-wsl), and a board that resets into BOOTSEL re-enumerates
+as a different USB device that has to be attached again. Two of them re-enumerating at once
+is more than that has been observed to keep up with here: one board can stay out of WSL
+long enough for the run to give up on it, with `no board came back in BOOTSEL mode at
+<port>`. **Boards already in BOOTSEL are not affected** — nothing re-enumerates, and three
+runs of two boards took 1.6 to 2.6s. Nor is a run of one board. Neither Linux without WSL
+nor macOS has usbipd in the way, so neither has this to lose. Where it bites, `--jobs=1`
+puts the boards back end to end.
 
 A run says which stage each target is in and how long it has been there, redrawing the
 table in place while it works. The stages are the verbs it stacked, so `deploy` has four
@@ -402,11 +416,13 @@ reaches a USB serial port instead of being dropped, and — the reason it exists
 reflashed without the BOOTSEL button. It roughly doubles the image;
 [`HISTORY.md`](HISTORY.md#what---debug-costs) has the numbers.
 
-`--jobs=N` says how many targets to build at once, each in a process of its own. Without
-it, a run takes as many as there are targets, up to the number of cores on the desk;
-`--jobs=1` puts them back end to end. It changes nothing about what is built — the same
-artifacts, byte for byte — only how long the run takes. Boards are written one at a time
-whatever it says.
+`--jobs=N` says how many targets to work on at once, each in a process of its own — both
+the building and the writing. Without it, a run takes as many as there are targets, up to
+the number of cores on the desk; `--jobs=1` puts them back end to end. It changes nothing
+about what is built — the same artifacts, byte for byte — only how long the run takes.
+Several identical boards on one target are still written in turn: the row is the unit, and
+they are one row. Under WSL it is worth knowing when to reach for `--jobs=1`
+([above](#the-commands)).
 
 ## What a build reaches for
 
@@ -590,6 +606,14 @@ one too, once the board has left BOOTSEL. And **`--auto-attach` is not optional*
 board that stays plugged in: without it every reset drops the board out of WSL, and the
 next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
 than the board.
+
+**Even with it, two boards resetting at once is more than it has been seen to keep up
+with here.** A run that writes several boards at the same time resets them all together,
+and one of them can stay out of WSL long enough for the run to give up on it. It is the
+same failure as above and the same cause, arrived at from a different direction — and not
+peculiar to writing several at once, since a one-at-a-time run was recorded losing a board
+the same way. Boards already in BOOTSEL never reset, so they do not meet it; `--jobs=1`
+makes it less likely for the ones that would.
 
 ### On macOS
 
