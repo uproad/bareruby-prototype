@@ -636,12 +636,22 @@ scans were written as though that were not happening.
    again for the run after that to reset and die on. Every read in the scan now fails into
    "not a board" rather than into an error, which is what the half of it that scans serial
    ports already did.
-2. **A board asked for at the wrong moment answers that it is not attached.** The Arduino
-   is identified by the serial port it brought up, and `arduino-cli board list` was asked
-   once. Asked while a Pico beside it was re-enumerating, it did not report the Arduino,
-   and the row failed with `no attached board is arduino:avr:mega` 1.2s in — reliably, on
-   every run where the Pico needed a reset. It is asked until the board answers, the way
-   every other wait on hardware here is written.
+2. **One dying port makes `arduino-cli board list` answer that there are none.** The
+   Arduino is identified by the serial port it brought up, and that list was asked once.
+   A Pico told to reset at 1200 baud leaves its port present but unresponsive for about
+   five seconds before the device actually detaches, and for the whole of that window the
+   listing comes back **empty — every port, not just the Pico's**. So the Arduino's row
+   failed with `no attached board is arduino:avr:mega` 1.2s in, reliably, on every run
+   where the Pico needed a reset. Measured: `/dev/ttyACM2` never left `/dev`, while three
+   consecutive listings reported nothing and the fourth — taken the moment the Pico's node
+   disappeared — reported it. It is asked until the answer arrives, the way every other
+   wait on hardware here is written.
+
+   **What that costs is the row and not the run.** The Arduino's stage goes from 1.2s of
+   being wrong to about 6s of waiting, all of it inside the ten the Pico beside it is
+   taking anyway, so the run ends when it would have ended. Naming the port under
+   `boards:` skips the question altogether and the stage takes 3.3s: measured 9.5s for the
+   pair with the port named against 9.9s without.
 
 Both were only reachable by writing more than one board at once, and both were found by
 running it. Afterwards: six consecutive single-board runs from a running firmware, four
