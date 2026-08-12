@@ -121,7 +121,7 @@ first, so each does its own work and then the next one's.
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
-./bareruby build app.rb --target=pico2       # one target, no flashing
+./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
 ./bareruby compile app.rb                    # first stage only, no toolchain needed
 ./bareruby                                   # prints usage
@@ -130,8 +130,8 @@ first, so each does its own work and then the next one's.
 | Verb | What it does | Reads `config/target.yml` |
 | --- | --- | --- |
 | `new` | writes a project: a Gemfile that lists the boards, a record holding this machine, and a program that blinks | no |
-| `compile` | Ruby to C++, into `.bareruby/compile/<composition>/`. Makes no artifact, so `build/` stays empty | no — without `--target` the target is the machine doing the compiling |
-| `build` | `compile`, then each binding's toolchain, leaving the artifact — and only that — in `build/<composition>/` | yes |
+| `compile` | Ruby to C++, into `.bareruby/compile/<target>/`. Makes no artifact, so `build/` stays empty | yes |
+| `build` | `compile`, then each binding's toolchain, leaving the artifact — and only that — in `build/<target>/` | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
@@ -142,9 +142,11 @@ first, so each does its own work and then the next one's.
 
 `build` fetches what it needs itself, so `tools install` is only worth running on its own
 when a step should be cached or seen in advance. `compile` fetches nothing at all: a desk
-with not one SDK on it can still turn Ruby into C++.
+with not one SDK on it can still turn Ruby into C++. What it is spared is the fetching —
+it reads `config/target.yml` like everything else, because a `--target=` that meant one
+thing in one verb and another in the next would be a difference nobody can be told once.
 
-**`build/` holds what was built, and nothing else** — one file per composition. Everything
+**`build/` holds what was built, and nothing else** — one file per recorded target. Everything
 else, the generated C++ and the tree a toolchain leaves behind, lives under `.bareruby/`.
 
 A run says which stage each target is in and how long it has been there, redrawing the
@@ -175,7 +177,7 @@ the script naming the board it wrote — says it above the table, which keeps sc
 a log does. Where there is no terminal to redraw, in a pipe or in CI, there is no table:
 each stage says one line as it finishes.
 
-Three things go wrong, and the advice differs. Two are in the record:
+Four things go wrong, and the advice differs. Three are in the record:
 
 ```
 config/target.yml names binding: pico_sdk, and no installed gem declares it.
@@ -183,15 +185,18 @@ Uncomment its line in the Gemfile and run `bundle install`.
 
 config/target.yml: nothing is machine: pico, binding: pico_sdk, triple: thumbv7em-none-eabihf.
 Run `bareruby target list`, or `bareruby target add` to be asked instead.
+
+config/target.yml: the entry that is machine: pico, binding: pico_sdk, triple: thumbv6m-none-eabi
+has no name. Every entry is named: the name is what --target= says and what its directory
+under build/ is called. Add one, or write the entry with `bareruby target add`.
 ```
 
-The third is on the command line — a `--target=` naming neither an entry nor a
-composition. Both lists are handed back, because a name that reached here could have come
-from either:
+The fourth is on the command line — a `--target=` naming no entry. The record is the one
+list it could have come from, so that list is what is handed back:
 
 ```
 no target is named pico1x. config/target.yml records pico1h, pico2w, arduino_mega_2560.
-`bareruby target list` prints every composition that can be named instead.
+`bareruby target add` asks which machine is here and writes another entry.
 ```
 
 ## A project of your own
@@ -276,8 +281,8 @@ targets:
 ```
 
 An empty name writes the composition; Tab fills in the machine's own name instead. The
-name is the directory the artifacts land in, so one another entry already holds is
-refused. **`boards:` is not asked for** — it is a serial read off the machine in front of
+name is what `--target=` says and the directory the artifacts land in, so one another
+entry already holds is refused. **`boards:` is not asked for** — it is a serial read off the machine in front of
 you, and it is not needed until two machines carrying one chip are attached at once, which
 flashing detects and prints the candidates for.
 
@@ -293,54 +298,54 @@ do nothing with it.
 
 ## Targets
 
-A target is a machine the artifacts are produced for. There are seven:
-
-| Target | Short | Machine | Chip |
-| --- | --- | --- | --- |
-| `host` | — | the machine doing the compiling | — |
-| `raspberry-pi-pico` | `pico` | Raspberry Pi Pico | RP2040 |
-| `raspberry-pi-pico-w` | `picow` | Raspberry Pi Pico W | RP2040 |
-| `raspberry-pi-pico2` | `pico2` | Raspberry Pi Pico 2 | RP2350 |
-| `raspberry-pi-pico2-w` | `pico2w` | Raspberry Pi Pico 2 W | RP2350 |
-| `stm32-nucleo-f446re` | `f446` | NUCLEO-F446RE | STM32F446RE |
-| `arduino-mega2560` | `mega` | Arduino Mega 2560 | ATmega2560 |
-
-The short names are for typing at a prompt; the full name is what the `build/` directory
-and the manifest are named after either way. `--target=` is repeatable, so one run
-produces artifacts for as many machines as it lists:
+A target is an entry in `config/target.yml`: a machine the artifacts are produced for,
+under the name this desk gave it. **That name is the whole of what `--target=` takes**, in
+every command that takes it. It is also the directory under `build/` the artifact lands
+in, and the name the line saying where it went prints — so the name on the screen is the
+name typed next.
 
 ```sh
-./bareruby compile                                            # ref.rb, for the host
+./bareruby compile                                            # ref.rb, every recorded target
 ./bareruby compile -d samples/blink.rb                        # debug firmware
 ./bareruby build --target=pico --target=pico2w samples/heartbeat.rb
 ./bareruby build --target=f446 --no-exceptions samples/heartbeat.rb
 ```
 
-`bareruby compile` reads no configuration at all, and with nothing said the target is
-`host`. From `build` onwards a command needs to know which desk it is standing at, and
-that is what `target.yml` answers — so from there `--target=` takes a recorded entry's own
-name as well, and looks for one before it looks for a composition. `compile` is the one
-command that cannot, so a name only a desk knows is refused there rather than resolved.
+`--target=` is repeatable, so one run produces artifacts for as many entries as it lists;
+with none, every recorded entry is worked on. The names above are this desk's — `pico`,
+`f446` — and another desk's record spells them however it was written. `bareruby target
+add` asks, suggests one, and writes it.
 
-Each target's directory under `build/` is named `<machine>-<binding>-<triple>`, which is
-how much it takes to be unique — a Pico and a Pico W are both `thumbv6m-none-eabi` and
-their firmware is not the same, and an RP2350 is built for Arm or for RISC-V:
+**A composition is what an entry spells out, and it has a name of its own that no command
+line takes.** There are seven, and `bareruby target list` prints them by family:
+
+| Composition | Machine | Chip |
+| --- | --- | --- |
+| `host` | the machine doing the compiling | — |
+| `raspberry-pi-pico` | Raspberry Pi Pico | RP2040 |
+| `raspberry-pi-pico-w` | Raspberry Pi Pico W | RP2040 |
+| `raspberry-pi-pico2` | Raspberry Pi Pico 2 | RP2350 |
+| `raspberry-pi-pico2-w` | Raspberry Pi Pico 2 W | RP2350 |
+| `stm32-nucleo-f446re` | NUCLEO-F446RE | STM32F446RE |
+| `arduino-mega2560` | Arduino Mega 2560 | ATmega2560 |
+
+These are what `target add` offers and what the manifest records. An entry does not name
+one — it writes out the three answers a composition is made of, because no one of them
+settles another. **The two vocabularies never meet on a command line**, which is the
+point: naming a composition there used to work as well, and one thing with two spellings
+meant `--target=pico` could reach an entry nobody had asked for, and meant the second
+entry of a composition could be built and could not be asked for.
+
+An entry that is given no name of its own is refused rather than defaulted. `target add`
+puts down `<machine>-<binding>-<triple>` when the answer is left blank, which is how much
+it takes to be unique — a Pico and a Pico W are both `thumbv6m-none-eabi` and their
+firmware is not the same, and an RP2350 is built for Arm or for RISC-V:
 
 ```
-build/none-host-x86_64-pc-linux/
-build/pico-pico_sdk-thumbv6m-none-eabi/
+build/host/
+build/pico/
 build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
-build/nucleo_f446re-stm32cube-thumbv7em-none-eabihf/
-build/mega2560-arduino-avr-none/
 ```
-
-An entry in `target.yml` that gives a `name:` uses that instead, which is how one
-composition can be built twice — a debug one and a release one — without the two landing
-in one place. **That name is what `--target=` takes**, and it had to become so: naming the
-composition reaches whichever entry spells it first, so the second one could be built and
-could not be asked for. It is also the name `build/` is called after and the name the line
-saying where the artifact went prints, so it is the name the next command is typed from.
-Naming the composition still works, and still answers with the first entry spelling it.
 
 ## Two flags
 

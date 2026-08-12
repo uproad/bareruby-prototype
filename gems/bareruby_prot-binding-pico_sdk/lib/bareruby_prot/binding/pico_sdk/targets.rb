@@ -18,25 +18,25 @@ module BareRubyProt
   end
 
   Target.register(
-    "raspberry-pi-pico", short: "pico",
+    "raspberry-pi-pico",
     isa: PicoSdkBinding::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
     binding: PicoSdkBinding, machine: Machine.register(:pico, chip: "rp2040")
   )
 
   Target.register(
-    "raspberry-pi-pico-w", short: "picow",
+    "raspberry-pi-pico-w",
     isa: PicoSdkBinding::CORTEX_M0PLUS, substrate: Substrate::BARE_METAL,
     binding: PicoSdkBinding, machine: Machine.register(:pico_w, chip: "rp2040")
   )
 
   Target.register(
-    "raspberry-pi-pico2", short: "pico2",
+    "raspberry-pi-pico2",
     isa: PicoSdkBinding::CORTEX_M33, substrate: Substrate::BARE_METAL,
     binding: PicoSdkBinding, machine: Machine.register(:pico2, chip: "rp2350")
   )
 
   Target.register(
-    "raspberry-pi-pico2-w", short: "pico2w",
+    "raspberry-pi-pico2-w",
     isa: PicoSdkBinding::CORTEX_M33, substrate: Substrate::BARE_METAL,
     binding: PicoSdkBinding, machine: Machine.register(:pico2_w, chip: "rp2350")
   )

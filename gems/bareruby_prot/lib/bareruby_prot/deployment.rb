@@ -31,9 +31,13 @@ module BareRubyProt
 
     # A board takes the artifact its composition produced, and several identical boards
     # take the same one, so where to write it is a list and what to write is not.
-    Entry = Struct.new(:target, :name, :debug, :boards, :options) do
-      def directory = name || target.directory
-    end
+    #
+    # **The name is the entry.** It is what `--target=` says, what `build/` and
+    # `.bareruby/compile/` are called, and what the line saying where the artifact went
+    # prints — one word, in every place a person meets this entry. There is no second
+    # word for it here: a directory that answered to something other than the name would
+    # be the same mistake one layer down.
+    Entry = Struct.new(:target, :name, :debug, :boards, :options)
 
     # **The record as it was written, and the only place that knows how to read it.** What
     # a desk recorded is one key at the top of one file; everything that asks it anything —
@@ -50,11 +54,27 @@ module BareRubyProt
     def self.entry_of(record)
       Entry.new(
         target_of(record),
-        record["name"],
+        named(record),
         debug?(record["debug"]),
         Array(record["boards"]),
         record["options"] || {}
       )
+    end
+
+    # **A nameless entry cannot be asked for, so there is no such thing.** Every command
+    # from here on takes a name, and an entry that had none could be built by a run that
+    # named nothing and never by one that named something — which is a target present at
+    # some times and absent at others. `bareruby target add` writes a name whether or not
+    # one was typed, so this is what a file written by hand is missing, and the entry is
+    # pointed at by the composition it spells rather than by a number in the file.
+    def self.named(record)
+      name = record["name"].to_s
+      return name unless name.empty?
+
+      raise Stop, "#{FILE}: the entry that is #{described(spelling(target_of(record)))} " \
+                  "has no name. Every entry is named: the name is what --target= says and " \
+                  "what its directory under build/ is called. Add one, or write the entry " \
+                  "with `bareruby target add`."
     end
 
     # Written out, `true` and `1` are the two ways of saying so and everything else —

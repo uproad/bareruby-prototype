@@ -29,11 +29,11 @@ lets one binding serve every board.
 
 ## Boards
 
-| target | short | board | MCU |
-| --- | --- | --- | --- |
-| `stm32-nucleo-f446re` | `f446` | NUCLEO-F446RE | STM32F446RE |
-| `stm32-nucleo-f401re` | `f401` | NUCLEO-F401RE | STM32F401RE |
-| `stm32-f4discovery` | `f4disco` | STM32F4DISCOVERY | STM32F407VG |
+| composition | board | MCU |
+| --- | --- | --- |
+| `stm32-nucleo-f446re` | NUCLEO-F446RE | STM32F446RE |
+| `stm32-nucleo-f401re` | NUCLEO-F401RE | STM32F401RE |
+| `stm32-f4discovery` | STM32F4DISCOVERY | STM32F407VG |
 
 A board this table does not carry is a YAML file in your project's
 `config/stm32cube/boards/` — `./bareruby init stm32` writes a commented template

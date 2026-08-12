@@ -32,7 +32,7 @@ module BareRubyProt
   Stm32CubeBinding::Manifests.boards.each do |board|
     device = board.device
     Target.register(
-      board.name, short: board.short,
+      board.name,
       isa: Stm32CubeBinding.isa(device), substrate: Substrate::BARE_METAL,
       binding: Stm32CubeBinding,
       machine: Machine.register(board.key.to_sym, chip: device.part)

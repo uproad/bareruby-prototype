@@ -3,7 +3,6 @@
 # require the build to be described twice.
 key: nucleo_f401re
 name: stm32-nucleo-f401re
-short: f401
 family: stm32f4
 device: stm32f401retx
 # 84 MHz from HSI — this chip's ceiling. The same PLL arithmetic as the F446 profile,

@@ -2,7 +2,6 @@
 # and the clock profile this repository has run on the physical board.
 key: nucleo_f446re
 name: stm32-nucleo-f446re
-short: f446
 family: stm32f4
 device: stm32f446retx
 # 84 MHz from HSI — the configuration every earlier BareRuby firmware on this board was

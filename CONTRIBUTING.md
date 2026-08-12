@@ -360,6 +360,7 @@ running from the working tree can:
 
 ```sh
 GEM_HOME=$PWD/.gems .gems/bin/bareruby build samples/heartbeat.rb --target=mega
+# --target names an entry in config/target.yml; `mega` is what the sample record calls it
 ```
 
 ## Checking a change
@@ -367,9 +368,14 @@ GEM_HOME=$PWD/.gems .gems/bin/bareruby build samples/heartbeat.rb --target=mega
 There is no test suite. What stands in for one is a sample program that fails to compile
 before the change and compiles after it, plus evidence that nothing else moved.
 
+**This desk needs a record before any of it runs.** Copy `config/target.yml.sample` to
+`config/target.yml` and keep the `host` entry in it: every verb here — `compile` included
+— takes its targets from that file, and `--target=` names an entry in it. The file is
+gitignored, because which machines are at this desk is true of the desk.
+
 1. **Write the sample first.** Put it in `samples/`, and check that
-   `./bareruby compile samples/<topic>.rb` **fails** on the current code. A sample that
-   already compiles is verifying nothing.
+   `./bareruby compile --target=host samples/<topic>.rb` **fails** on the current code. A
+   sample that already compiles is verifying nothing.
 2. **Run it.** `./bareruby build --target=host samples/<topic>.rb`, then run the
    executable: fd1 is `puts` and fd2 is the peripheral call trace. A sample that needs
    input takes it on stdin.
@@ -377,8 +383,8 @@ before the change and compiles after it, plus evidence that nothing else moved.
 4. **Determinism.** Compile the same program twice and compare hashes across `dump/` and
    `.bareruby/`. They must match — which also confirms that each pass boundary can be
    reloaded from its own dump.
-5. **Board build.** `./bareruby build --target=<board>` through to the `.uf2`, `.hex` or
-   ELF, and record `text`, `bss` and artifact size per board in
+5. **Board build.** `./bareruby build --target=<the entry for that board>` through to the
+   `.uf2`, `.hex` or ELF, and record `text`, `bss` and artifact size per board in
    [`HISTORY.md`](HISTORY.md). Where `--no-exceptions` changes the answer, measure both.
 6. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
    **never write "verified" for something that was only built** — say "built but not
