@@ -177,18 +177,21 @@ be asked while that is happening: a device that vanishes between two lines of a 
 not a board rather than an error, and a board that is not there yet is asked for again
 until it is.
 
-**Under [WSL](#from-wsl) a port can even come back holding a different board.** The boards
-arrive through usbipd rather than off a bus, and two re-attaching at once are given their
-slots in whatever order they arrive — measured, with two boards swapping. So a port is
-asked about the chip as well, and a board is looked for by what arrived in BOOTSEL where
-that fails. Two boards of one chip written at once cannot be told apart afterwards at all;
-that is refused rather than guessed at, and `--jobs=1` is the way through it.
+**So writing a board is three things, and only the last of them is writing.** Every board
+a run will reach is rebooted into its bootloader, the bus is then given time to settle,
+and everything on it is looked at **once** — the `FIND` column. Only then is anything
+written, and by that point every board is a device sitting still, so all of them are
+written at the same time. A board looked for while others are re-enumerating is looked for
+at the one moment nobody can be found.
 
-**One board per line in `/etc/fstab` is what keeps `sudo` out of a parallel run**, and
-`--list` prints the lines. Without one a board falls back to a mount that needs `sudo`,
-and a run writing several boards gives each of them a pipe rather than a terminal — so
-that password can be neither asked for nor typed. It says so and fails rather than
-waiting for it.
+**One line per USB port in `/etc/fstab`**, which `--list` prints. The line is keyed by the
+port rather than by the board on purpose: an RP2040's bootloader has no serial of its own
+— three boards measured here all called themselves `E0C9125B0D9B` — so a line naming a
+board can only ever reach one of them, and a mount that followed the name reached whoever
+held it. Keyed by port, identical boards never collide and the lines do not multiply as
+boards are added. Without a line a board falls back to a mount needing `sudo`, which a run
+writing several boards has no terminal to ask for; it says so and fails rather than
+waiting on a prompt nobody can see.
 
 A run says which stage each target is in and how long it has been there, redrawing the
 table in place while it works. The stages are the verbs it stacked, so `deploy` has four

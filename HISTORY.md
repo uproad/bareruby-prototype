@@ -675,17 +675,58 @@ output is a pipe, so `sudo` had nowhere to print its prompt and nowhere to read 
 and waited for a password that could not be typed at a prompt nobody saw. Run where a
 terminal is absent outright it says so and exits; run from one, it waits.
 
-- **The chip is asked for along with the port.** A port answering with the wrong chip is
-  not this board. Where that finds nothing, the board is looked for by what arrived in
-  BOOTSEL since the reset — the older question, which a shuffled port cannot spoil — and
-  two boards of one chip make that ambiguous too, so it is refused with the advice to
-  write them one at a time.
 - **`sudo` is reached for only where there is a terminal to answer it.** Otherwise the
   fstab line to add is printed and the row fails.
 
-Five consecutive runs of two boards from a running firmware afterwards: four wrote both
-boards to their own mount points with the right image, and the fifth failed only in the
-row whose board had not yet been re-attached by usbipd.
+### An RP2040's bootloader has no name, and what that forced
+
+Five boards on one desk — three RP2040 and two RP2350 — made the rest of it plain.
+
+**The two RP2350s named themselves and the three RP2040s did not.** In BOOTSEL the RP2350s
+reported `34319CF054AB3BD6` and `5D3F58054E676E14`, the same serials their firmware
+reports. All three RP2040s reported `E0C9125B0D9B` — two of one model and one of another,
+identical down to model, revision, `bcdDevice` and size. There is nothing else in sysfs to
+tell them apart but the port they are on.
+
+**That broke the mount before it broke anything else.** udev publishes one
+`/dev/disk/by-id` link per name, so with three RP2040s attached exactly one of them had a
+by-id name and the other two had none. A mount that followed the name therefore reached
+whichever board held it rather than the board asked for — **it wrote a board nobody
+named**, silently, and reported that the board asked for was still in BOOTSEL. Every
+identical board past the first was unreachable.
+
+`/dev/disk/by-path` names a device by the port it is on, exists for every device, and
+never collides. The fstab lines are keyed by it, one per port, looked up rather than
+spelled out — the prefix is the system's own, a PCI controller on one desk and a virtual
+host controller where the boards arrive over usbipd.
+
+### The three things writing a board turned out to be
+
+Following a board across its own reset was the wrong question. It is not followable: its
+serial changes or is not unique, and its port is handed out by arrival order where a
+transport rather than a bus is carrying it. **What is followable is nothing — so nothing
+is followed.** Every board is reset, the bus is given up to 100s to settle, and everything
+on it is looked at once, on a bus that has stopped moving. Only then is anything written.
+
+| | | measured |
+| --- | --- | --- |
+| reset | in turn | 0.036s for two boards — nothing worth doing at once |
+| settle | once, shared | 11 to 21s here; 100s allowed |
+| find | once, centrally | one listing |
+| write | all at once | 1.7 to 3.6s a board |
+
+**Two identical boards taking one image are written at the same time**: 2.7s against the
+10.1s the same pair took in turn. That is the case a shelf of identical boards is, and it
+needs no identification at all — the boards take the same image, so any one-to-one
+handing-out of them is right, and the finding was done centrally so there is exactly one.
+Two entries that would each take every board of a chip are the one thing left that no
+image can settle, and that is put back to the record rather than guessed at.
+
+Four runs of every target afterwards — five boards written across them — went 4/4, 3/4,
+4/4, 4/4, each with the right image on the right chip. The one failure was a board usbipd
+had not brought back inside the settle. **The alternating failures are gone**: a run that
+starts with a board already in BOOTSEL now succeeds like any other, and the run after it
+succeeds too.
 
 ## Verified on hardware
 
