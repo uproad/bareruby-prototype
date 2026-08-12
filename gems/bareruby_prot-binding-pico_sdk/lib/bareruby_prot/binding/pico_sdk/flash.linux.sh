@@ -80,32 +80,53 @@ attached_boards() {
     done
 }
 
-# The by-id path carries the serial, so it names one physical board even when two of
-# them label their bootloader volume after the same chip.
+# **A volume is named by the port it arrived on, not by the board on it.** The by-id path
+# carries the board's serial, and an RP2040's bootloader does not have one of its own:
+# three boards measured on this desk — two of one model and one of another — all called
+# themselves E0C9125B0D9B, down to the same model, revision and size. udev can publish one
+# link for that name, so with three boards attached two of them had no by-id name at all,
+# and a mount that followed the name reached whichever board happened to hold it. **Which
+# is to say it wrote a board nobody asked for.**
+#
+# The by-path name is per port, and there is one of them for every device that is here.
+# Identical boards no longer collide, because what is being named is where a board is
+# rather than what it says it is.
+#
+# **Looked up rather than built.** The prefix belongs to the system — a PCI controller on
+# one desk, a virtual host controller where the boards arrive over usbipd — so a name this
+# side spelled out would match nothing. The kernel published it; this reads it back.
 disk_link_for() {
-    local serial=$1 chip=$2 model
-    case "$chip" in
-        rp2040) model=RP2 ;;
-        rp2350) model=RP2350 ;;
-        *) model=RP2 ;;
-    esac
-    echo "/dev/disk/by-id/usb-RPI_${model}_${serial}-0:0-part1"
+    local partition=$1 target link
+    target=$(readlink -f "$partition" 2>/dev/null) || return 1
+    [ -n "$target" ] || return 1
+    for link in /dev/disk/by-path/*; do
+        [ -e "$link" ] || continue
+        [ "$(readlink -f "$link" 2>/dev/null)" = "$target" ] || continue
+        echo "$link"
+        return 0
+    done
+    return 1
 }
 
+# **One line per port rather than one per board.** A desk says which of its sockets a
+# board may be plugged into, and any board in one of them is then mountable — however many
+# of them are identical, and whichever of them is there today.
 fstab_line_for() {
-    echo "$(disk_link_for "$1" "$2") /mnt/pico-${1:0:8} vfat noauto,user,umask=000 0 0"
+    local link
+    link=$(disk_link_for "$1") || return 0
+    echo "$link /mnt/pico-$2 vfat noauto,user,umask=000 0 0"
 }
 
-# What --list adds here: the line that keeps this board out of sudo next time.
+# What --list adds here: the lines that keep these ports out of sudo next time.
 listing_advice() {
     echo
-    echo "fstab lines (mount points may be renamed, but must be distinct):"
-    echo "$1" | while read -r serial chip state _; do
+    echo "fstab lines, one per port (mount points may be renamed, but must be distinct):"
+    echo "$1" | while read -r _ _ state node port; do
         if [ "$state" = bootsel ]; then
-            echo "  $(fstab_line_for "$serial" "$chip")"
+            echo "  $(fstab_line_for "$node" "$port")"
         else
-            echo "  # $serial: put it in BOOTSEL and list again — the path holds the"
-            echo "  #   bootrom's id, which an RP2040 does not report while running."
+            echo "  # port $port: hold BOOTSEL and list again — a port is only named here"
+            echo "  #   while a bootloader volume is on it."
         fi
     done
 }
@@ -133,10 +154,12 @@ reset_advice() {
 # volume. Naming the board asks about one board, and waiting until the answer is this
 # node waits out udev rather than racing it.
 wait_for_disk_link() {
-    local partition=$1 link=$2 attempt target
-    target=$(readlink -f "$partition")
+    local partition=$1 attempt link
     for attempt in $(seq 40); do
-        [ -e "$link" ] && [ "$(readlink -f "$link")" = "$target" ] && return 0
+        if link=$(disk_link_for "$partition"); then
+            echo "$link"
+            return 0
+        fi
         sleep 0.5
     done
     return 1
@@ -177,11 +200,13 @@ mount_with_retry() {
 }
 
 open_volume() {
-    local partition=$1 serial=$2 chip=$3 link fstab_point
-    link=$(disk_link_for "$serial" "$chip")
-    wait_for_disk_link "$partition" "$link" || true
+    local partition=$1 port=$2 link fstab_point
+    link=$(wait_for_disk_link "$partition") || link=""
     VOLUME=$FALLBACK_MOUNT_POINT
-    fstab_point=$(fstab_mount_point "$link") && VOLUME=$fstab_point || fstab_point=""
+    fstab_point=""
+    if [ -n "$link" ]; then
+        fstab_point=$(fstab_mount_point "$link") && VOLUME=$fstab_point || fstab_point=""
+    fi
 
     echo "flash: mount     $VOLUME"
     mountpoint -q "$VOLUME" && "$UMOUNT" "$VOLUME"
@@ -193,9 +218,9 @@ open_volume() {
         }
     else
         if [ "$(id -u)" -ne 0 ]; then
-            echo "flash: no fstab line names $partition"
-            echo "       To keep this board out of sudo, add:"
-            echo "         $(fstab_line_for "$serial" "$chip")"
+            echo "flash: no fstab line names the port $partition is on"
+            echo "       To keep this port out of sudo, add:"
+            echo "         $(fstab_line_for "$partition" "$port")"
             # **Only where there is a terminal to ask for the password on.** A run writing
             # several boards gives each of them a pipe instead, so `sudo` would find
             # nowhere to print its prompt and nowhere to read the answer — and would wait
@@ -209,7 +234,7 @@ open_volume() {
                 exit 1
             fi
             echo "flash: escalating"
-            exec sudo -- "$0" --board "$serial" "$UF2"
+            exec sudo -- "$0" --device "$partition" "$UF2"
         fi
         mkdir -p "$VOLUME"
         "$MOUNT" -t vfat -o rw,umask=000 "$partition" "$VOLUME"

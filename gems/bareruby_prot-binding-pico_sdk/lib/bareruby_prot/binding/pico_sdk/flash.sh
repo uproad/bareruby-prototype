@@ -54,16 +54,39 @@ esac
 
 BOARD=""
 LIST=""
+ATTACHED=""
+RESET=""
+DEVICE=""
 UF2=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --list) LIST=1 ;;
+        --attached) ATTACHED=1 ;;
+        --reset) RESET="$2"; shift ;;
+        --device) DEVICE="$2"; shift ;;
         --board) BOARD="$2"; shift ;;
         --board=*) BOARD="${1#--board=}" ;;
         *) UF2="$1" ;;
     esac
     shift
 done
+
+# **The three steps of writing a board, each reachable on its own.** Run by hand this
+# script does all of them and needs to be told nothing but an image, which is what makes
+# it usable without a project around it. A run writing several boards needs them apart:
+# the boards are all reset, the bus is given time to settle, everything on it is looked at
+# **once**, and only then is anything written — because a board looked for while others
+# are re-enumerating is looked for at the worst possible moment, and on a transport that
+# hands out its ports in arrival order it may not even be findable.
+if [ -n "$ATTACHED" ]; then
+    attached_boards 2>/dev/null || true
+    exit 0
+fi
+
+if [ -n "$RESET" ]; then
+    reset_into_bootsel "$RESET"
+    exit 0
+fi
 
 if [ -n "$LIST" ]; then
     boards=$(attached_boards 2>/dev/null || true)
@@ -109,9 +132,21 @@ case "$FAMILY" in
         ;;
 esac
 
-# Only boards carrying the image's chip are candidates, and --board narrows further.
-candidates=$(attached_boards 2>/dev/null | awk -v chip="$CHIP" -v board="$BOARD" \
-    '$2 == chip && (board == "" || $1 == board)' || true)
+# **Told which device, this asks nothing about which board.** That question was answered
+# by whoever did the resetting, on a bus that had stopped moving, and asking it again here
+# — one board at a time, while the others are being written — is asking it at the one
+# moment it cannot be answered well.
+if [ -n "$DEVICE" ]; then
+    candidates=$(attached_boards 2>/dev/null | awk -v node="$DEVICE" '$4 == node' || true)
+    if [ -z "$candidates" ]; then
+        echo "flash: $DEVICE is not there any more." >&2
+        exit 1
+    fi
+else
+    # Only boards carrying the image's chip are candidates, and --board narrows further.
+    candidates=$(attached_boards 2>/dev/null | awk -v chip="$CHIP" -v board="$BOARD" \
+        '$2 == chip && (board == "" || $1 == board)' || true)
+fi
 count=$(printf '%s' "$candidates" | grep -c . || true)
 
 if [ "$count" -eq 0 ]; then
@@ -220,7 +255,7 @@ fi
 
 echo "flash: device    $PARTITION"
 
-open_volume "$PARTITION" "$BOOTSEL_SERIAL" "$CHIP"
+open_volume "$PARTITION" "$PORT"
 
 # The bootloader always exposes INFO_UF2.TXT. Refuse to write to anything else.
 if [ ! -f "$VOLUME/INFO_UF2.TXT" ]; then
