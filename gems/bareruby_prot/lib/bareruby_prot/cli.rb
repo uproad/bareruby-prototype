@@ -146,8 +146,7 @@ module BareRubyProt
 
     def compiled(entry)
       @progress.at(:compile, [entry]) do
-        compile_for([entry.target], debug: debug?(entry))
-        place(entry)
+        compile_for([entry.target], debug: debug?(entry), into: root_of(entry))
       end
     end
 
@@ -309,27 +308,26 @@ module BareRubyProt
 
     def debug?(entry) = @debug || entry.debug
 
-    def directory_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.name)
-
-    # **The compiler names its output after the composition, and this side renames it to
-    # the entry.** That is a boundary rather than a leftover vocabulary: a compiler that
-    # knows nothing about desks cannot be handed a name a desk invented, and two entries
-    # built from one composition — a debug one and a release one — must not land in one
-    # place. What a person reads is the name they wrote.
+    # **An entry compiles into a root of its own, named after the entry.** The name is the
+    # one word a person meets this entry by, so it is the one the machinery is filed
+    # under — and it is also the only thing that tells two entries of one composition
+    # apart, which a debug build and a release build of the same board are.
     #
-    # **A name may already be the one the compiler used.** Leaving the name blank in
-    # `target add` writes the composition out, which is that same word — and moving a
-    # directory onto itself is deleting what was just built.
-    def place(entry)
-      return if entry.name == entry.target.directory
+    # **The root is the entry's, not the composition's**, because the runtime C++ sits at
+    # the top of it. A root shared between entries would have those files written again by
+    # every compilation into it, while some other entry was building from them. One root
+    # each is what makes two entries able to be compiled at the same time.
+    def root_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.name)
 
-      FileUtils.rm_rf(directory_of(entry))
-      FileUtils.mv(File.join(Compiler::COMPILE_DIRECTORY, entry.target.directory),
-                   directory_of(entry))
-    end
+    # **The compiler names the directory after the composition, and this side lets it.**
+    # It is inside the entry's root rather than beside it, so what a person navigates to
+    # is still the name they wrote; the composition is spelled one level further in,
+    # where the machinery is, and reaching the runtime from there is `..` exactly as the
+    # manifests were written to expect.
+    def directory_of(entry) = File.join(root_of(entry), entry.target.directory)
 
-    def compile_for(targets, debug:)
-      Compiler.new(source, targets:, debug:, exceptions: @exceptions).run
+    def compile_for(targets, debug:, into:)
+      Compiler.new(source, targets:, debug:, exceptions: @exceptions, into:).run
     end
 
     # Named from the project root, like everything else a run reaches for that it did not

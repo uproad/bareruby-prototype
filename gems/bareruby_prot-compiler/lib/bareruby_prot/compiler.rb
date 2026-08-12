@@ -41,11 +41,17 @@ module BareRubyProt
     # cannot share a run — and the second must not erase the first.
     def self.clear_output = FileUtils.rm_rf(COMPILE_DIRECTORY)
 
-    def initialize(source_file_name, targets:, debug:, exceptions:)
+    # **What a compilation writes is a root, not a directory.** The runtime C++ goes at
+    # the top of it and the target's own directory sits inside, which is what lets a
+    # manifest reach the runtime as `..`. Two compilations pointed at one root would
+    # therefore share those files — the same names, written again while somebody else is
+    # building from them — so where the root is, is asked for rather than assumed.
+    def initialize(source_file_name, targets:, debug:, exceptions:, into: COMPILE_DIRECTORY)
       @source_file_name = source_file_name
       @targets = targets
       @debug = debug
       @exceptions = exceptions
+      @into = into
     end
 
     # **Each pass hands its result to the next one and nothing else happens in between.**
@@ -55,7 +61,7 @@ module BareRubyProt
     # not that: it was every boundary, every run, whether or not anybody was looking. What
     # is left is the pipeline, and what to emit from it is a question asked from scratch.
     def run
-      FileUtils.mkdir_p(COMPILE_DIRECTORY)
+      FileUtils.mkdir_p(@into)
 
       generator = Pass::BareRubyAstGenerator.new(@source_file_name).run
       generator.notices.each { |notice| warn notice }
@@ -83,7 +89,7 @@ module BareRubyProt
 
     def write_artifacts(artifacts)
       artifacts.each do |relative_path, content|
-        path = File.join(COMPILE_DIRECTORY, relative_path)
+        path = File.join(@into, relative_path)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
       end
