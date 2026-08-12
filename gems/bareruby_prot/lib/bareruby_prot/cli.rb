@@ -54,7 +54,7 @@ module BareRubyProt
       Options:
         --target=NAME       Work on NAME, repeatable. NAME is an entry's name in
                             target.yml, in every command that takes this. Without it, every
-                            entry recorded there is worked on — see target.yml.sample.
+                            entry recorded there is worked on.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
     USAGE
