@@ -175,10 +175,20 @@ bootloader and back, arriving and leaving as two different USB devices, and the 
 every other board are renumbered around it. So the scans that find a board are written to
 be asked while that is happening: a device that vanishes between two lines of a scan is
 not a board rather than an error, and a board that is not there yet is asked for again
-until it is. **Under [WSL](#from-wsl) this is the difference between working and not** —
-the boards arrive through usbipd, which re-attaches them a few seconds after each reset.
-Where a board takes longer than the run waits, the run says so and stops, and `--jobs=1`
-keeps more of the bus still.
+until it is.
+
+**Under [WSL](#from-wsl) a port can even come back holding a different board.** The boards
+arrive through usbipd rather than off a bus, and two re-attaching at once are given their
+slots in whatever order they arrive — measured, with two boards swapping. So a port is
+asked about the chip as well, and a board is looked for by what arrived in BOOTSEL where
+that fails. Two boards of one chip written at once cannot be told apart afterwards at all;
+that is refused rather than guessed at, and `--jobs=1` is the way through it.
+
+**One board per line in `/etc/fstab` is what keeps `sudo` out of a parallel run**, and
+`--list` prints the lines. Without one a board falls back to a mount that needs `sudo`,
+and a run writing several boards gives each of them a pipe rather than a terminal — so
+that password can be neither asked for nor typed. It says so and fails rather than
+waiting for it.
 
 A run says which stage each target is in and how long it has been there, redrawing the
 table in place while it works. The stages are the verbs it stacked, so `deploy` has four

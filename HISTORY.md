@@ -654,6 +654,39 @@ disappearing to its bootloader arriving. Where that runs past what the flasher w
 run says so and stops rather than dying quietly. A desk reaching its boards without usbipd
 has less of this to wait for.
 
+### The port is not always the same board, and what that cost
+
+Two boards written at once were reported failing and succeeding in alternation again, and
+this time **the two of them came back holding each other's port**. Measured, in one run:
+the RP2350 was reset from port `1-1` and the RP2040 from `1-2`, and afterwards each was
+looked up under the other's identity — the RP2350's row built an fstab path reading
+`usb-RPI_RP2350_E0C9125B0D9B` (the RP2040's bootrom id) and the RP2040's row read
+`usb-RPI_RP2_34319CF054AB3BD6` (the RP2350's).
+
+**Off a bus a port cannot do this**: the socket does not move, which is what the earlier
+measurement showed for one board resetting alone. usbipd is not a bus — it hands a Windows
+device to WSL over a network — and two devices re-attaching at once are given their slots
+in whatever order they arrive.
+
+Neither board matched an fstab line under the wrong identity, so both fell back to the one
+mount point a desk names for boards it does not know, and both reached for `sudo` to mount
+it. **That is where the run stopped forever.** Each board is written in a process whose
+output is a pipe, so `sudo` had nowhere to print its prompt and nowhere to read the answer,
+and waited for a password that could not be typed at a prompt nobody saw. Run where a
+terminal is absent outright it says so and exits; run from one, it waits.
+
+- **The chip is asked for along with the port.** A port answering with the wrong chip is
+  not this board. Where that finds nothing, the board is looked for by what arrived in
+  BOOTSEL since the reset — the older question, which a shuffled port cannot spoil — and
+  two boards of one chip make that ambiguous too, so it is refused with the advice to
+  write them one at a time.
+- **`sudo` is reached for only where there is a terminal to answer it.** Otherwise the
+  fstab line to add is printed and the row fails.
+
+Five consecutive runs of two boards from a running firmware afterwards: four wrote both
+boards to their own mount points with the right image, and the fifth failed only in the
+row whose board had not yet been re-attached by usbipd.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one
