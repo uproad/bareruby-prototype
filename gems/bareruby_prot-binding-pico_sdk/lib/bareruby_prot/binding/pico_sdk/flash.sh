@@ -30,7 +30,7 @@
 # while macOS has mounted it before anything here runs. So they are two files rather
 # than branches through one, and each answers the same six questions:
 #
-#     attached_boards            one line per board: SERIAL CHIP STATE NODE
+#     attached_boards            one line per board: SERIAL CHIP STATE NODE PORT
 #     listing_advice LINES       what --list should add here, given those lines
 #     reset_into_bootsel NODE    reboot a running --debug firmware into the bootloader
 #     reset_advice               what a reset that produced no board might mean here
@@ -66,7 +66,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -n "$LIST" ]; then
-    boards=$(attached_boards)
+    boards=$(attached_boards 2>/dev/null || true)
     if [ -z "$boards" ]; then
         echo "flash: no Raspberry Pi Pico board is attached."
         echo "       A board running a default (non --debug) build presents no USB interface;"
@@ -110,8 +110,8 @@ case "$FAMILY" in
 esac
 
 # Only boards carrying the image's chip are candidates, and --board narrows further.
-candidates=$(attached_boards | awk -v chip="$CHIP" -v board="$BOARD" \
-    '$2 == chip && (board == "" || $1 == board)')
+candidates=$(attached_boards 2>/dev/null | awk -v chip="$CHIP" -v board="$BOARD" \
+    '$2 == chip && (board == "" || $1 == board)' || true)
 count=$(printf '%s' "$candidates" | grep -c . || true)
 
 if [ "$count" -eq 0 ]; then
@@ -136,15 +136,21 @@ echo "flash: board     $SERIAL ($CHIP)"
 # wc rather than stat, whose one flag for this is spelled differently on each system.
 echo "flash: firmware  $UF2 ($(wc -c < "$UF2" | tr -d ' ') bytes)"
 
+# **A scan that finds nothing is an answer, and a scan that trips over a board leaving is
+# the same answer.** These run while boards are rebooting — that is the whole of what they
+# are for — so a device can disappear between the line that finds it and the line that
+# reads it. Under `set -e` an empty answer and a stumble are the same to the caller only
+# if this says so, and without that the script leaves with no status of its own and
+# nothing said, which reads from outside as the flash having silently died.
 bootsel_node_at_port() {
-    attached_boards | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $4 }'
+    attached_boards 2>/dev/null | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $4 }' || true
 }
 
 # The board in BOOTSEL at a port, as the serial it answers to there and the partition it
 # presents. **The serial is read again rather than carried across the reset**, because a
 # bootloader does not answer to the one the firmware did.
 bootsel_at_port() {
-    attached_boards | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $1, $4; exit }'
+    attached_boards 2>/dev/null | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $1, $4; exit }' || true
 }
 
 # A firmware built with --debug keeps a USB CDC interface up, and pico-sdk reboots it
