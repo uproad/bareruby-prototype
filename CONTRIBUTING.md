@@ -354,13 +354,44 @@ first is all it takes — the third command then puts in everything, the two inc
 desk that installs them the ordinary way is served as well; this only adds a place to
 look.
 
-Run at least once wholly from installed gems, with nothing of the working tree on the
-path. It is the only check that catches a `spec.files` that misses a file — nothing
-running from the working tree can:
+### Checking what the gems ship
+
+**A `spec.files` that misses a file cannot be seen from inside this checkout, whatever
+`GEM_HOME` says.** Every verb that builds stands the run in this project's bundle, and this
+project's Gemfile is a `path` source over `gems/` — so the working tree answers, and an
+installed copy is never consulted. A run pointed at `.gems/` looks like the check it is
+meant to be and is not one: drop `yml` from the pico-sdk gemspec's glob and that run still
+produces a 52 KB `.uf2`.
+
+Two things have to be true at once for the question to be asked at all. What the gems ship
+has to be the only thing there is, and this Gemfile has to not be the one answering.
+Unpacking gives the first — `gem unpack` writes out exactly what `spec.files` carried — and
+a project outside this tree gives the second.
 
 ```sh
-GEM_HOME=$PWD/.gems .gems/bin/bareruby build samples/heartbeat.rb --target=mega
-# --target names an entry in config/target.yml; `mega` is what the sample record calls it
+for g in gems/*/; do (cd $g && gem build *.gemspec -o /tmp/$(basename $g).gem); done
+mkdir -p ~/shipped/gems && gem unpack /tmp/bareruby_prot*.gem --target ~/shipped/gems
+```
+
+Then a project of its own — anywhere but under this checkout — whose Gemfile names that
+directory by an absolute path. The gemspec ships inside each gem for this reason among
+others: to bundler, a directory without one is not a gem.
+
+```ruby
+path "/absolute/path/to/shipped/gems", glob: "*/*.gemspec" do
+  gem "bareruby_prot"
+  gem "bareruby_prot-binding-pico_sdk"   # every add-on the check should cover
+  gem "bareruby_prot-stdlib-uart"        # …
+end
+```
+
+`bundle install` and `bundle binstubs bareruby_prot` there, put a sample in `app/main.rb`,
+write a `config/target.yml` naming the entries to build, and `bin/bareruby build`. A file
+left out of a gemspec is now absent rather than merely unused, so the run stops on it by
+name:
+
+```
+No such file or directory - .../binding/pico_sdk/data/sources.lock.yml
 ```
 
 ## Checking a change
@@ -386,7 +417,10 @@ gitignored, because which machines are at this desk is true of the desk.
 5. **Board build.** `./bareruby build --target=<the entry for that board>` through to the
    `.uf2`, `.hex` or ELF, and record `text`, `bss` and artifact size per board in
    [`HISTORY.md`](HISTORY.md). Where `--no-exceptions` changes the answer, measure both.
-6. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
+6. **Packaging**, when a change adds a file to a gem or touches a gemspec. Build from what
+   the gems ship, [as above](#checking-what-the-gems-ship) — a file left out of a
+   `spec.files` is reachable from here and from nowhere a user stands.
+7. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
    **never write "verified" for something that was only built** — say "built but not
    hardware-flashed".
 
