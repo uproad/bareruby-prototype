@@ -55,12 +55,16 @@ usb_directory_of() {
 attached_boards() {
     local device model usb serial tty product
     for device in /sys/block/sd*; do
+        # A board is written by rebooting it, so one can vanish between any two lines of
+        # this scan — including the scan run to find the one that just rebooted. Every
+        # read is therefore allowed to fail into "not a board" rather than into an error.
         [ -e "$device/device/vendor" ] || continue
-        [ "$(tr -d ' ' < "$device/device/vendor")" = RPI ] || continue
-        model=$(tr -d ' ' < "$device/device/model")
+        [ "$(tr -d ' ' < "$device/device/vendor" 2>/dev/null)" = RPI ] || continue
+        model=$(tr -d ' ' < "$device/device/model" 2>/dev/null) || continue
         usb=$(usb_directory_of "$device/device") || continue
         [ -n "$usb" ] || continue
-        serial=$(cat "$usb/serial")
+        serial=$(cat "$usb/serial" 2>/dev/null) || continue
+        [ -n "$serial" ] || continue
         echo "$serial $(chip_of_bootsel_model "$model") bootsel" \
              "/dev/$(basename "$device")1 $(basename "$usb")"
     done

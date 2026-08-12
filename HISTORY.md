@@ -618,19 +618,41 @@ published at the same instant. The `Model:` line in `INFO_UF2.TXT` is the board 
 answering, on the volume about to be written; an image for the wrong chip is refused there
 rather than written.
 
-**Under WSL, resetting several boards at once is not reliable.** The boards reach WSL
-through usbipd, and a board that resets into BOOTSEL re-enumerates as a different USB
-device that has to be attached again. Two of them at once is more than that kept up with
-here: one board was observed to stay out of WSL for the whole of a sixty-second window,
-and the run gave up on it. This is the same fragility the README already records for a
-single board, met from a different direction — it is WSL plumbing rather than the board or
-the flasher.
+### What a moving bus costs the scans, and what that looked like
 
-**It is not peculiar to writing several at once.** The same loss was recorded during a
-`--jobs=1` run, which resets one board at a time: the board took longer to come back than
-the run waits, and the row failed. Resetting two together makes it likelier rather than
-possible. Boards already in BOOTSEL never reset and never meet it, and a desk reaching its
-boards without usbipd has none of this.
+The first version of the above was reported failing and succeeding in strict alternation,
+and the alternation was the clue. A board being written **moves the bus for everything
+else on it**: it reboots into its bootloader and back, arriving and leaving as two
+different USB devices, and every other board's serial port is renumbered around it. Two
+scans were written as though that were not happening.
+
+1. **A scan that trips over a board leaving took the whole run with it.** The scan reads a
+   device's serial out of sysfs, and a board that reboots between the line that finds the
+   file and the line that reads it makes that read fail. Under `set -euo pipefail` the
+   failure left the flasher with no status of its own and nothing said — from outside, the
+   flash simply stopped, with no message at all, ten seconds in. **That is what made the
+   failures alternate**: a run that died there left the board sitting in BOOTSEL, so the
+   next run found it already there, needed no reset, and succeeded — which left it running
+   again for the run after that to reset and die on. Every read in the scan now fails into
+   "not a board" rather than into an error, which is what the half of it that scans serial
+   ports already did.
+2. **A board asked for at the wrong moment answers that it is not attached.** The Arduino
+   is identified by the serial port it brought up, and `arduino-cli board list` was asked
+   once. Asked while a Pico beside it was re-enumerating, it did not report the Arduino,
+   and the row failed with `no attached board is arduino:avr:mega` 1.2s in — reliably, on
+   every run where the Pico needed a reset. It is asked until the board answers, the way
+   every other wait on hardware here is written.
+
+Both were only reachable by writing more than one board at once, and both were found by
+running it. Afterwards: six consecutive single-board runs from a running firmware, four
+consecutive Pico-and-Arduino runs, and three consecutive runs of all four targets, all
+successful.
+
+**What remains is the wait itself.** The boards reach this desk through usbipd, which
+re-attaches a board a few seconds after each reset — measured at 5.1s from the board
+disappearing to its bootloader arriving. Where that runs past what the flasher waits, the
+run says so and stops rather than dying quietly. A desk reaching its boards without usbipd
+has less of this to wait for.
 
 ## Verified on hardware
 
