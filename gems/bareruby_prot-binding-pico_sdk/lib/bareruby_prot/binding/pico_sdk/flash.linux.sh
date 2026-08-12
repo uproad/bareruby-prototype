@@ -16,8 +16,7 @@ FALLBACK_MOUNT_POINT=/mnt/pico
 MOUNT=/usr/bin/mount
 UMOUNT=/usr/bin/umount
 
-# The bootloader and the running firmware announce the same chip under different ids,
-# and the flash id is the same in both, so a board keeps one identity across a reset.
+# The bootloader and the running firmware announce the same chip under different ids.
 chip_of_bootsel_model() {
     case "$1" in
         RP2) echo rp2040 ;;
@@ -44,8 +43,15 @@ usb_directory_of() {
     [ -e "$directory/serial" ] && echo "$directory"
 }
 
-# One line per attached board: SERIAL CHIP STATE NODE. A board in BOOTSEL is named by
-# its partition, a running one by the serial port its firmware brought up.
+# One line per attached board: SERIAL CHIP STATE NODE PORT. A board in BOOTSEL is named
+# by its partition, a running one by the serial port its firmware brought up.
+#
+# **PORT is where the board is plugged in, and it is the one thing that survives a
+# reset.** The kernel names a USB device after the path through the hubs that reaches it
+# — `1-2` is the second port of the first bus — and a board that reboots into its
+# bootloader comes back on the same one. Its serial does not: an RP2040 reports the
+# bootrom's id in BOOTSEL and the flash id once pico-sdk is running, and those are two
+# different numbers for one board.
 attached_boards() {
     local device model usb serial tty product
     for device in /sys/block/sd*; do
@@ -55,7 +61,8 @@ attached_boards() {
         usb=$(usb_directory_of "$device/device") || continue
         [ -n "$usb" ] || continue
         serial=$(cat "$usb/serial")
-        echo "$serial $(chip_of_bootsel_model "$model") bootsel /dev/$(basename "$device")1"
+        echo "$serial $(chip_of_bootsel_model "$model") bootsel" \
+             "/dev/$(basename "$device")1 $(basename "$usb")"
     done
     for tty in /dev/ttyACM*; do
         [ -c "$tty" ] || continue
@@ -65,7 +72,7 @@ attached_boards() {
         product=$(cat "$usb/idProduct" 2>/dev/null) || continue
         serial=$(cat "$usb/serial" 2>/dev/null) || continue
         [ -n "$serial" ] || continue
-        echo "$serial $(chip_of_usb_product "$product") running $tty"
+        echo "$serial $(chip_of_usb_product "$product") running $tty $(basename "$usb")"
     done
 }
 
