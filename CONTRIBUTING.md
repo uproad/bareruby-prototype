@@ -290,10 +290,25 @@ commands, so it needs to be a root the same way a generated project is.
 The template is files rather than strings, so what a user gets can be read as what it will
 be — and files are exactly what a `spec.files` can leave behind. The dot file is shipped
 as `gitignore` and renamed on the way out, because under its own name it would take effect
-here and hide the very files it is meant to carry. Two things in it cannot be the same on
-two desks and are written when the project is: which machine is doing the compiling, and
-where the gems come from. The second is a prototype's problem only, since nothing here is
-published.
+here and hide the very files it is meant to carry. **One thing in it cannot be the same on
+two desks and is written when the project is: which machine is doing the compiling.**
+Everything else lands byte for byte the same wherever `new` was run.
+
+**Where the gems come from is written into no project.** The Gemfile names this repository,
+and a path would name the checkout `new` happened to be run from — one desk's directory
+layout, carried by a tracked file, in a tree whose whole point is to be moved, committed
+and cloned. Naming a repository rather than rubygems.org is the part of it that is a
+prototype's problem, since nothing here is published.
+
+Two consequences for anyone changing a gem here:
+
+- **A project made by `new` builds against `main`, not against this working tree.** An edit
+  to a pass reaches `./bareruby` at once and that project not at all, until it is pushed
+  and the project's lock moves onto it. Check a change from the checkout; a project is for
+  checking what a user gets, and what a user gets is `main`.
+- **`new` reaches the network the first time a desk runs it**, because `bundle install`
+  runs inside it and the source is a repository. Bundler keeps its clone beside the gems
+  from then on, so every later project is served from the desk.
 
 ## How `target add` decides what to ask
 
