@@ -37,9 +37,26 @@ module BareRubyProt
 
     # A board answers with the three parts of its name and not the fourth, so the chip the
     # build chose is left off the comparison.
+    #
+    # **Asked until the bus is done moving, rather than once.** A board is identified here
+    # by the serial port it brought up, and the ports are renumbered whenever anything on
+    # the bus arrives or leaves — which is exactly what a board being written elsewhere
+    # does, twice, as it reboots into its bootloader and back. Asked once at the wrong
+    # moment the answer is that this board is not attached, which is a different thing
+    # from what is true. Every other place a run waits on hardware here waits the same
+    # way.
+    ATTEMPTS = 20
+    PAUSE = 0.5
+
     def self.found(fqbn)
       wanted = fqbn.split(":").first(3).join(":")
-      ports = attached.select { |_, boards| boards.include?(wanted) }.keys
+      ports = []
+      ATTEMPTS.times do
+        ports = attached.select { |_, boards| boards.include?(wanted) }.keys
+        break unless ports.empty?
+
+        sleep PAUSE
+      end
       return ports if ports.length == 1
 
       warn(if ports.empty?
