@@ -140,6 +140,13 @@ bootsel_node_at_port() {
     attached_boards | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $4 }'
 }
 
+# The board in BOOTSEL at a port, as the serial it answers to there and the partition it
+# presents. **The serial is read again rather than carried across the reset**, because a
+# bootloader does not answer to the one the firmware did.
+bootsel_at_port() {
+    attached_boards | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $1, $4; exit }'
+}
+
 # A firmware built with --debug keeps a USB CDC interface up, and pico-sdk reboots it
 # into BOOTSEL when the port is opened at 1200 baud. That saves unplugging the board.
 #
@@ -158,24 +165,26 @@ bootsel_node_at_port() {
 if [ "$STATE" = running ]; then
     echo "flash: $NODE is up, resetting it into BOOTSEL at 1200 baud"
     reset_into_bootsel "$NODE"
-    PARTITION=""
+    CAME_BACK=""
     for _ in $(seq 40); do
-        PARTITION=$(bootsel_node_at_port "$PORT" | head -1)
-        [ -n "$PARTITION" ] && break
+        CAME_BACK=$(bootsel_at_port "$PORT")
+        [ -n "$CAME_BACK" ] && break
         sleep 0.5
     done
-    if [ -z "$PARTITION" ]; then
+    if [ -z "$CAME_BACK" ]; then
         echo "flash: no board came back in BOOTSEL mode at $PORT." >&2
         reset_advice
         exit 1
     fi
+    read -r BOOTSEL_SERIAL PARTITION <<< "$CAME_BACK"
 else
+    BOOTSEL_SERIAL=$SERIAL
     PARTITION=$NODE
 fi
 
 echo "flash: device    $PARTITION"
 
-open_volume "$PARTITION" "$SERIAL" "$CHIP"
+open_volume "$PARTITION" "$BOOTSEL_SERIAL" "$CHIP"
 
 # The bootloader always exposes INFO_UF2.TXT. Refuse to write to anything else.
 if [ ! -f "$VOLUME/INFO_UF2.TXT" ]; then
@@ -184,6 +193,27 @@ if [ ! -f "$VOLUME/INFO_UF2.TXT" ]; then
     exit 1
 fi
 sed 's/^/flash: info      /' "$VOLUME/INFO_UF2.TXT"
+
+# **The volume says which chip it belongs to, so it is asked before anything is written.**
+# Everything up to here identifies a board through the kernel and through udev, and those
+# two are not published at the same instant; this is the board itself answering, on the
+# volume about to be written. An image for one chip reaching another chip's bootloader is
+# the failure this whole path exists to prevent, so it is checked rather than assumed.
+#
+# The Model line rather than the Board-ID: both systems present it, and it names the chip
+# where Board-ID names the board (an RP2040 says `RPI-RP2` there, and a board that is not
+# a Raspberry Pi one says whatever its maker chose).
+case "$(sed -n 's/^Model: *Raspberry Pi *//p' "$VOLUME/INFO_UF2.TXT" | tr -d ' \r')" in
+    RP2) FOUND=rp2040 ;;
+    RP2350) FOUND=rp2350 ;;
+    *) FOUND=unknown ;;
+esac
+if [ "$FOUND" != "$CHIP" ]; then
+    close_volume
+    echo "flash: $PARTITION presents a $FOUND bootloader and $UF2 is for $CHIP." >&2
+    echo "       Nothing was written. Run '${BASH_SOURCE[0]} --list' to see what is attached." >&2
+    exit 1
+fi
 
 # The board resets as soon as the last block lands, so the copy, the sync and the
 # unmount are all expected to fail at the end. The device disappearing is the
