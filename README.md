@@ -213,7 +213,7 @@ on this machine is a stub that says on fd2 what it would have done.
 
 ```
 hello/
-├── .gitignore          build/, dump/, .tools/
+├── .gitignore          build/, .bareruby/, .tools/
 ├── Gemfile             what this is built from, and every board it could be built for
 ├── Gemfile.lock
 ├── README.md
@@ -443,9 +443,7 @@ set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT
 
 What is not fetched is what the desk brings to any work at all: `ruby`, `make`, `cmake`,
 `git`. Only Ruby is needed for the first stage — Prism ships with Ruby 4.0. Every run
-rewrites `dump/`, `.bareruby/` and `build/`, none of which is tracked; `dump/` holds one
-binary snapshot and one text dump per pass boundary, and the pipeline reloads each
-representation from its own dump before the next pass.
+rewrites `.bareruby/` and `build/`, neither of which is tracked.
 
 ## Per-target notes
 

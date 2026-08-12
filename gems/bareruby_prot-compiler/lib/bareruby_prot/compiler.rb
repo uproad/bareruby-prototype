@@ -19,28 +19,21 @@ require_relative "pass/pass_12_cpp_source_generator"
 
 module BareRubyProt
   class Compiler
-    # **Where a run writes is the run's, not this file's.** Both were found from beside
-    # this file, which was the same place while the compiler was a tree; a compiler that
-    # is a gem would write its output into the installed gem instead. They are found from
-    # where the command was run, which is the directory the sources were named from.
-    DUMP_DIRECTORY = File.expand_path("dump", Dir.pwd)
-
     # **What the first stage writes is not what was built.** The C++, the build system that
     # turns it into an artifact, and the manifest describing both are the boundary between
     # the two stages — real files on disk, handable to the second stage on their own — but
     # nobody asked for them. They live where the machinery lives, under the name of the
     # command that fills the directory.
+    #
+    # **Where a run writes is the run's, not this file's.** It was found from beside this
+    # file, which was the same place while the compiler was a tree; a compiler that is a
+    # gem would write its output into the installed gem instead. It is found from where
+    # the command was run, which is the directory the sources were named from.
     COMPILE_DIRECTORY = File.expand_path(".bareruby/compile", Dir.pwd)
-    ARTIFACT_SCHEMA = "ARTIFACTS"
     STATUS_COMPILE_ERROR = 10
     BEGIN_ERROR = "error: begin requires the exception mechanism, which --no-exceptions removes."
     STDOUT_NOTICE = "notice: puts is not emitted in the freestanding build (stdout_channel = none). " \
                     "Enable a stdout channel to observe it."
-    SCHEMAS = {
-      BareRubyAST::SCHEMA => BareRubyAST,
-      TypedAST::SCHEMA => TypedAST,
-      LIR::SCHEMA => LIR
-    }.freeze
 
     # Everything written last time goes, so what is left afterwards is exactly what this
     # run produced. It is done once for a command rather than once for a compilation,
@@ -55,46 +48,35 @@ module BareRubyProt
       @exceptions = exceptions
     end
 
+    # **Each pass hands its result to the next one and nothing else happens in between.**
+    # Every boundary here used to be written to disk in two forms and the next pass fed
+    # from what was read back, which proved the representations survive a round trip — a
+    # real property, and one worth an option that says which boundaries to write. It was
+    # not that: it was every boundary, every run, whether or not anybody was looking. What
+    # is left is the pipeline, and what to emit from it is a question asked from scratch.
     def run
-      FileUtils.mkdir_p(DUMP_DIRECTORY)
       FileUtils.mkdir_p(COMPILE_DIRECTORY)
 
       generator = Pass::BareRubyAstGenerator.new(@source_file_name).run
       generator.notices.each { |notice| warn notice }
       result = generator.result
-      result = boundary("01_bareruby_ast", result)
 
       result = pass_02(result)
-      result = boundary("02_bareruby_ast", result)
-
       result = pass_03(result)
-      result = boundary("03_bareruby_ast", result)
 
       reject_begin_without_exceptions(result)
 
       result = pass_05(result)
-      result = boundary("05_typed_ast", result)
-
       result = pass_06(result)
-      result = boundary("06_typed_ast", result)
-
       result = pass_07(result)
-      result = boundary("07_typed_ast", result)
-
       result = pass_08(result)
-      result = boundary("08_typed_ast", result)
-
       result = pass_09(result)
-      result = boundary("09_low_ir", result)
-
       result = pass_11(result)
-      result = boundary("11_low_ir", result)
 
       generator = pass_12(result)
       warn STDOUT_NOTICE if generator.stdout_notice
-      artifacts = artifact_boundary("12_artifacts", generator.result)
 
-      write_artifacts(artifacts)
+      write_artifacts(generator.result)
 
       0
     end
@@ -139,37 +121,5 @@ module BareRubyProt
       exit STATUS_COMPILE_ERROR
     end
 
-    def boundary(name, representation)
-      write_binary_dump(name, representation.class::SCHEMA, representation.dump_payload)
-      write_inspector_dump(name, representation.class::SCHEMA, "#{name}.txt", representation.inspect_text)
-      restore(name)
-    end
-
-    def artifact_boundary(name, artifacts)
-      write_binary_dump(name, ARTIFACT_SCHEMA, artifacts)
-      write_inspector_dump(name, ARTIFACT_SCHEMA, "#{name}.txt", artifact_inspector_text(artifacts))
-      restore(name)
-    end
-
-    def artifact_inspector_text(artifacts)
-      artifacts.map { |path, content| "--- file: #{path} ---\n#{content}" }.join("\n")
-    end
-
-    def write_binary_dump(name, schema, payload)
-      envelope = { boundary: name, schema:, version: 1, payload: }
-      File.binwrite(File.join(DUMP_DIRECTORY, "#{name}.bin"), Marshal.dump(envelope))
-    end
-
-    def write_inspector_dump(name, schema, file_name, body, comment_prefix = "")
-      header = "#{comment_prefix}=== boundary: #{name} / schema: #{schema} / version: 1 ===\n"
-      File.write(File.join(DUMP_DIRECTORY, file_name), "#{header}#{body}\n")
-    end
-
-    def restore(name)
-      envelope = Marshal.load(File.binread(File.join(DUMP_DIRECTORY, "#{name}.bin")))
-      return envelope[:payload] if envelope[:schema] == ARTIFACT_SCHEMA
-
-      SCHEMAS.fetch(envelope[:schema]).restore(envelope[:payload])
-    end
   end
 end
