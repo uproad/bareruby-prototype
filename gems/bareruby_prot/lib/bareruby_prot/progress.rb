@@ -75,11 +75,11 @@ module BareRubyProt
       answer
     end
 
-    # Named by what it is rather than by where it is: every artifact is at build/<target>/,
-    # and the row it sits on already says which target that is.
+    # Named by what it is rather than by where it is: every artifact is at build/<name>/,
+    # and the row it sits on already says which name that is.
     def artifact(row, path)
       @artifacts[row] = [path, sized(File.size(path))]
-      live? ? render : @out.puts("#{row.directory.ljust(names)}-> #{path}  #{@artifacts[row].last}")
+      live? ? render : @out.puts("#{row.name.ljust(names)}-> #{path}  #{@artifacts[row].last}")
     end
 
     def finish
@@ -165,7 +165,7 @@ module BareRubyProt
 
     def line(row)
       made = @artifacts[row]
-      "#{row.directory.ljust(names)}#{@stages.map { |stage| cell(row, stage).rjust(COLUMN) }.join}" \
+      "#{row.name.ljust(names)}#{@stages.map { |stage| cell(row, stage).rjust(COLUMN) }.join}" \
         "#{"  #{File.basename(made.first)}  #{made.last}" if made}"
     end
 
@@ -179,7 +179,7 @@ module BareRubyProt
 
     def logged(row, stage)
       said = @failed[[row, stage]] ? FAILED : "ok"
-      @out.puts("#{row.directory.ljust(names)}#{LABELS[stage].downcase.ljust(COLUMN)}" \
+      @out.puts("#{row.name.ljust(names)}#{LABELS[stage].downcase.ljust(COLUMN)}" \
                 "#{said.ljust(5)}#{seconds(@spent[[row, stage]])}")
     end
 
@@ -206,7 +206,7 @@ module BareRubyProt
       end
     end
 
-    def names = [*@rows.map { |row| row.directory.length }, NAMES].max + 2
+    def names = [*@rows.map { |row| row.name.length }, NAMES].max + 2
 
     def artifacts? = @stages.include?(:build)
 

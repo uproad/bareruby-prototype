@@ -8,8 +8,8 @@ Complete [setup.md](setup.md) first — one `install.sh` run per desk.
 ./bareruby build samples/heartbeat.rb --target=f446
 ```
 
-`--target` takes the full name or the short form from `./bareruby target list`
-(`f446`, `f401`, `f4disco`). Everything lands in `build/<composition>/`:
+`--target` takes the name this desk gave the entry in `config/target.yml` — the examples
+here assume `f446`. Everything lands in `build/<that name>/`:
 
 ```text
 bareruby_program.elf     the firmware

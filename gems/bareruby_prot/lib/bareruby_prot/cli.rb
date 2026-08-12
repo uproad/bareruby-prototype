@@ -24,9 +24,11 @@ module BareRubyProt
   # reaches for no toolchain at all. A desk with not one SDK on it can still turn Ruby into
   # C++, and keeping that true is worth a command of its own.
   #
-  # compile is the only command that reads nothing but its own arguments. From build
-  # onwards a command needs to know which desk it is standing at — which boards are here
-  # and where the external projects live — and that is what target.yml answers.
+  # **What it is spared is fetching, not knowing where it stands.** compile reads target.yml
+  # exactly as every other command does, because `--target=` naming one thing here and
+  # another there is the kind of difference nobody can be told once: the same option, the
+  # same file behind it, and a name that means the same in `compile` as in `deploy`.
+  # Reading a record costs no SDK.
   class Cli
     USAGE = <<~USAGE
       Usage: bareruby COMMAND [SOURCE.rb] [OPTIONS]
@@ -35,11 +37,10 @@ module BareRubyProt
                             its Gemfile to reach one.
         init FAMILY         Write FAMILY's config templates into this project, every
                             field explained in place. Renaming a .sample makes it real.
-        compile SOURCE.rb   Ruby to C++, into .bareruby/compile/<composition>/. Makes no
-                            artifact, so build/ stays empty. Reads no configuration; without
-                            --target the target is the machine doing the compiling.
+        compile SOURCE.rb   Ruby to C++, into .bareruby/compile/<target>/. Makes no
+                            artifact, so build/ stays empty, and reaches for no toolchain.
         build   SOURCE.rb   compile, then run each binding's toolchain over what it produced,
-                            leaving the artifact — and only that — in build/<composition>/.
+                            leaving the artifact — and only that — in build/<target>/.
         flash               Write what build left onto the boards that take it.
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
@@ -51,11 +52,9 @@ module BareRubyProt
         --help              This.
 
       Options:
-        --target=NAME       Work on NAME, repeatable. An entry's name in target.yml, or a
-                            composition — names and their short forms are in `bareruby
-                            target list`. compile takes only the latter, reading no record.
-                            Without it, build takes its targets from target.yml — see
-                            target.yml.sample.
+        --target=NAME       Work on NAME, repeatable. NAME is an entry's name in
+                            target.yml, in every command that takes this. Without it, every
+                            entry recorded there is worked on — see target.yml.sample.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
     USAGE
@@ -132,26 +131,29 @@ module BareRubyProt
       1
     end
 
-    # **The one command a recorded name cannot reach**, because this is the command that
-    # reads no record: a compilation is exactly what its command line asked for. So a name
-    # only a desk knows is refused here rather than resolved, and refused the same way any
-    # other unknown name is.
-    #
-    # **One compilation serves every target it was asked for**, because what differs
-    # between them is decided in the last pass and everything before it is the same work.
-    # So the row each target has in the table is filled in from that one run, and they all
-    # say the same seconds — which is what happened.
+    # The first stage of what build does, stopping where the toolchain would start. It is
+    # one entry at a time for build's reason: two entries may disagree about debug, and
+    # that disagreement reaches the generated C++, so they cannot share a run.
     def compile
-      wanted.each { |name| raise Stop, no_target(name, []) unless Target.named?(name) }
+      planned = entries
+      return nothing if planned.empty?
+
+      showing(planned, %i[compile])
       Compiler.clear_output
-      targets = Target.select(@target_options)
-      showing(targets, %i[compile])
-      @progress.at(:compile, targets) { compile_for(targets, debug: @debug) }
+      planned.each { |entry| compiled(entry) }
+      0
     end
 
-    # One entry at a time rather than one run for all of them, because two entries may
-    # disagree about debug and that disagreement reaches the generated C++. Clearing the
-    # output once and compiling into it repeatedly is what lets them differ.
+    def compiled(entry)
+      @progress.at(:compile, [entry]) do
+        compile_for([entry.target], debug: debug?(entry))
+        place(entry)
+      end
+    end
+
+    # What compile does, and then a toolchain over each of what it produced. The output is
+    # cleared once for the command rather than once for each entry, which is what lets
+    # entries that cannot share a compilation still share a directory to compile into.
     def build
       planned = entries
       return nothing if planned.empty?
@@ -167,10 +169,7 @@ module BareRubyProt
     # tools are already here answers it without reaching anywhere.
     def built(entry)
       @progress.at(:tools, [entry]) { Tools.install([entry.target]) }
-      @progress.at(:compile, [entry]) do
-        compile_for([entry.target], debug: debug?(entry))
-        place(entry)
-      end
+      compiled(entry)
       worked = @progress.at(:build, [entry]) do
         toolchain_of(entry).run(directory_of(entry), options: entry.options)
       end
@@ -198,12 +197,15 @@ module BareRubyProt
       end
     end
 
-    # Asking for a deployment and being told nothing is worse than being told there is
-    # none: an empty run looks exactly like a successful one. So it is said, and the
-    # status says it too.
+    # Asking for a run and being told nothing is worse than being told there is none: an
+    # empty run looks exactly like a successful one. So it is said, and the status says it
+    # too.
+    #
+    # **There is nothing to name here.** A record with no entries in it leaves every name
+    # wrong, so the way out is to write an entry rather than to type one.
     def nothing
-      warn "bareruby: nothing to #{@command}. Run `bareruby target add` to say which " \
-           "boards are here, or name one with #{Target::OPTION_PREFIX}NAME."
+      warn "bareruby: nothing to #{@command}. #{Deployment::FILE} records no target. " \
+           "Run `bareruby target add` to say which machine is here."
       1
     end
 
@@ -249,33 +251,33 @@ module BareRubyProt
       @target_options.map { |option| option.delete_prefix(Target::OPTION_PREFIX) }
     end
 
-    # **An entry's own name is looked for first, because it is the name in front of the
-    # person typing.** It is what `build/` is named after and what the line saying where
-    # the artifact went prints, so it is the name a next command is typed from. It is also
-    # the only one that tells two entries of one composition apart — a debug build and a
-    # release build of the same board are exactly that, which is what a record gives a
-    # `name:` for. A composition still names itself, and answers with the first entry
-    # spelling it, so `--target=pico` keeps meaning what it meant.
+    # **An entry's own name is the only thing this names**, because it is the name in front
+    # of the person typing: it is what `build/` is called, what the line saying where the
+    # artifact went prints, and so the name a next command is typed from. It is also the
+    # only one that tells two entries of one composition apart — a debug build and a
+    # release build of the same board are exactly that.
+    #
+    # **Naming the composition instead used to work here, and that was the mistake.** Two
+    # spellings for one thing meant `--target=pico` could reach an entry nobody had asked
+    # for, meant the second entry of a composition could be built and not asked for, and
+    # meant the same option answered to a different vocabulary in `compile`. One name, one
+    # place it is written down.
     def entry_named(name, recorded)
-      recorded.find { |entry| entry.name == name } || composed(name, recorded)
+      recorded.find { |entry| entry.name == name } || raise(Stop, no_target(name, recorded))
     end
 
-    # **A name that is neither is a refusal, not a stack.** It is a typo or a name from
-    # another desk, which the person who typed it is the one who can fix, and both lists
-    # it could have come from are short enough to hand back.
-    def composed(name, recorded)
-      raise Stop, no_target(name, recorded) unless Target.named?(name)
-
-      target = Target[name]
-      recorded.find { |entry| entry.target.equal?(target) } ||
-        Deployment::Entry.new(target, nil, false, [], {})
-    end
-
+    # **A name that is not in the record is a refusal, not a stack.** It is a typo or a
+    # name from another desk, which the person who typed it is the one who can fix, and the
+    # list it had to come from is short enough to hand back.
+    #
+    # Where to go next depends on which is wrong. A name that could have been meant is a
+    # matter of spelling it as the record does; a machine that is not in there at all is a
+    # matter of recording it, which is a question `target add` asks rather than an answer
+    # anybody has to look up.
     def no_target(name, recorded)
-      here = recorded.filter_map(&:name)
-      recorded_names = here.empty? ? "" : "#{Deployment::FILE} records #{here.join(', ')}. "
-      "no target is named #{name}. #{recorded_names}" \
-        "`bareruby target list` prints every composition that can be named instead."
+      "no target is named #{name}. #{Deployment::FILE} records " \
+        "#{recorded.map(&:name).join(', ')}. `bareruby target add` asks which machine is " \
+        "here and writes another entry."
     end
 
     # **build/ holds what was built and nothing else.** The toolchains leave far more than
@@ -288,7 +290,7 @@ module BareRubyProt
     # path but the file name.
     def made(entry)
       made = toolchain_of(entry).artifact(directory_of(entry))
-      kept = File.join(ARTIFACTS, entry.directory, File.basename(made))
+      kept = File.join(ARTIFACTS, entry.name, File.basename(made))
       FileUtils.mkdir_p(File.dirname(kept))
       FileUtils.cp(made, kept)
       @progress.artifact(entry, kept.delete_prefix("#{Dir.pwd}/"))
@@ -307,12 +309,19 @@ module BareRubyProt
 
     def debug?(entry) = @debug || entry.debug
 
-    def directory_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.directory)
+    def directory_of(entry) = File.join(Compiler::COMPILE_DIRECTORY, entry.name)
 
-    # An entry that named itself takes the name it chose, so that two entries built from
-    # one composition — a debug one and a release one — do not land in one place.
+    # **The compiler names its output after the composition, and this side renames it to
+    # the entry.** That is a boundary rather than a leftover vocabulary: a compiler that
+    # knows nothing about desks cannot be handed a name a desk invented, and two entries
+    # built from one composition — a debug one and a release one — must not land in one
+    # place. What a person reads is the name they wrote.
+    #
+    # **A name may already be the one the compiler used.** Leaving the name blank in
+    # `target add` writes the composition out, which is that same word — and moving a
+    # directory onto itself is deleting what was just built.
     def place(entry)
-      return unless entry.name
+      return if entry.name == entry.target.directory
 
       FileUtils.rm_rf(directory_of(entry))
       FileUtils.mv(File.join(Compiler::COMPILE_DIRECTORY, entry.target.directory),

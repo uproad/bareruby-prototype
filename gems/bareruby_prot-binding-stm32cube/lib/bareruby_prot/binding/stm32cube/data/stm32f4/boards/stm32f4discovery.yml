@@ -3,7 +3,6 @@
 # COM port that exists only on the DISC1 revision.
 key: stm32f4discovery
 name: stm32-f4discovery
-short: f4disco
 family: stm32f4
 device: stm32f407vgtx
 # The classic 168 MHz profile from the 8 MHz crystal.

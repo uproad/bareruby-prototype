@@ -7,9 +7,14 @@ require_relative "machine"
 module BareRubyProt
   # One machine the compiler produces artifacts for, and the roof over everything beside
   # this file: the instruction sets, the substrates, the machines and the bindings are all
-  # here to be composed, and this is where the composing is done. The name is the whole
-  # identity of a target — it is what the command line spells and the directory the
-  # artifacts land in, so there is never a second vocabulary to translate between.
+  # here to be composed, and this is where the composing is done.
+  #
+  # **The name identifies a composition where compositions are offered — and nowhere a
+  # command line reaches.** A family offers these names, `target list` prints them, and the
+  # documents say them; what a person types is the name of an entry in a desk's record, and
+  # an entry spells its composition out in three fields rather than naming it. Keeping the
+  # two apart is what leaves exactly one vocabulary in each place. A second spelling of a
+  # composition — a short form for typing — had nowhere left to be typed, and is gone.
   #
   # Underneath the name a target is a composition of four answers, and they are kept apart
   # because none of them decides another:
@@ -33,7 +38,6 @@ module BareRubyProt
   # compiler being taught about the machine.
   class Target
     OPTION_PREFIX = "--target="
-    DEFAULT_NAMES = ["host"].freeze
 
     attr_reader :name, :isa, :substrate, :binding, :machine
 
@@ -54,30 +58,13 @@ module BareRubyProt
 
     TABLE = {}
 
-    # The full names are what the artifacts are named after and what the documents say.
-    # A short form is for typing at a prompt, and earns its place by being short.
-    ALIASES = {}
-
-    def self.register(name, isa:, substrate:, binding:, machine:, short: nil)
-      ALIASES[short] = name if short
+    def self.register(name, isa:, substrate:, binding:, machine:)
       TABLE[name] = new(name, isa: isa, substrate: substrate, binding: binding, machine: machine)
     end
 
-    def self.[](name) = TABLE.fetch(ALIASES.fetch(name, name))
-
-    # Asked before reaching for one, because a name arriving from a command line may name
-    # something this side has never heard of — a desk gives its own names to the entries
-    # it records, and only the side that reads that record can tell the two apart.
-    def self.named?(name) = TABLE.key?(ALIASES.fetch(name, name))
-
-    # A run compiles exactly what it was asked for. Nothing is read from a file and
-    # nothing is merged in behind the request, so what a command line says is the whole
-    # of what happens; with nothing said, the machine doing the compiling is the target.
-    def self.select(options)
-      names = options.map { |option| option.delete_prefix(OPTION_PREFIX) }
-      names = DEFAULT_NAMES if names.empty?
-      names.map { |name| self[name] }.uniq
-    end
+    # Every name reaching here was offered by a family or written in a document, so a name
+    # that is not in the table is this side's own mistake rather than somebody's typing.
+    def self.[](name) = TABLE.fetch(name)
 
     # Where a binding declares itself. Nothing here says which bindings exist — they are
     # found by looking rather than by naming, which is what lets one be added without this

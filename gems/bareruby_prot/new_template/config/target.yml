@@ -8,12 +8,12 @@
 # The entry below was written by `bareruby new`, and is the machine doing the compiling.
 # It is here so that this project builds and runs before a board is attached to it. It is
 # the one entry whose composition is not the same on two desks — the triple is whatever
-# this machine happens to be — so it is named, and `build/host/` is a path that can be
-# typed, and written down for someone else, on any of them.
+# this machine happens to be — which is what its name is worth: `build/host/` is a path
+# that can be typed, and written down for someone else, on any of them.
 #
-# `bareruby build`, `flash` and `deploy` take their targets from here when no --target is
-# given. `bareruby compile` never reads this file: a compilation is exactly what its
-# command line asked for.
+# Every command that builds anything — `compile`, `build`, `flash`, `deploy` — takes its
+# targets from here, and `--target=NAME` picks out one of the entries below by its name.
+# With no --target, every entry is worked on.
 #
 # An entry names a composition rather than a target, and always names all three parts of
 # it, because no one of them settles another. One board is reachable through more than one
@@ -22,11 +22,11 @@
 #   machine:  which board.
 #   binding:  what it is called through.
 #   triple:   which instruction set, and what lies under it.
-#   name:     optional. The directory under build/ this entry lands in. Without it the
-#             directory is <machine>-<binding>-<triple>, which is long because that is how
-#             much it takes to be unique. Give a name to be shorter than that, or when one
-#             composition is wanted twice — a debug build and a release build of the same
-#             board.
+#   name:     what this entry is called. It is what --target= says, what its directory
+#             under build/ is called, and what the line saying where the artifact went
+#             prints — one word wherever this entry is met. It is also what lets one
+#             composition be recorded twice, as a debug build and a release build of the
+#             same board.
 #   debug:    optional. `true` or `1` and nothing else means a debug build.
 #   boards:   optional, and usually best left out. With nothing here the one attached
 #             board the artifact fits is found and written to, because the image says

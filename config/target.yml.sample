@@ -16,9 +16,10 @@
 # written by `new` it is tracked, because which compositions a project is built for is
 # true of the project.
 #
-# `bareruby build`, `flash` and `deploy` take their targets from here when no --target is
-# given. `bareruby compile` never reads this file: a compilation is exactly what its
-# command line asked for.
+# Every command that builds anything — `compile`, `build`, `flash`, `deploy` — takes its
+# targets from here, and `--target=NAME` picks out one of the entries below by its name.
+# With no --target, every entry is worked on. `compile` reaches for no toolchain, which is
+# what it is spared; knowing where it stands is not.
 #
 # An entry names a composition rather than a target, and always names all three parts of
 # it, because no one of them settles another. One board is reachable through more than one
@@ -36,10 +37,13 @@
 #               thumbv7em-none-eabihf        STM32F4
 #               avr-none                     AVR. The chip is named by the FQBN, not here
 #               x86_64-pc-linux              the machine doing the compiling
-#   name:     optional. The directory under build/ this entry lands in. Without it the
-#             directory is <machine>-<binding>-<triple>, which is long because that is how
-#             much it takes to be unique. Give a name when one composition is wanted
-#             twice — a debug build and a release build of the same board.
+#   name:     what this entry is called. It is what --target= says, what its directory
+#             under build/ is called, and what the line saying where the artifact went
+#             prints — one word wherever this entry is met. It is also what lets one
+#             composition be recorded twice, as a debug build and a release build of the
+#             same board. `bareruby target add` writes one whether or not one is typed:
+#             left blank it puts down <machine>-<binding>-<triple>, which is long because
+#             that is how much it takes to be unique.
 #   debug:    optional. `true` or `1` and nothing else means a debug build; anything
 #             else, and saying nothing, means release.
 #   boards:   optional, and usually best left out. With nothing here the one attached
@@ -58,16 +62,26 @@
 # of one desk. They live in one file until a second desk needs them not to.
 
 targets:
-  - machine: pico
+  # Nothing is flashed, because the artifact is already on the machine that runs it. A
+  # project written by `new` arrives with this entry and nothing else, so that it builds
+  # before a board is attached; this checkout writes its own, so here it is written out.
+  - name: host
+    machine: none
+    binding: host
+    triple: x86_64-pc-linux
+
+  - name: pico
+    machine: pico
     binding: pico_sdk
     triple: thumbv6m-none-eabi
     debug: true
 
-  - machine: pico2_w
+  - name: pico2w
+    machine: pico2_w
     binding: pico_sdk
     triple: thumbv8m.main-none-eabihf
 
-  # Two builds of one composition, so each one names where it goes.
+  # Two builds of one composition, so each one says which it is.
   # - name: pico2-release
   #   machine: pico2
   #   binding: pico_sdk
@@ -78,7 +92,8 @@ targets:
   # naming; cube_project is for a desk keeping several, or keeping its own elsewhere.
   # boards: takes ST-LINK probe serials rather than board serials, because SWD is
   # reached through the probe.
-  # - machine: nucleo_f446re
+  # - name: f446
+  #   machine: nucleo_f446re
   #   binding: stm32cube
   #   triple: thumbv7em-none-eabihf
   #   options:
@@ -89,11 +104,7 @@ targets:
   # Arduino core is written to over. With nothing here the one attached board this
   # firmware was built for is found, which is what keeps a Pico on the next port from
   # ever being a candidate.
-  # - machine: mega2560
+  # - name: mega
+  #   machine: mega2560
   #   binding: arduino
   #   triple: avr-none
-
-  # Nothing is flashed, because the artifact is already on the machine that runs it.
-  # - machine: none
-  #   binding: host
-  #   triple: x86_64-pc-linux

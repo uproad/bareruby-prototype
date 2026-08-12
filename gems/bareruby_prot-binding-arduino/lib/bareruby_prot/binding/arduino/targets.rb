@@ -18,7 +18,7 @@ module BareRubyProt
   end
 
   Target.register(
-    "arduino-mega2560", short: "mega",
+    "arduino-mega2560",
     isa: ArduinoBinding::AVR, substrate: Substrate::BARE_METAL,
     binding: ArduinoBinding, machine: Machine.register(:mega2560, chip: "atmega2560")
   )

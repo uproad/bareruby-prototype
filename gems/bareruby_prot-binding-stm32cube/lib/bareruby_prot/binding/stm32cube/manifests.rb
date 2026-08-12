@@ -126,7 +126,7 @@ module BareRubyProt
       class Board
         FIELDS = %w[key name family device clock uart].freeze
 
-        attr_reader :key, :name, :short, :family, :device_key, :clock, :led, :uarts,
+        attr_reader :key, :name, :family, :device_key, :clock, :led, :uarts,
                     :i2cs, :probe, :layer, :path
 
         def initialize(record, layer:, path:)
@@ -137,7 +137,6 @@ module BareRubyProt
 
           @key = record["key"]
           @name = record["name"]
-          @short = record["short"]
           @family = record["family"]
           @device_key = record["device"]
           @clock = record["clock"]

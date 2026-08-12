@@ -28,8 +28,8 @@ module BareRubyProt
         # what differs. The build manifest records board_source = project:<this file>
         # whenever the project's record answered.
         key: my_board
-        name: stm32-my-board   # the target name; what --target= takes
-        # short: myb           # optional short form for --target=
+        name: stm32-my-board   # the composition's name, as `bareruby target list` prints
+                               # it and as an entry in config/target.yml is offered it
         family: stm32f4
         device: stm32f401retx  # any device either layer defines
         # Proved against the device's limits before any C is generated; a profile that
