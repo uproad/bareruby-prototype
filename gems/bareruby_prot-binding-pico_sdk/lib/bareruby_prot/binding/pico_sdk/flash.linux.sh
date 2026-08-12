@@ -193,9 +193,22 @@ open_volume() {
         }
     else
         if [ "$(id -u)" -ne 0 ]; then
-            echo "flash: no fstab line names $partition, escalating"
+            echo "flash: no fstab line names $partition"
             echo "       To keep this board out of sudo, add:"
             echo "         $(fstab_line_for "$serial" "$chip")"
+            # **Only where there is a terminal to ask for the password on.** A run writing
+            # several boards gives each of them a pipe instead, so `sudo` would find
+            # nowhere to print its prompt and nowhere to read the answer — and would wait
+            # for that answer for as long as anybody let it, silently, because the prompt
+            # it is waiting on was never seen. A refusal that says what to add is worth
+            # more than a wait nobody can end.
+            if [ ! -t 0 ] || [ ! -t 2 ]; then
+                echo "flash: nothing here can ask for a password, so $partition is not mounted." >&2
+                echo "       Add the line above to /etc/fstab, or run this flasher on its own" >&2
+                echo "       in a terminal." >&2
+                exit 1
+            fi
+            echo "flash: escalating"
             exec sudo -- "$0" --board "$serial" "$UF2"
         fi
         mkdir -p "$VOLUME"
