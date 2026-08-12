@@ -5,6 +5,6 @@ module BareRubyProt
   # which is the same machine that compiled it, so flashing a hosted target is finishing
   # immediately rather than being an error.
   module HostFlash
-    def self.run(directory, boards:, options: {}) = true
+    def self.run(directory, boards:, options: {}, found: nil) = true
   end
 end
