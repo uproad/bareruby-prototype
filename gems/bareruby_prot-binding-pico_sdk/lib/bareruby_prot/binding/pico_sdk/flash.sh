@@ -149,8 +149,29 @@ bootsel_node_at_port() {
 # The board in BOOTSEL at a port, as the serial it answers to there and the partition it
 # presents. **The serial is read again rather than carried across the reset**, because a
 # bootloader does not answer to the one the firmware did.
+# The board in BOOTSEL at a port, if it is the chip being written. **The chip is asked
+# for as well as the port** because a port is not always the same board: where boards
+# reach this desk over a network rather than off a bus — usbipd, handing a Windows device
+# to WSL — two of them re-attaching at once can come back holding each other's port. A
+# port that answers with the wrong chip is therefore not this board, and saying so is
+# what keeps an image from following a number onto the wrong hardware.
 bootsel_at_port() {
-    attached_boards 2>/dev/null | awk -v port="$1" '$3 == "bootsel" && $5 == port { print $1, $4; exit }' || true
+    attached_boards 2>/dev/null |
+        awk -v port="$1" -v chip="$2" \
+            '$3 == "bootsel" && $5 == port && $2 == chip { print $1, $4; exit }' || true
+}
+
+# Where the port has stopped answering for the board, the chip still does — as long as
+# only one board of it arrived. Two boards of one chip reset together are genuinely
+# indistinguishable once their ports have been shuffled, so that is refused rather than
+# guessed at: guessing writes one board's program onto the other.
+bootsel_of_chip_since() {
+    local before=$1 chip=$2 arrived
+    arrived=$(attached_boards 2>/dev/null |
+        awk -v chip="$chip" '$3 == "bootsel" && $2 == chip { print $1, $4 }' |
+        grep -vxF "${before:-$'\n'}" || true)
+    [ "$(printf '%s' "$arrived" | grep -c . || true)" -eq 1 ] || return 0
+    printf '%s' "$arrived"
 }
 
 # A firmware built with --debug keeps a USB CDC interface up, and pico-sdk reboots it
@@ -163,22 +184,31 @@ bootsel_at_port() {
 # followed by: the board that comes back in BOOTSEL at the port this one was at is this
 # one.
 #
-# **It used to be followed by having appeared** — the board in BOOTSEL that was not there
-# a moment ago. That reads the whole bus rather than one board, so two boards reset at
-# the same time could each be handed the other's, and the image would go to a board
-# nobody named. Asking about one port asks about one board, which is what lets several
-# run at once.
+# **A port is not always the same board either.** Off a bus it is: the socket does not
+# move. Reached over usbipd, which hands a Windows device to WSL, two boards re-attaching
+# at once have been seen to come back holding **each other's** port — measured, with each
+# board then looked up under the other's identity. So the port is asked first and the
+# chip is asked with it, and where that finds nothing the board is looked for by what
+# arrived instead, which is the older question and the one a shuffled port cannot spoil.
+# Two boards of one chip make that question ambiguous too, and it is then refused rather
+# than answered wrongly.
 if [ "$STATE" = running ]; then
+    BEFORE=$(attached_boards 2>/dev/null |
+        awk -v chip="$CHIP" '$3 == "bootsel" && $2 == chip { print $1, $4 }' || true)
     echo "flash: $NODE is up, resetting it into BOOTSEL at 1200 baud"
     reset_into_bootsel "$NODE"
     CAME_BACK=""
     for _ in $(seq 40); do
-        CAME_BACK=$(bootsel_at_port "$PORT")
+        CAME_BACK=$(bootsel_at_port "$PORT" "$CHIP")
+        [ -z "$CAME_BACK" ] && CAME_BACK=$(bootsel_of_chip_since "$BEFORE" "$CHIP")
         [ -n "$CAME_BACK" ] && break
         sleep 0.5
     done
     if [ -z "$CAME_BACK" ]; then
-        echo "flash: no board came back in BOOTSEL mode at $PORT." >&2
+        echo "flash: no $CHIP board came back in BOOTSEL mode at $PORT." >&2
+        echo "       If more than one $CHIP board was written at once, their ports may have" >&2
+        echo "       been shuffled as they re-attached, which leaves nothing to tell them" >&2
+        echo "       apart. Writing them one at a time (--jobs=1) is the way through that." >&2
         reset_advice
         exit 1
     fi
