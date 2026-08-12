@@ -179,9 +179,18 @@ module BareRubyProt
     # this the raw read fails with an ioctl error from inside the reader, which describes
     # the mechanism rather than the situation — and the situation, in a pipe or a CI job,
     # is that this is the wrong command to be reaching for.
+    #
+    # **What it sends the reader to is the record itself.** It used to name a `.sample`
+    # beside it, which exists in the checkout these gems are built from and in no project
+    # anybody has — `new` writes one file into `config/`, and it is this one. It opens with
+    # a comment on every field, so the shape is where the entry goes rather than in a file
+    # to go and find; what those fields may say depends on which gems are installed, which
+    # is a question only a command can answer.
     def self.add
       raise Stop, "target add asks questions, so it needs a terminal. Write the entry " \
-                  "into config/target.yml instead — config/target.yml.sample has the shape." \
+                  "into #{Deployment::FILE} instead — every field is explained in the " \
+                  "comments it opens with, and `bareruby target list` prints what the " \
+                  "first three can say." \
         unless $stdin.tty?
 
       Session.new.run

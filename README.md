@@ -294,7 +294,11 @@ The question says so where it is asked, and says it only where it is true — th
 reaches the pico-sdk build and no other, so the Arduino core and a Cube project take it and
 do nothing with it.
 
-[`config/target.yml.sample`](config/target.yml.sample) documents every field.
+**The record explains itself.** Every field is described in the comments the
+`config/target.yml` a project arrives with opens with, so the shape is where the entry
+goes. This checkout is not a project `new` wrote, so what it keeps instead is
+[`config/target.yml.sample`](config/target.yml.sample) — the same explanation, plus the
+values each of the three fields can take on a desk with every binding installed.
 
 ## Targets
 
