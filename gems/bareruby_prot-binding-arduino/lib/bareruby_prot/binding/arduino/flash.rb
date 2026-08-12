@@ -23,7 +23,7 @@ module BareRubyProt
   # this side downloaded into is on neither. So the answer is asked of the side that knows
   # where the command ended up, which already answers it for the fetch.
   module ArduinoFlash
-    def self.run(directory, boards:, options: {})
+    def self.run(directory, boards:, options: {}, found: nil)
       image = File.join(directory, "bareruby_program.hex")
       fqbn = Toolchain.recorded(directory, "fqbn")
       ports = boards.empty? ? found(fqbn) : boards.map(&:to_s)

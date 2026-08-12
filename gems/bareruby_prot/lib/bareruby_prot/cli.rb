@@ -60,7 +60,8 @@ module BareRubyProt
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
         --jobs=N            How many targets to build at once, each in a process of its
                             own. Without it, as many as there are targets, up to the
-                            number of cores. Boards are written one at a time regardless.
+                            number of cores. Boards are found once, together, and then
+                            written at the same time too.
     USAGE
 
     def self.run(arguments) = new(arguments).run
@@ -222,15 +223,35 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
-      showing(planned, %i[tools flash])
+      showing(planned, %i[tools find flash])
       fetched(planned)
-      Jobs.run(planned, limit: limit(planned), progress: @progress) { |entry| flashed(entry) } ? 0 : 1
+      found = found_boards(planned)
+      Jobs.run(planned, limit: limit(planned), progress: @progress) { |entry| flashed(entry, found[entry]) } ? 0 : 1
     end
 
-    def flashed(entry)
+    # **Every board a run will write, put where it can be written from and then found —
+    # once, for all of them, before any of them is written.** A board that is running has
+    # to be rebooted into its bootloader first, and a bus with a board rebooting on it is
+    # the one bus nobody can be identified on: devices come and go between two lines of a
+    # scan, and a listing asked for at the wrong moment answers that nothing is there.
+    # Asked once, after everything has settled, it answers about all of them at once.
+    #
+    # A binding with nothing to prepare has boards that are always where they are, which
+    # is an answer rather than something missing.
+    def found_boards(planned)
+      @progress.at(:find, planned) do
+        planned.group_by { |entry| entry.target.binding }.each_with_object({}) do |(binding, group), all|
+          next unless binding.flash.respond_to?(:prepare)
+
+          all.merge!(binding.flash.prepare(group.map { |entry| [entry, directory_of(entry)] }) || {})
+        end
+      end
+    end
+
+    def flashed(entry, found)
       @progress.at(:flash, [entry]) do
         entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
-                                                            options: entry.options)
+                                                            options: entry.options, found:)
       end
     end
 
@@ -253,7 +274,7 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
-      showing(planned, %i[tools compile build flash])
+      showing(planned, %i[tools compile build find flash])
       status = build
       return status unless status.zero?
 

@@ -175,10 +175,23 @@ bootloader and back, arriving and leaving as two different USB devices, and the 
 every other board are renumbered around it. So the scans that find a board are written to
 be asked while that is happening: a device that vanishes between two lines of a scan is
 not a board rather than an error, and a board that is not there yet is asked for again
-until it is. **Under [WSL](#from-wsl) this is the difference between working and not** —
-the boards arrive through usbipd, which re-attaches them a few seconds after each reset.
-Where a board takes longer than the run waits, the run says so and stops, and `--jobs=1`
-keeps more of the bus still.
+until it is.
+
+**So writing a board is three things, and only the last of them is writing.** Every board
+a run will reach is rebooted into its bootloader, the bus is then given time to settle,
+and everything on it is looked at **once** — the `FIND` column. Only then is anything
+written, and by that point every board is a device sitting still, so all of them are
+written at the same time. A board looked for while others are re-enumerating is looked for
+at the one moment nobody can be found.
+
+**One line per USB port in `/etc/fstab`**, which `--list` prints. The line is keyed by the
+port rather than by the board on purpose: an RP2040's bootloader has no serial of its own
+— three boards measured here all called themselves `E0C9125B0D9B` — so a line naming a
+board can only ever reach one of them, and a mount that followed the name reached whoever
+held it. Keyed by port, identical boards never collide and the lines do not multiply as
+boards are added. Without a line a board falls back to a mount needing `sudo`, which a run
+writing several boards has no terminal to ask for; it says so and fails rather than
+waiting on a prompt nobody can see.
 
 A run says which stage each target is in and how long it has been there, redrawing the
 table in place while it works. The stages are the verbs it stacked, so `deploy` has four

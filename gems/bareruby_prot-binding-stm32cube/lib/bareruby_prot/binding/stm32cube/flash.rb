@@ -11,7 +11,7 @@ module BareRubyProt
   # presenting a volume, so what identifies a board here is the probe's serial; with one
   # probe attached there is nothing to say.
   module Stm32CubeFlash
-    def self.run(directory, boards:, options: {})
+    def self.run(directory, boards:, options: {}, found: nil)
       image = File.join(directory, "bareruby_program.elf")
       interface = Toolchain.recorded(directory, "openocd_interface")
       target = Toolchain.recorded(directory, "openocd_target")
