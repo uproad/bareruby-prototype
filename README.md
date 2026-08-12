@@ -37,9 +37,11 @@ $ bin/bareruby deploy             # compile, build, and write it onto the board
 ```
 
 ```ruby
-Gemfile
-  # if you have raspberry pi pico
-  gem "bareruby_prot-binding-pico_sdk" # uncomment
+# Gemfile, as `new` wrote it
+  # gem "bareruby_prot-binding-pico_sdk"   # Raspberry Pi Pico, Pico W, Pico 2, Pico 2 W
+
+# the edit: take the comment off the line for the board on this desk
+  gem "bareruby_prot-binding-pico_sdk"     # Raspberry Pi Pico, Pico W, Pico 2, Pico 2 W
 ```
 
 **`deploy` writes over USB, so the board has to be visible from here.**
@@ -98,8 +100,11 @@ $ mount | grep msdos
 bootloader sets. Nothing depends on the name. [More below](#on-macos), including the one
 thing not to ask macOS about.
 
-`deploy` fetches the SDK and the cross compiler the first time it needs them. What every
-verb does is [further down](#the-commands).
+`deploy` fetches the SDK and the cross compiler the first time it needs them, **once per
+desk rather than once per project**. It is somebody else's compiler, so it is large — the
+Pico shelf with its Arm toolchain measures 1.3 GB and the Arduino one 416 MB — and the
+first build for a board is minutes against seconds for every build after it. Where it all
+goes is [further down](#what-a-build-reaches-for), and so is what every verb does.
 
 ## What it has answered
 
@@ -321,10 +326,10 @@ with none, every recorded entry is worked on. The names above are this desk's �
 add` asks, suggests one, and writes it.
 
 **A composition is what an entry spells out, and it has a name of its own that no command
-line takes.** There are seven, and `bareruby target list` prints them by family, each
-family saying which gem it came out of — so a board that is missing from that list is
-almost always a line still commented out in the Gemfile rather than a board this
-ecosystem cannot reach:
+line takes.** The gems in this repository offer nine of them; `bareruby target list` prints
+the ones a project's installed gems can reach, by family, each family saying which gem it
+came out of — so a board missing from that list is almost always a line still commented out
+in the Gemfile rather than a board this ecosystem cannot reach:
 
 ```
 none  (bareruby_prot-compiler)
@@ -344,6 +349,8 @@ Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
 | `raspberry-pi-pico2` | Raspberry Pi Pico 2 | RP2350 |
 | `raspberry-pi-pico2-w` | Raspberry Pi Pico 2 W | RP2350 |
 | `stm32-nucleo-f446re` | NUCLEO-F446RE | STM32F446RE |
+| `stm32-nucleo-f401re` | NUCLEO-F401RE | STM32F401RE |
+| `stm32-f4discovery` | STM32F4DISCOVERY | STM32F407VG |
 | `arduino-mega2560` | Arduino Mega 2560 | ATmega2560 |
 
 These are what `target add` offers and what the manifest records. An entry does not name
@@ -356,7 +363,12 @@ entry of a composition could be built and could not be asked for.
 An entry that is given no name of its own is refused rather than defaulted. `target add`
 puts down `<machine>-<binding>-<triple>` when the answer is left blank, which is how much
 it takes to be unique — a Pico and a Pico W are both `thumbv6m-none-eabi` and their
-firmware is not the same, and an RP2350 is built for Arm or for RISC-V:
+firmware is not the same, and a chip does not settle an instruction set either. **An
+RP2350 carries an Arm core and a RISC-V one, and pico-sdk builds for whichever it is
+told** — `rp2350-arm-s` or `rp2350-riscv`. Every composition above names the Arm one,
+because that is the one that has been run; nothing here is in the way of the other, but it
+is not on offer, and adding it means the platform following the instruction set rather
+than the board. The name already has room for the answer either way:
 
 ```
 build/host/
@@ -397,6 +409,11 @@ somewhere else.
 
 `common/` is for what more than one binding reaches for: the Pico boards and the NUCLEO
 are compiled by the same `arm-none-eabi-g++`.
+
+**One thing is not on this shelf.** STM32Cube is installed by a script of its own into the
+project's `.tools/`, because what goes there includes the CubeMX project being built, which
+belongs to a project rather than to the desk. Everything else above is fetched by `build`
+without being asked.
 
 Two of the SDK's submodules come with it and are needed for one thing each. **TinyUSB is
 what `--debug` needs** — without it the SDK only warns and builds a firmware identical to
