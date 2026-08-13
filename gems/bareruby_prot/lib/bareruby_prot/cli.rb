@@ -46,6 +46,10 @@ module BareRubyProt
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
+        target attach       Put one board behind one entry, by writing the entry's name
+                            into the board. It says that name over USB from then on, so
+                            the desk finds it by name. Hold BOOTSEL on the board meant,
+                            and say which entry with --target=NAME.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -101,9 +105,39 @@ module BareRubyProt
     def target
       case @arguments[0]
       when "add" then Catalog.add
+      when "attach" then attach
       when "list" then Catalog.list
       else usage
       end
+    end
+
+    # `bareruby target attach --target=pico`. An entry says which machine and what it is
+    # called; attaching puts one board behind it, by writing that name into the board so
+    # that it says the name back. What that takes is entirely the binding's — where in a
+    # board's flash a name goes, and how it gets there — so this is dispatch, as `init` is.
+    # A binding whose boards carry no name of their own says so, which is an answer.
+    #
+    # **One entry, because one board is being named.** Every other command works on every
+    # entry the record holds when none is named; this one cannot, because the name it would
+    # write is the thing being chosen.
+    def attach
+      return one_target unless entries.one?
+
+      entry = entries.first
+      offered = entry.target.binding
+      unless offered.respond_to?(:board)
+        puts "bareruby: #{offered.key} boards carry no name of their own — nothing to attach."
+        return 0
+      end
+      offered.board.attach(name: entry.name, target: entry.target,
+                           directory: directory_of(entry)) ? 0 : 1
+    end
+
+    def one_target
+      warn "bareruby: attach names one entry, because it puts a name on one board. " \
+           "--target=NAME says which; #{Deployment::FILE} records " \
+           "#{entries.map(&:name).join(', ')}."
+      2
     end
 
     # An SDK and a cross compiler are gigabytes of somebody else's release, and every board

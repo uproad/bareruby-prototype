@@ -856,6 +856,11 @@ module BareRubyProt
 
     def self.flash = PicoSdkFlash
 
+    # What `bareruby target attach` reaches. A binding whose boards carry no name of their
+    # own does not declare this, and the command says so rather than failing — the same
+    # shape as `init` for a family that keeps no configuration.
+    def self.board = PicoSdkBoard
+
     def self.build = PicoSdkBuild
   end
 end
