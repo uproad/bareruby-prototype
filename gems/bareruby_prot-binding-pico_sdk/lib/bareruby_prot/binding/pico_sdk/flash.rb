@@ -58,7 +58,10 @@ module BareRubyProt
       return found(wanted, listing) if running.empty?
 
       reset(running)
-      settled(listing, running) or return warned(running)
+      # **What came back is what is written.** A board that has not returned inside the
+      # window is one row's bad news, not the run's: the others are sitting in their
+      # bootloaders waiting, and failing them for its sake is failing work that was ready.
+      warned(running) unless settled(listing, running)
       found(wanted, attached)
     end
 
@@ -146,6 +149,15 @@ module BareRubyProt
       false
     end
 
+    # Said by the row it happened to, rather than by the run. The board was reset and did
+    # not come back inside the window; every other row got on with its own board.
+    def self.nothing_came_back
+      warn "flash: this board was reset and did not come back in time to be written."
+      warn "       Where the boards arrive over usbipd, each reset re-enumerates a board " \
+           "and it has to be attached again; several at once is what it keeps up with least."
+      false
+    end
+
     def self.warned(running)
       warn "flash: #{running.length} board#{'s' unless running.one?} were reset and did " \
            "not all come back within #{SETTLE_SECONDS}s."
@@ -181,7 +193,7 @@ module BareRubyProt
     def self.run(directory, boards:, options: {}, found: nil)
       image = File.join(directory, IMAGE)
       return by_hand(image, boards) if found.nil?
-      return false if found.empty?
+      return nothing_came_back if found.empty?
 
       written(found, image)
     end
