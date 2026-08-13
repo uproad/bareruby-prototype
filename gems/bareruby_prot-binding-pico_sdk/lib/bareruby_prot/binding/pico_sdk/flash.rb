@@ -57,6 +57,9 @@ module BareRubyProt
       running = wanted.values.flatten.reject(&:bootsel?)
       return found(wanted, listing) if running.empty?
 
+      running = running.reject { |board| board.serial == entry_of(wanted, board)&.name }
+      return found(wanted, listing) if running.empty?
+
       reset(running)
       # **What came back is what is written.** A board that has not returned inside the
       # window is one row's bad news, not the run's: the others are sitting in their
@@ -172,18 +175,18 @@ module BareRubyProt
     # one asking — which is right as long as the boards asking take the same image, and is
     # the reason two of them that do not are not written at the same time.
     def self.found(wanted, listing)
-      pool = listing.select(&:bootsel?)
+      # **Running boards are handed out too**, because a board that says its name takes its
+      # program without ever going to its bootloader. Only boards that had to be reset are
+      # waiting in one.
+      pool = listing.dup
       wanted.to_h do |entry, boards|
         [entry, boards.filter_map { |board| claim(board, pool) }]
       end
     end
 
     def self.claim(board, pool)
-      taken = if NAMED_IN_BOOTSEL[board.chip]
-                pool.find { |one| one.serial == board.serial } || pool.find { |one| one.chip == board.chip }
-              else
-                pool.find { |one| one.chip == board.chip }
-              end
+      taken = pool.find { |one| one.serial == board.serial } ||
+              pool.select(&:bootsel?).find { |one| one.chip == board.chip }
       pool.delete(taken)
       taken
     end
@@ -198,6 +201,10 @@ module BareRubyProt
       written(found, image)
     end
 
+    def self.entry_of(wanted, board)
+      wanted.find { |_, boards| boards.include?(board) }&.first
+    end
+
     # **The boards of one entry are written at the same time as each other.** They take the
     # same image and they were found before any of this started, so there is nothing left
     # for them to take from one another: each one is a copy onto a device already sitting
@@ -207,8 +214,55 @@ module BareRubyProt
     # Threads rather than processes: every one of these is waiting on a program of somebody
     # else's, which is the wait Ruby lets go of.
     def self.written(found, image)
-      found.map { |board| Thread.new { Toolchain.aloud([SCRIPT, "--device", board.node, image]) } }
-           .map(&:value).all?
+      found.map { |board| Thread.new { one(board, image) } }.map(&:value).all?
+    end
+
+    # **A board that is running and says its name takes its next program over the wire it
+    # is already talking on.** Nothing is reset, nothing re-enumerates while the handing
+    # over happens, and the name — which lives in this board's firmware and not in the
+    # chip's ROM — is there before and after. A board in its bootloader is written the old
+    # way, which is what the first program of all arrives by.
+    def self.one(board, image)
+      board.bootsel? ? Toolchain.aloud([SCRIPT, "--device", board.node, image]) : streamed(board, image)
+    end
+
+    STREAM_MARK = "BRLOAD"
+    STREAM_DONE = "BRDONE"
+    STREAM_BAUD = "115200"
+    STREAM_SECONDS = 60
+
+    def self.streamed(board, image)
+      bytes = flat(image)
+      warn "flash: #{board.serial} takes #{bytes.bytesize} bytes over #{board.node}"
+      system("stty", "-F", board.node, "raw", "-echo", STREAM_BAUD, %i[out err] => File::NULL)
+      File.open(board.node, "wb") do |port|
+        port.write(format("%s%08x", STREAM_MARK, bytes.bytesize))
+        port.write(bytes)
+        port.flush
+      end
+      back(board)
+    end
+
+    # The board says it has the whole thing before it moves it into place, and then it is
+    # gone for as long as a reboot takes. What says it worked is the board answering to
+    # its name again.
+    def self.back(board)
+      deadline = Time.now + STREAM_SECONDS
+      while Time.now < deadline
+        return true if attached.any? { |one| one.serial == board.serial && !one.bootsel? }
+
+        sleep TICK
+      end
+      warn "flash: #{board.serial} did not come back after taking its program."
+      false
+    end
+
+    # A .uf2 is addressed blocks of 256 bytes; what a board takes is the bytes in address
+    # order, because the place they go is where it is running from and nowhere else.
+    def self.flat(image)
+      blocks = File.binread(image).unpack("a512" * (File.size(image) / 512))
+      blocks.sort_by { |block| block[12, 4].unpack1("V") }
+            .map { |block| block[32, block[16, 4].unpack1("V")] }.join
     end
 
     # Reached where nobody prepared anything — the flasher run on its own, which does all

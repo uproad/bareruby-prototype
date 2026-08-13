@@ -6,8 +6,12 @@ module BareRubyProt
   # How the second stage builds a program for a board: pico-sdk through cmake, the record
   # of what that build is, and the flags that decide what the firmware carries.
   class PicoSdkBuild
+    # pico_flash and pico_multicore are what the identity unit's agent is built out of:
+    # the other core listens, and writing flash while a program runs is a thing the SDK
+    # arranges rather than a thing anybody does by hand.
     SDK_LIBRARIES = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
-                       hardware_i2c hardware_clocks hardware_flash].freeze
+                       hardware_i2c hardware_clocks hardware_flash hardware_watchdog
+                       hardware_sync pico_flash pico_multicore].freeze
 
     # A board starts the SDK before the program and has nowhere to return to, so it
     # idles rather than ending.

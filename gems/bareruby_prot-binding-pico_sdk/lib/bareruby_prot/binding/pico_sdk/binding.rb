@@ -252,8 +252,13 @@ module BareRubyProt
       #include "hardware/uart.h"
       #include "pico/stdlib.h"
 
+      /* The identity unit defines this where there is a USB channel to listen on. A
+         release firmware presents none, so the default stands and nothing is started. */
+      extern "C" __attribute__((weak)) void bareruby_agent_start(void) {}
+
       void bareruby_startup(void) {
           stdio_init_all();
+          bareruby_agent_start();
       }
 
       /* The uart_interrupt unit overrides this when a program says on_line; otherwise
@@ -559,9 +564,15 @@ module BareRubyProt
     IDENTITY = <<~CPP
       #if LIB_PICO_STDIO_USB
 
+      #include <stdio.h>
+      #include <stdlib.h>
       #include <string.h>
 
       #include "hardware/flash.h"
+      #include "hardware/sync.h"
+      #include "hardware/watchdog.h"
+      #include "pico/flash.h"
+      #include "pico/multicore.h"
       #include "pico/stdio_usb.h"
       #include "pico/stdlib.h"
       #include "pico/unique_id.h"
@@ -722,6 +733,141 @@ module BareRubyProt
           return desc_str;
       }
 
+      /* ---- Taking a new program without going through the bootloader ----------------
+         **A board in BOOTSEL has no name.** The name lives in a page this board's own
+         firmware reads and hands to USB, and the bootloader is the chip's ROM, which has
+         never heard of it. So every trip through BOOTSEL loses the one thing that says
+         which board this is — and a run that failed there left boards sitting in it,
+         nameless, for the next run to fail on in turn.
+
+         The way out is not to go. A board already running can be handed its next program
+         over the wire it is already talking on.
+
+         **Core 1 listens, because core 0 never comes back.** A BareRuby program is a loop
+         that does not return, so there is nowhere in it to ask whether a new one has
+         arrived. The other core has nothing else to do.
+
+         **What arrives is put somewhere else first.** The program cannot be written
+         straight into the place it is running from, so it is collected in a staging half
+         of the flash — reachable because writing there is writing somewhere this code is
+         not — and moved into place at the end, when there is nothing left to receive.
+
+         **The move runs from RAM.** Programming flash stops the chip reading flash, so a
+         loop that did it while itself living in flash would be sawing the branch it sits
+         on. `__not_in_flash_func` puts the loop in RAM; between writes the chip can read
+         flash again, which is what lets the same loop pick the next page up out of
+         staging. Interrupts are off for the whole of it, since every handler is in the
+         flash being replaced. */
+      #define BARERUBY_STAGING (PICO_FLASH_SIZE_BYTES / 2)
+      #define BARERUBY_TAKE "BRLOAD"
+      #define BARERUBY_TAKE_LENGTH 6
+
+      static uint32_t bareruby_taking;
+      static uint8_t bareruby_page[FLASH_PAGE_SIZE];
+
+      static void bareruby_program_page(void *offset) {
+          flash_range_program(*(uint32_t *)offset, bareruby_page, FLASH_PAGE_SIZE);
+      }
+
+      static void bareruby_erase_sector(void *offset) {
+          flash_range_erase(*(uint32_t *)offset, FLASH_SECTOR_SIZE);
+      }
+
+      /* Nothing here may be called once the erasing starts, so the whole of the move is
+         one function and the pages it reads are read between writes rather than during
+         them. */
+      static void __not_in_flash_func(bareruby_move)(uint32_t length) {
+          uint32_t sectors = (length + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+          uint32_t written = 0;
+          uint32_t index;
+          uint32_t page;
+          uint32_t offset;
+          for (index = 0; index < sectors; index++) {
+              flash_range_erase(index * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
+              for (page = 0; page < FLASH_SECTOR_SIZE; page += FLASH_PAGE_SIZE) {
+                  offset = index * FLASH_SECTOR_SIZE + page;
+                  if (offset >= length) {
+                      break;
+                  }
+                  memcpy(bareruby_page, (const uint8_t *)(XIP_BASE + BARERUBY_STAGING + offset),
+                         FLASH_PAGE_SIZE);
+                  flash_range_program(offset, bareruby_page, FLASH_PAGE_SIZE);
+                  written += FLASH_PAGE_SIZE;
+              }
+          }
+          (void)written;
+      }
+
+      static void bareruby_take(uint32_t length) {
+          uint32_t offset = 0;
+          uint32_t filled = 0;
+          uint32_t sector;
+          int one;
+          for (sector = 0; sector < length + FLASH_SECTOR_SIZE; sector += FLASH_SECTOR_SIZE) {
+              uint32_t at = BARERUBY_STAGING + sector;
+              flash_safe_execute(bareruby_erase_sector, &at, UINT32_MAX);
+          }
+          while (offset < length) {
+              one = getchar_timeout_us(5000000);
+              if (one == PICO_ERROR_TIMEOUT) {
+                  return;
+              }
+              bareruby_page[filled++] = (uint8_t)one;
+              offset++;
+              if (filled == FLASH_PAGE_SIZE || offset == length) {
+                  uint32_t at = BARERUBY_STAGING + offset - filled;
+                  while (filled < FLASH_PAGE_SIZE) {
+                      bareruby_page[filled++] = 0xff;
+                  }
+                  flash_safe_execute(bareruby_program_page, &at, UINT32_MAX);
+                  filled = 0;
+              }
+          }
+          /* Said before the move, because after it this program is gone. */
+          printf("BRDONE\\n");
+          sleep_ms(200);
+          save_and_disable_interrupts();
+          multicore_lockout_start_blocking();
+          bareruby_move(length);
+          watchdog_reboot(0, 0, 0);
+          for (;;) {
+              tight_loop_contents();
+          }
+      }
+
+      /* `BRLOAD` and eight hex digits of length. Anything else on this channel is a
+         program's own output and is left alone. */
+      static void bareruby_watch(void) {
+          char asked[BARERUBY_TAKE_LENGTH + 9];
+          uint32_t held = 0;
+          int one;
+          for (;;) {
+              one = getchar_timeout_us(500000);
+              if (one == PICO_ERROR_TIMEOUT) {
+                  continue;
+              }
+              asked[held++] = (char)one;
+              if (held < BARERUBY_TAKE_LENGTH) {
+                  continue;
+              }
+              if (memcmp(asked, BARERUBY_TAKE, BARERUBY_TAKE_LENGTH) != 0) {
+                  held = 0;
+                  continue;
+              }
+              if (held < sizeof(asked) - 1) {
+                  continue;
+              }
+              asked[sizeof(asked) - 1] = '\\0';
+              bareruby_taking = (uint32_t)strtoul(asked + BARERUBY_TAKE_LENGTH, NULL, 16);
+              held = 0;
+              bareruby_take(bareruby_taking);
+          }
+      }
+
+      extern "C" void bareruby_agent_start(void) {
+          flash_safe_execute_core_init();
+          multicore_launch_core1(bareruby_watch);
+      }
       #endif
     CPP
 
