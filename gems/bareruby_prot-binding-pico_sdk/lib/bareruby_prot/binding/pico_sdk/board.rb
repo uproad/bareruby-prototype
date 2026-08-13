@@ -67,6 +67,8 @@ module BareRubyProt
 
     def self.attach(name:, target:, directory:)
       image = File.join(directory, PicoSdkFlash::IMAGE)
+      return unbuilt(name) unless File.exist?(image)
+
       chip = PicoSdkFlash.chip_of(image)
       waiting = PicoSdkFlash.attached.select { |board| board.bootsel? && board.chip == chip }
       return by_hand(chip, waiting) unless waiting.one?
@@ -74,6 +76,16 @@ module BareRubyProt
       attached = File.join(directory, IMAGE)
       File.binwrite(attached, block(name, chip, target) + File.binread(image))
       Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", waiting.first.node, attached])
+    end
+
+    # **The name and the program go on together, so there has to be a program.** Naming a
+    # board and leaving it running what it ran before would need the board found a second
+    # time, which is the whole of what this is here to end.
+    def self.unbuilt(name)
+      warn "attach: nothing has been built for #{name}, and the name goes on with the " \
+           "program rather than on its own."
+      warn "        bareruby build --target=#{name} <your program>.rb, then attach."
+      false
     end
 
     # **The button is the question, so this asks for it rather than choosing.** None and

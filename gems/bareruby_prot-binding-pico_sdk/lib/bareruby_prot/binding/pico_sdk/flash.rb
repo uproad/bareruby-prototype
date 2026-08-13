@@ -71,10 +71,15 @@ module BareRubyProt
                    .group_by { |_, boards| boards.first&.chip }
                    .select { |chip, pairs| chip && pairs.length > 1 }
       open.each do |chip, pairs|
-        warn "flash: #{pairs.map { |entry, _| entry.name }.join(' and ')} each take every " \
-             "#{chip} board attached, so nothing says which board is which one's."
-        warn "       Name their serials under 'boards:' in config/target.yml. A running " \
-             "board answers to a serial of its own; the flasher's --list prints them."
+        named = pairs.map { |entry, _| entry.name }
+        warn "flash: #{named.join(' and ')} each take every #{chip} board attached, so " \
+             "nothing says which board is which one's."
+        warn "       Give each board the name of the entry it belongs to. That is one " \
+             "command a board, and it settles this for good:"
+        named.each { |one| warn "         bareruby target attach --target=#{one}" }
+        warn "       Or name their serials under 'boards:' in config/target.yml — a " \
+             "running board answers to a serial of its own, and the flasher's --list " \
+             "prints them."
       end
       open.empty?
     end

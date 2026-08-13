@@ -46,10 +46,11 @@ module BareRubyProt
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
-        target attach       Put one board behind one entry, by writing the entry's name
-                            into the board. It says that name over USB from then on, so
-                            the desk finds it by name. Hold BOOTSEL on the board meant,
-                            and say which entry with --target=NAME.
+        target attach --target=NAME
+                            Put one board behind entry NAME, by writing that name into
+                            the board. It says the name over USB from then on, and the
+                            entry's boards: records it. Build first, then hold BOOTSEL on
+                            the board meant. `target attach` on its own says the rest.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -121,7 +122,7 @@ module BareRubyProt
     # entry the record holds when none is named; this one cannot, because the name it would
     # write is the thing being chosen.
     def attach
-      return one_target unless entries.one?
+      return attach_usage unless entries.one?
 
       entry = entries.first
       offered = entry.target.binding
@@ -129,14 +130,55 @@ module BareRubyProt
         puts "bareruby: #{offered.key} boards carry no name of their own — nothing to attach."
         return 0
       end
-      offered.board.attach(name: entry.name, target: entry.target,
-                           directory: directory_of(entry)) ? 0 : 1
+      attached(entry, offered)
     end
 
-    def one_target
-      warn "bareruby: attach names one entry, because it puts a name on one board. " \
-           "--target=NAME says which; #{Deployment::FILE} records " \
-           "#{entries.map(&:name).join(', ')}."
+    # The board is written first and the record second, because the record is a claim about
+    # hardware: an entry saying it has a board that never took the name would send every
+    # later flash to a board answering to nothing.
+    def attached(entry, offered)
+      return 1 unless offered.board.attach(name: entry.name, target: entry.target,
+                                           directory: directory_of(entry))
+      return 0 unless Deployment.attached(entry.name)
+
+      puts "bareruby: #{entry.name} now names its board under boards: in #{Deployment::FILE}, " \
+           "so flashing no longer has to tell two boards of one chip apart."
+      0
+    end
+
+    # **This one gets its own usage.** It is the only command that asks something of the
+    # hardware before it is run — a button held on one particular board — and a command
+    # whose precondition is physical cannot be guessed at from a line in a list.
+    ATTACH_USAGE = <<~USAGE
+      Usage: bareruby target attach --target=NAME
+
+        Puts one board behind one entry. It writes that entry's name into a page of the
+        board's own flash, and the board reports the name over USB from then on — so the
+        desk asks for a name and gets the board it was given to.
+
+        NAME is an entry's name in config/target.yml. Exactly one, because one board is
+        being named.
+
+          1. bareruby build --target=NAME SOURCE.rb    what this board will run
+          2. Hold BOOTSEL on the board being named and plug it in. Nothing else can say
+             which board this is: until a board carries a name, one bootloader is
+             indistinguishable from the next. Leave every other board of that chip out
+             of BOOTSEL.
+          3. bareruby target attach --target=NAME
+
+        The name and the program are written together, in one pass, so the board comes
+        back running the program and saying its name. Done once per board; every later
+        flash keeps the name.
+
+        Afterwards `boards:` in that entry names the board, and `deploy` writes it
+        without anything having to be told two boards of one chip apart.
+    USAGE
+
+    # Named or not, the way out is the same list, so it is printed either way rather than
+    # made into a second sentence about how many were named.
+    def attach_usage
+      warn ATTACH_USAGE
+      warn "#{Deployment::FILE} records #{Deployment.entries.map(&:name).join(', ')}."
       2
     end
 

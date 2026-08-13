@@ -161,7 +161,10 @@ if [ "$count" -gt 1 ]; then
     echo "$candidates" | while read -r serial _ state node; do
         echo "         $serial   ($state, $node)" >&2
     done
-    echo "       Put one serial under 'boards:' in that target's entry in config/target.yml." >&2
+    echo "       Give each board the name of the entry it belongs to. That is one command a" >&2
+    echo "       board, and it settles this for good:" >&2
+    echo "         bareruby target attach --target=<the entry>" >&2
+    echo "       Or put one serial under 'boards:' in that target's entry in config/target.yml." >&2
     echo "       Running this script by hand, --board SERIAL says it instead." >&2
     exit 1
 fi

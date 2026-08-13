@@ -618,9 +618,14 @@ firmware reports is a number nobody chose. So a board can be given a name instea
 ./bareruby target attach --target=pico
 ```
 
+Once per board, and `bareruby target attach` on its own prints all of that. The name goes
+on with the program rather than by itself, which is why there has to be a build first: a
+board named and left running what it ran before would have to be found a second time, and
+being found is the problem this ends.
+
 `attach` writes the entry's own name into a page of the board's flash, with the program
-right behind it, in one pass. From then on the board hands that name to the host as its
-USB serial number:
+right behind it, in one pass, and records the board under that entry's `boards:`. From
+then on the board hands the name to the host as its USB serial number:
 
 ```
 SERIAL             CHIP     STATE    DEVICE         PORT
@@ -635,8 +640,8 @@ The first two are Pico 1 boards of the same model, which had nothing between the
 The last two have never been attached and report the chip's own id, which is what a board
 says until it is given something better.
 
-That name is what `boards:` takes, so two identical boards can be deployed to at the same
-time and each gets its own entry's image:
+**`attach` writes that name into the entry's `boards:` itself**, so nothing has to be
+edited by hand afterwards:
 
 ```yaml
   - name: pico1h
@@ -644,8 +649,14 @@ time and each gets its own entry's image:
     binding: pico_sdk
     triple: thumbv6m-none-eabi
     debug: true
-    boards: ["pico1h"]
+    boards: [pico1h]
 ```
+
+That is what lets two identical boards be deployed to at the same time, each getting its
+own entry's image. **Until every entry sharing a chip has one, flashing refuses** — a
+`pico` and a `pico_w` entry with empty `boards:` both take every RP2040 attached, and no
+image can say which board belongs to which. The refusal prints the `attach` line for each
+entry it is talking about.
 
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
