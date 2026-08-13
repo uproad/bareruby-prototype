@@ -749,12 +749,16 @@ Four things had to be true for that, and all four were measured rather than assu
   callbacks over. The vendor and product ids are kept exactly as the SDK writes them: the
   flasher tells an RP2040 from an RP2350 by the product id. **Cost: 72 bytes of `text` and
   44 of `bss` on an RP2040, 80 and 44 on an RP2350 — the `.uf2` did not change size.**
-- **The page and the program travel in one file, and the page goes first.** A bootloader
-  reboots the board when a download completes, so a page written on its own would reboot it
-  into the unnamed firmware it already had — needing the board found a second time, which
-  is the problem this exists to end. Announcing two blocks and supplying one leaves the
-  download open until the program's blocks replace it; pico-sdk plays the same trick with
-  the block it puts in front of an RP2350 image.
+- **The page travels with a firmware, and that firmware is the binding's own.** A page
+  written by itself would reboot the board into the unnamed firmware it already had —
+  needing the board found a second time, which is the problem this exists to end. So
+  `target attach` writes the *agent* beside it: a resident firmware that brings USB up,
+  says the name and waits, the same one for every board of a machine, costing 25752 bytes
+  of `text` on an RP2040. **No program of the user's is in this** — programs are what
+  `deploy` and `flash` carry, and they keep the name when they arrive. The page goes first
+  in the file, announcing two blocks and supplying one, so the download stays open until
+  the agent's blocks replace it; pico-sdk plays the same trick with the block it puts in
+  front of an RP2350 image.
 - **An RP2350 wants the family id that means "an address".** Given the page under
   `e48bff59`, the family its own program carries, the bootloader wrote the program and
   **silently dropped the page** — the board came back reporting `34319CF054AB3BD6` as

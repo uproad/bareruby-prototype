@@ -551,9 +551,12 @@ module BareRubyProt
     # build says otherwise only where there is a USB interface at all. A release firmware
     # presents none, which is why the whole of this is asked of LIB_PICO_STDIO_USB: a board
     # with nothing to speak on has no name to say.
+    #
+    # **It reaches for nothing this compiler made.** Every other unit here is written beside
+    # a program and includes the declarations that program generated. This one is about the
+    # board rather than about any program, which is what lets the agent `target attach`
+    # writes carry it with no program anywhere near it.
     IDENTITY = <<~CPP
-      #include "bareruby_binding.h"
-
       #if LIB_PICO_STDIO_USB
 
       #include <string.h>

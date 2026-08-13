@@ -46,11 +46,12 @@ module BareRubyProt
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
-        target attach --target=NAME [SOURCE.rb]
-                            Hold BOOTSEL on one board and run this: it builds, writes
-                            NAME into that board, and records it under the entry. The
-                            board says that name over USB from then on, so nothing has
-                            to tell two boards of one chip apart again.
+        target attach --target=NAME
+                            Hold BOOTSEL on one board and run this: it writes NAME into
+                            that board and records it under the entry. The board says
+                            that name over USB from then on, so nothing has to tell two
+                            boards of one chip apart again. No program of yours is
+                            involved; deploy and flash are what carry those.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -128,12 +129,11 @@ module BareRubyProt
     # entry the record holds when none is named; this one cannot, because the name it would
     # write is the thing being chosen.
     #
-    # **It builds, because the name does not travel on its own.** A board named and left
-    # running whatever it ran before would have to be found a second time, which is the
-    # problem this exists to end — so the name and the program are written together, and a
-    # program is therefore something this command needs rather than something to send
-    # somebody away to fetch. It stacks exactly as the rest do: `deploy` is build then
-    # flash, and this is build then write the board.
+    # **No program is named here, because none is written here.** What goes onto the board
+    # beside its name is the binding's own resident firmware, which is the same for every
+    # board of a machine; the user's program arrives by `deploy` and `flash`, which are the
+    # verbs that carry programs. So `attach` reaches for no source, and asking it for one
+    # was asking which program a board is called after.
     #
     # **The board is looked for first.** Everything after it takes seconds and none of it
     # is any use if the button was not held, so that is answered while it can still be
@@ -152,11 +152,18 @@ module BareRubyProt
     end
 
     def written(entry, offered, board)
-      showing([entry], %i[tools compile build attach])
-      Compiler.clear_output
+      showing([entry], %i[tools attach])
       fetched([entry])
-      built(entry) && attached(entry, offered, board) ? 0 : 1
+      attached(entry, offered, board) ? 0 : 1
     end
+
+    # Where a binding puts the firmware it writes onto a board. It is the binding's to fill
+    # and this side's to place, as every other output is — and it is kept apart from what a
+    # compilation writes, because a compilation clears its own root and this is nothing a
+    # compilation produced.
+    ATTACHING = File.expand_path(".bareruby/attach", Dir.pwd)
+
+    def attaching_of(entry) = File.join(ATTACHING, entry.name)
 
     # The board is written first and the record second, because the record is a claim about
     # hardware: an entry saying it has a board that never took the name would send every
@@ -168,7 +175,7 @@ module BareRubyProt
     def attached(entry, offered, board)
       @progress.at(:attach, [entry]) do
         next false unless offered.board.attach(name: entry.name, target: entry.target,
-                                               directory: directory_of(entry), board:)
+                                               directory: attaching_of(entry), board:)
 
         recorded(entry)
         true
@@ -186,26 +193,26 @@ module BareRubyProt
     # hardware before it is run — a button held on one particular board — and a command
     # whose precondition is physical cannot be guessed at from a line in a list.
     ATTACH_USAGE = <<~USAGE
-      Usage: bareruby target attach --target=NAME [SOURCE.rb]
+      Usage: bareruby target attach --target=NAME
 
-        Hold BOOTSEL on the board being named, plug it in, and run this. That is the
-        whole of it — it builds, writes and records by itself.
+        Hold BOOTSEL on the board being named, plug it in, and run this.
 
         It gives one board the name of one entry: NAME goes into a page of the board's
         own flash, and the board reports it over USB from then on. So the desk asks for
         a name and gets the board it was given to, instead of a serial nobody chose.
+        The entry's boards: is written here too, so nothing has to be edited afterwards.
 
         NAME is an entry's name in config/target.yml, and exactly one is named, because
         one board is being named.
 
-        SOURCE.rb is what that board will run, and defaults to app/main.rb as build's
-        does. There has to be one: the name and the program are written together, so
-        that the board comes back both running and saying who it is.
+        No program of yours is involved. What goes onto the board beside its name is a
+        small resident firmware, the same one for every board of that machine, which
+        brings USB up and says the name. Your program arrives with deploy or flash, and
+        keeps the name when it does.
 
         The button is what says which board. Until a board carries a name, one
         bootloader is indistinguishable from the next, so leave every other board of
-        that chip out of BOOTSEL. Once per board — every later flash keeps the name,
-        and the entry's boards: is written here so deploy needs nothing further.
+        that chip out of BOOTSEL. Once per board, and never again.
     USAGE
 
     # Named or not, the way out is the same list, so it is printed either way rather than

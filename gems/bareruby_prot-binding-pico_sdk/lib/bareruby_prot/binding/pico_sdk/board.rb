@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require "fileutils"
+
 require "bareruby_prot/toolchain"
 
 require_relative "binding"
 require_relative "flash"
+require_relative "toolchain"
 
 module BareRubyProt
   # **Attaching a board is telling it what it is called.** The name goes into a page of the
@@ -12,19 +15,47 @@ module BareRubyProt
   # record already gives it, and nothing is left to be inferred from ports, from the order
   # devices arrived in, or from a bootloader id three identical boards share.
   #
+  # **No program of the user's is anywhere in this.** What is written beside the name is the
+  # agent: a firmware belonging to this binding that brings USB up, says what the board is
+  # called, and waits. Programs arrive later and by another verb — `deploy` and `flash` are
+  # what carry those — so naming a board never asks anybody which program they meant, and
+  # the same agent serves every board of a machine.
+  #
+  # The name has to travel with a firmware rather than on its own, because a page written by
+  # itself would leave the board running whatever it ran before, unnamed, and needing to be
+  # found a second time — which is the problem this is here to end, met again on the way out
+  # of it. The agent is what makes that firmware something this side can supply.
+  #
   # **It is done once per board, through BOOTSEL, and the button is what says which board.**
   # There is nothing else that could say it: before a board has a name, one RP2040 in a
-  # bootloader is indistinguishable from the next, so the choice is made by hand — hold the
-  # button on the board being named. Afterwards it never has to be made again.
-  #
-  # The page and the program travel in one file. Writing the page on its own would leave
-  # the board running whatever firmware it already had, unnamed, and needing to be found a
-  # second time — which is the problem this is here to end, faced once more on the way out
-  # of it.
+  # bootloader is indistinguishable from the next, so the choice is made by hand. Afterwards
+  # it never has to be made again.
   module PicoSdkBoard
-    # What `target attach` leaves beside the image it was built from. It is the image plus
-    # one block, so it is named for the errand rather than for the program.
-    IMAGE = "bareruby_attach.uf2"
+    # What the agent is called wherever it is written down: the cmake project, the image it
+    # leaves, and the file the name page is prepended to.
+    AGENT = "bareruby_agent"
+    IMAGE = "#{AGENT}.uf2"
+    ATTACH_IMAGE = "#{AGENT}_named.uf2"
+
+    # The agent's own translation unit. It brings USB up — which is what the identity unit
+    # beside it needs in order to be asked anything — and then waits, because a board that
+    # has been named and not yet deployed to is a board waiting for a program.
+    #
+    # **This is where the resident runtime begins.** Everything a board does that is not the
+    # user's program belongs here rather than in an image the compiler produced.
+    PROGRAM = <<~CPP
+      #include "pico/stdlib.h"
+
+      int main(void) {
+          stdio_init_all();
+          for (;;) {
+              sleep_ms(1000);
+          }
+      }
+    CPP
+
+    PROGRAM_FILE = "main.cpp"
+    IDENTITY_FILE = "identity.cpp"
 
     # A .uf2 is a stream of fixed blocks: a 32-byte header, 476 bytes of room for a payload,
     # and a mark at the end. The bootloader takes each block as it arrives and writes the
@@ -59,27 +90,19 @@ module BareRubyProt
 
     # **One block offered where two are announced, on purpose.** The bootloader reboots the
     # board the moment a download is complete, and a complete download of one block would
-    # reboot it before the program behind it in this file had arrived. Announcing a block
-    # that never comes leaves the download open until the program's own blocks replace it —
-    # which is the same trick pico-sdk plays with the block it puts in front of an RP2350
-    # image.
+    # reboot it before the agent behind it in this file had arrived. Announcing a block that
+    # never comes leaves the download open until the agent's own blocks replace it — which
+    # is the same trick pico-sdk plays with the block it puts in front of an RP2350 image.
     BLOCKS_ANNOUNCED = 2
 
     # **Which board this is for, asked before anything is built.** The button is something a
     # person did a moment ago, and a run that compiles for ten seconds before saying it was
-    # not pressed has sat on the one thing it could have said at once. Nothing is read off
-    # the image to answer this — which chip an entry is for is the machine's own answer.
+    # not pressed has sat on the one thing it could have said at once. Which chip an entry
+    # is for is the machine's own answer, so nothing has to be built to ask this either.
     def self.waiting(target)
       chip = target.machine.chip
       found = PicoSdkFlash.attached.select { |board| board.bootsel? && board.chip == chip }
       found.one? ? found.first : by_hand(chip, found)
-    end
-
-    def self.attach(name:, target:, directory:, board:)
-      image = File.join(directory, PicoSdkFlash::IMAGE)
-      attached = File.join(directory, IMAGE)
-      File.binwrite(attached, block(name, target) + File.binread(image))
-      Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, attached])
     end
 
     # **The button is the question, so this asks for it rather than choosing.** None and
@@ -91,6 +114,87 @@ module BareRubyProt
            "other #{chip} board out of BOOTSEL: until a board carries a name there is " \
            "nothing else to tell it by."
       nil
+    end
+
+    # The agent, built for this machine. It is the same firmware for every board of one
+    # machine — the name is data it reads rather than something compiled into it — so what
+    # decides the bytes is the machine and nothing else.
+    def self.build(target, directory)
+      FileUtils.mkdir_p(directory)
+      files(target).each { |name, text| File.write(File.join(directory, name), text) }
+      return nil unless Toolchain.as_recorded(directory, PicoSdkToolchain.environment)
+
+      File.join(directory, "build", IMAGE)
+    end
+
+    def self.files(target)
+      { PROGRAM_FILE => PROGRAM, IDENTITY_FILE => PicoSdkBinding::IDENTITY,
+        "manifest.txt" => manifest(target), "CMakeLists.txt" => cmake_lists(target) }
+    end
+
+    def self.attach(name:, target:, directory:, board:)
+      image = build(target, directory) or return false
+
+      named = File.join(directory, "build", ATTACH_IMAGE)
+      File.binwrite(named, block(name, target) + File.binread(image))
+      Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, named])
+    end
+
+    # The agent is built the way every other artifact here is: a manifest saying what it is
+    # and what turns it into one, read back by whoever runs the second stage.
+    def self.manifest(target)
+      <<~MANIFEST
+        target = agent
+        board = #{target.machine.key}
+        chip = #{target.machine.chip}
+        toolchain = arm-none-eabi-g++
+        sources = #{PROGRAM_FILE} #{IDENTITY_FILE}
+        stdout_channel = usb
+        usb_descriptors = own
+        artifact = #{IMAGE}
+        build_command = cmake -B build -S . && cmake --build build
+      MANIFEST
+    end
+
+    # **The USB half of what a program's build sets, and nothing else.** There is no user
+    # code here to link peripherals for, no exceptions decision to carry, and no debug flag
+    # to honour — an agent that did not present USB would have nothing to say its name on,
+    # so this build is the one that has no choice to record.
+    def self.cmake_lists(target)
+      machine = PicoSdkBinding.machine(target.machine)
+      <<~CMAKE
+        cmake_minimum_required(VERSION 3.13)
+
+        set(PICO_BOARD #{machine.pico_board})
+        set(PICO_PLATFORM #{machine.pico_platform})
+
+        include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+        project(#{AGENT} C CXX ASM)
+        set(CMAKE_C_STANDARD 11)
+        set(CMAKE_CXX_STANDARD 20)
+
+        pico_sdk_init()
+
+        add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE})
+        target_compile_options(#{AGENT} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
+        target_link_libraries(#{AGENT} pico_stdlib hardware_flash)
+
+        pico_enable_stdio_usb(#{AGENT} 1)
+        pico_enable_stdio_uart(#{AGENT} 0)
+
+        # The board is reset into BOOTSEL over the port rather than by the button from here
+        # on, and it answers with the name in its flash rather than with pico-sdk's own
+        # descriptors — which is the whole of why this firmware exists.
+        target_compile_definitions(#{AGENT} PRIVATE
+            PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
+            PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
+            PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+            PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
+        )
+
+        pico_add_extra_outputs(#{AGENT})
+      CMAKE
     end
 
     # The block the page travels in. Everything about it is fixed but three fields: where

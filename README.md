@@ -125,7 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
-./bareruby target attach --target=pico       # once per board: BOOTSEL held, write the name
+./bareruby target attach --target=pico       # once per board: BOOTSEL held, name it
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -141,7 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target attach` | builds, then puts one board behind one entry by writing that entry's name into it, and records the board under the entry. Hold BOOTSEL first | writes it |
+| `target attach` | puts one board behind one entry: writes that entry's name and the binding's resident firmware into the board, and records the board under the entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -615,18 +615,20 @@ firmware reports is a number nobody chose. So a board can be given a name instea
 Hold BOOTSEL on the board being named, plug it in, and run one command:
 
 ```sh
-./bareruby target attach --target=pico app.rb
+./bareruby target attach --target=pico
 ```
 
-It builds, writes and records by itself — the board is looked for first, so a button that
-was not held costs nothing but the sentence saying so. `app.rb` is what that board will
-run and defaults to `app/main.rb`, as `build`'s does.
+**No program of yours is involved.** What goes onto the board beside its name is the
+*agent*: a small resident firmware belonging to the Pico binding, the same one for every
+board of a machine, which brings USB up, says the name and waits. Programs arrive by
+`deploy` and `flash`, which are the verbs that carry programs, and they keep the name when
+they do. It costs 25 KB of `text` on an RP2040.
 
-**The name goes on with the program rather than by itself**, which is why there is a
-program in this at all: a board named and left running what it ran before would have to be
-found a second time, and being found is the problem this ends. So the page and the image
-travel in one file, in one pass, and the board comes back both running and saying who it
-is:
+The name cannot travel entirely on its own — a page written by itself would leave the
+board running whatever it ran before, unnamed, and needing to be found a second time,
+which is the problem this ends. The agent is what makes that firmware something this side
+can supply rather than something to go and ask you for. The two are written in one pass,
+and the board comes back saying who it is:
 
 ```
 SERIAL             CHIP     STATE    DEVICE         PORT
