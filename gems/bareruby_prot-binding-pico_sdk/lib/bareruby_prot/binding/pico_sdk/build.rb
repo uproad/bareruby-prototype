@@ -7,7 +7,7 @@ module BareRubyProt
   # of what that build is, and the flags that decide what the firmware carries.
   class PicoSdkBuild
     SDK_LIBRARIES = %w[pico_stdlib hardware_adc hardware_gpio hardware_pwm hardware_uart
-                       hardware_i2c hardware_clocks].freeze
+                       hardware_i2c hardware_clocks hardware_flash].freeze
 
     # A board starts the SDK before the program and has nowhere to return to, so it
     # idles rather than ending.
@@ -44,6 +44,7 @@ module BareRubyProt
         sources = #{@sources.join(' ')}
         link_libraries = #{libraries.join(' ')}
         stdout_channel = #{stdout? ? 'usb' : 'none'}
+        usb_descriptors = #{stdout? ? 'own' : 'none'}
         debug = #{@debug ? 'enabled' : 'disabled'}
         exceptions = #{@exceptions ? 'enabled' : 'disabled'}
         artifact = bareruby_program.uf2
@@ -123,10 +124,18 @@ module BareRubyProt
 
         # Keep the USB device enumerated so the board can be reset into BOOTSEL from
         # the host instead of by replugging it with the button held.
+        #
+        # **And let the board name itself.** pico-sdk's own descriptors say "Pico" made by
+        # "Raspberry Pi" and nothing that tells one board from another; switching them off
+        # is what lets the identity unit answer with the name written into the board's
+        # flash, which is the one thing a desk can ask for. Everything else about the
+        # descriptors — the ids, the interfaces, the reset interface above — is unchanged,
+        # because the flasher reads the product id to tell an RP2040 from an RP2350.
         target_compile_definitions(bareruby_program PRIVATE
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
             PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+            PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
         )
       CMAKE
     end

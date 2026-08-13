@@ -535,6 +535,193 @@ module BareRubyProt
       }
     CPP
 
+    # **What the board is called, and the board saying it.**
+    #
+    # A Pico announces itself over USB as "Pico", made by "Raspberry Pi", and — in its
+    # bootloader — as a serial number three identical boards on one desk all answer to.
+    # There is nothing in that a desk can point at. So the name a target is recorded under
+    # is written into the board itself, and the board hands it back as its USB serial
+    # number: the desk asks for a name and gets the board that was given it.
+    #
+    # The name is data rather than code. It sits in a page of flash that no image reaches,
+    # is written once by `target attach`, and survives every program flashed afterwards —
+    # so one firmware serves every board and no build has to be told which board it is for.
+    #
+    # pico-sdk writes the USB descriptors itself unless the build says otherwise, and the
+    # build says otherwise only where there is a USB interface at all. A release firmware
+    # presents none, which is why the whole of this is asked of LIB_PICO_STDIO_USB: a board
+    # with nothing to speak on has no name to say.
+    IDENTITY = <<~CPP
+      #include "bareruby_binding.h"
+
+      #if LIB_PICO_STDIO_USB
+
+      #include <string.h>
+
+      #include "hardware/flash.h"
+      #include "pico/stdio_usb.h"
+      #include "pico/stdlib.h"
+      #include "pico/unique_id.h"
+      #include "pico/usb_reset.h"
+      #include "tusb.h"
+
+      /* The reserved page is the first page of the last sector of this board's flash. The
+         board header sizes the flash, so one expression names the end of a 2 MB Pico and
+         of a 4 MB Pico 2 without either being spelled out here, and the largest image
+         measured — 553 KB, a Pico 2 W carrying the radio's firmware — is nowhere near it. */
+      #define BARERUBY_NAME_PAGE (XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+
+      /* An erased sector reads 0xFF throughout, so a board that has never been attached
+         says so by not carrying the mark, and answers with the chip's own id instead. */
+      #define BARERUBY_NAME_MARK "BARERUBY"
+      #define BARERUBY_NAME_MARK_LENGTH 8
+
+      static const char *bareruby_board_name(void) {
+          const char *page = (const char *)BARERUBY_NAME_PAGE;
+          if (memcmp(page, BARERUBY_NAME_MARK, BARERUBY_NAME_MARK_LENGTH) != 0) {
+              return NULL;
+          }
+          return page + BARERUBY_NAME_MARK_LENGTH;
+      }
+
+      /* From here down this is pico-sdk's own descriptor set, which the build switched off
+         to make room for this one. **The vendor and product ids are kept exactly**: the
+         flasher tells an RP2040 from an RP2350 by the product id, and a board that renamed
+         itself out of that table would be a board nothing could find. What changes is one
+         string. */
+      #define USBD_VID (0x2E8A)
+      #if PICO_RP2040
+      #define USBD_PID (0x000a)
+      #else
+      #define USBD_PID (0x0009)
+      #endif
+
+      #define USBD_MANUFACTURER "Raspberry Pi"
+      #define USBD_PRODUCT "Pico"
+
+      #if !PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+      #define USBD_ITF_MAX (2)
+      #else
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_RPI_RESET_DESC_LEN)
+      #define USBD_ITF_RPI_RESET (2)
+      #define USBD_ITF_MAX (3)
+      #endif
+
+      #define USBD_ITF_CDC (0)
+      #define USBD_CDC_EP_CMD (0x81)
+      #define USBD_CDC_EP_OUT (0x02)
+      #define USBD_CDC_EP_IN (0x82)
+      #define USBD_CDC_CMD_MAX_SIZE (8)
+      #define USBD_CDC_IN_OUT_MAX_SIZE (64)
+
+      #define USBD_STR_LANGUAGE (0x00)
+      #define USBD_STR_MANUF (0x01)
+      #define USBD_STR_PRODUCT (0x02)
+      #define USBD_STR_SERIAL (0x03)
+      #define USBD_STR_CDC (0x04)
+      #define USBD_STR_RPI_RESET (0x05)
+
+      /* Long enough for a name a person would type. pico-sdk allows 127 and offers 20,
+         which is shorter than some of the names already in a target record. */
+      #define USBD_DESC_STR_MAX (40)
+
+      static const tusb_desc_device_t usbd_desc_device = {
+          .bLength = sizeof(tusb_desc_device_t),
+          .bDescriptorType = TUSB_DESC_DEVICE,
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE && PICO_USB_RESET_SUPPORT_MS_OS_20_DESCRIPTOR
+          .bcdUSB = 0x0210,
+      #else
+          .bcdUSB = 0x0200,
+      #endif
+          .bDeviceClass = TUSB_CLASS_MISC,
+          .bDeviceSubClass = MISC_SUBCLASS_COMMON,
+          .bDeviceProtocol = MISC_PROTOCOL_IAD,
+          .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+          .idVendor = USBD_VID,
+          .idProduct = USBD_PID,
+          .bcdDevice = 0x0100,
+          .iManufacturer = USBD_STR_MANUF,
+          .iProduct = USBD_STR_PRODUCT,
+          .iSerialNumber = USBD_STR_SERIAL,
+          .bNumConfigurations = 1,
+      };
+
+      static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
+          TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_LANGUAGE, USBD_DESC_LEN, 0, 250),
+
+          TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
+              USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
+
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+          TUD_RPI_RESET_DESCRIPTOR(USBD_ITF_RPI_RESET, USBD_STR_RPI_RESET),
+      #endif
+      };
+
+      /* In the order the indices above name them. Two are answered rather than listed:
+         index 0 is the language, and the serial is whatever the board is called. */
+      static const char *const usbd_desc_str[] = {
+          NULL,
+          USBD_MANUFACTURER,
+          USBD_PRODUCT,
+          NULL,
+          "Board CDC",
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+          "Reset",
+      #endif
+      };
+
+      static char usbd_serial_str[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
+
+      const uint8_t *tud_descriptor_device_cb(void) {
+          return (const uint8_t *)&usbd_desc_device;
+      }
+
+      const uint8_t *tud_descriptor_configuration_cb(uint8_t index) {
+          (void)index;
+          return usbd_desc_cfg;
+      }
+
+      /* **The one string this file exists for.** A board that was attached answers with
+         the name it was attached under; one that never was answers with the chip's unique
+         id, which is what pico-sdk would have said. */
+      static const char *bareruby_serial_string(void) {
+          const char *named = bareruby_board_name();
+          if (named != NULL) {
+              return named;
+          }
+          if (usbd_serial_str[0] == 0) {
+              pico_get_unique_board_id_string(usbd_serial_str, sizeof(usbd_serial_str));
+          }
+          return usbd_serial_str;
+      }
+
+      const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
+          (void)langid;
+          static uint16_t desc_str[USBD_DESC_STR_MAX];
+
+          uint8_t len;
+          if (index == USBD_STR_LANGUAGE) {
+              desc_str[1] = 0x0409;
+              len = 1;
+          } else {
+              if (index >= sizeof(usbd_desc_str) / sizeof(usbd_desc_str[0])) {
+                  return NULL;
+              }
+              const char *str =
+                  (index == USBD_STR_SERIAL) ? bareruby_serial_string() : usbd_desc_str[index];
+              for (len = 0; len < USBD_DESC_STR_MAX - 1 && str[len]; ++len) {
+                  desc_str[1 + len] = str[len];
+              }
+          }
+
+          desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * len + 2));
+          return desc_str;
+      }
+
+      #endif
+    CPP
+
     # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
     # through pico-sdk, which spells them the same way whichever chip is underneath.
     # Only the board name handed to the SDK tells the two apart.
@@ -547,6 +734,7 @@ module BareRubyProt
     UART_INTERRUPT_FILE = "bareruby_binding_uart_interrupt_pico.cpp"
     I2C_FILE = "bareruby_binding_i2c_pico.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_pico.cpp"
+    IDENTITY_FILE = "bareruby_binding_identity_pico.cpp"
 
     # A board whose indicator is on a pin of the microcontroller. Which pin is the
     # board's answer, not this file's: pico-sdk's board header defines
@@ -617,6 +805,7 @@ module BareRubyProt
       UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
+      IDENTITY_FILE => IDENTITY,
       ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN,
       ONBOARD_LED_RADIO_FILE => ONBOARD_LED_RADIO
     }.freeze
@@ -636,7 +825,10 @@ module BareRubyProt
       found.is_a?(Symbol) ? machine(machine).public_send(found) : found
     end
 
-    ALWAYS = [PERIPHERAL_FILE].freeze
+    # Its name is not something a program asks for, so nothing in the Ruby reaches this
+    # unit and no peripheral key names it. **What it answers is asked by the host**, over
+    # USB, before the program has run a line.
+    ALWAYS = [PERIPHERAL_FILE, IDENTITY_FILE].freeze
 
     # Reaching the radio's indicator is a driver and a firmware blob rather than a
     # register write, so the way that does it carries what it needs linked.

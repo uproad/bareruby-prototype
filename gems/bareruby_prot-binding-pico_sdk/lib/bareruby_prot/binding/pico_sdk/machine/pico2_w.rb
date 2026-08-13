@@ -11,6 +11,10 @@ module BareRubyProt
 
       def self.pico_platform = "rp2350"
 
+      # How much flash this board carries. The reserved page holding what the board is
+      # called sits at the top of it, so this is what says where.
+      def self.flash_bytes = 4 * 1024 * 1024
+
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
 
       def self.onboard_led_libraries = [RADIO_LIBRARY]
