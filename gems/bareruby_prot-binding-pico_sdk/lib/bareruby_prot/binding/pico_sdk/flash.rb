@@ -50,7 +50,8 @@ module BareRubyProt
     # another question.
     def self.prepare(plans)
       listing = attached
-      wanted = plans.to_h { |entry, directory| [entry, chosen(entry, directory, listing)] }
+      names = plans.map { |entry, _| entry.name }
+      wanted = plans.to_h { |entry, directory| [entry, chosen(entry, directory, listing, names)] }
       return nil unless apart?(wanted)
 
       running = wanted.values.flatten.reject(&:bootsel?)
@@ -67,7 +68,7 @@ module BareRubyProt
     # them a board belongs to — so that is a question for the record rather than a guess
     # made here.
     def self.apart?(wanted)
-      open = wanted.reject { |entry, _| entry.boards.any? }
+      open = wanted.reject { |entry, boards| settled?(entry, boards) }
                    .group_by { |_, boards| boards.first&.chip }
                    .select { |chip, pairs| chip && pairs.length > 1 }
       open.each do |chip, pairs|
@@ -84,14 +85,34 @@ module BareRubyProt
       open.empty?
     end
 
+    # An entry is settled either because the record named its boards or because a board is
+    # answering to its name, and the second is the one `target attach` exists to arrange.
+    # Counting only the first is what left an entry whose board was standing right there
+    # being asked which of two it meant.
+    def self.settled?(entry, boards)
+      entry.boards.any? || boards.any? { |board| board.serial == entry.name }
+    end
+
     # Which attached boards an entry is asking for: the ones it names, or every one
     # carrying its chip.
-    def self.chosen(entry, directory, listing)
+    # **A board that carries a name has already said whose it is.** That is the whole of
+    # what `target attach` writes it for, so it is asked first: a board answering to this
+    # entry's name is this entry's, whatever else is attached and whether or not the record
+    # names anything.
+    #
+    # **And it is not anybody else's.** An entry naming no board takes every board of its
+    # chip, which used to mean every board including ones plainly spoken for — a shelf
+    # holding a board called `pico` and a board called `pico2` left `pico2w` reporting two
+    # candidates and refusing, when one of them had been answering to another entry all
+    # along. What is left over is what an entry naming nothing takes.
+    def self.chosen(entry, directory, listing, names = [])
       chip = chip_of(File.join(directory, IMAGE))
       carrying = listing.select { |board| board.chip == chip }
+      answering = carrying.select { |board| board.serial == entry.name }
+      return answering unless answering.empty?
       return carrying.select { |board| entry.boards.map(&:to_s).include?(board.serial) } unless entry.boards.empty?
 
-      carrying
+      carrying.reject { |board| (names - [entry.name]).include?(board.serial) }
     end
 
     # Bytes 28..31 of a .uf2 are the family id, which is the chip the image was built for.
