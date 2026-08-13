@@ -836,8 +836,14 @@ module BareRubyProt
           /* Said before the move, because after it this program is gone. */
           printf("BRDONE\\n");
           sleep_ms(200);
-          save_and_disable_interrupts();
+          /* **Parking the other core comes first, and interrupts go down after it.** The
+             parking is a conversation between the cores and it is carried by interrupts,
+             so a core that has already silenced its own has nothing left to hold that
+             conversation with: it asks, is never answered, and waits there. The board
+             goes on running the program it had, which is how this first showed itself —
+             the whole image arrived, the board said so, and then nothing happened. */
           multicore_lockout_start_blocking();
+          save_and_disable_interrupts();
           bareruby_move(length);
           watchdog_reboot(0, 0, 0);
           for (;;) {
