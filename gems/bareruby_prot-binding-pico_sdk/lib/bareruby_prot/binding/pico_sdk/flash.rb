@@ -235,17 +235,36 @@ module BareRubyProt
       bytes = flat(image)
       warn "flash: #{board.serial} takes #{bytes.bytesize} bytes over #{board.node}"
       system("stty", "-F", board.node, "raw", "-echo", STREAM_BAUD, %i[out err] => File::NULL)
-      File.open(board.node, "wb") do |port|
+      File.open(board.node, "r+b") do |port|
         port.write(format("%s%08x", STREAM_MARK, bytes.bytesize))
         port.write(bytes)
         port.flush
+        return false unless said(port, board)
       end
       back(board)
     end
 
-    # The board says it has the whole thing before it moves it into place, and then it is
-    # gone for as long as a reboot takes. What says it worked is the board answering to
-    # its name again.
+    # **The board says it has the whole program before it moves it into place**, and that
+    # is the only thing that says so. A board answering to its name afterwards proves
+    # nothing on its own: it was answering to it beforehand too, so a run that sent
+    # nothing at all would look exactly like one that worked. What is waited for is the
+    # board's own word, said among whatever the program running on it is also saying.
+    def self.said(port, board)
+      deadline = Time.now + STREAM_SECONDS
+      held = +""
+      while Time.now < deadline
+        break unless IO.select([port], nil, nil, TICK)
+
+        held << port.readpartial(BUFFER)
+        return true if held.include?(STREAM_DONE)
+      end
+      warn "flash: #{board.serial} did not say it had the program."
+      false
+    end
+
+    BUFFER = 4096
+
+    # And then it is gone for as long as a reboot takes.
     def self.back(board)
       deadline = Time.now + STREAM_SECONDS
       while Time.now < deadline
