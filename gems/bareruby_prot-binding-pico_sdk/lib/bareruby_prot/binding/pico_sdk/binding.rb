@@ -773,9 +773,16 @@ module BareRubyProt
           flash_range_erase(*(uint32_t *)offset, FLASH_SECTOR_SIZE);
       }
 
-      /* Nothing here may be called once the erasing starts, so the whole of the move is
-         one function and the pages it reads are read between writes rather than during
-         them. */
+      /* **Nothing in flash may be called once the erasing starts** — including the things
+         nobody writes down as calls. The first version of this copied each page with
+         `memcpy`, which lives in the library, which lives in the flash being replaced: the
+         moment the first sector went, so did the copier's own memcpy, and what was left on
+         the board was half an image that could not answer for itself over USB. So the copy
+         is spelled out a byte at a time, inside the one function that RAM holds.
+
+         The pages are read between writes rather than during them, which is what makes
+         reading them possible at all: programming flash stops the chip reading flash, and
+         hands it back when it returns. */
       static void __not_in_flash_func(bareruby_move)(uint32_t length) {
           uint32_t sectors = (length + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
           uint32_t written = 0;
@@ -789,8 +796,11 @@ module BareRubyProt
                   if (offset >= length) {
                       break;
                   }
-                  memcpy(bareruby_page, (const uint8_t *)(XIP_BASE + BARERUBY_STAGING + offset),
-                         FLASH_PAGE_SIZE);
+                  const uint8_t *from = (const uint8_t *)(XIP_BASE + BARERUBY_STAGING + offset);
+                  uint32_t byte;
+                  for (byte = 0; byte < FLASH_PAGE_SIZE; byte++) {
+                      bareruby_page[byte] = from[byte];
+                  }
                   flash_range_program(offset, bareruby_page, FLASH_PAGE_SIZE);
                   written += FLASH_PAGE_SIZE;
               }
