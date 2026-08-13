@@ -728,6 +728,47 @@ had not brought back inside the settle. **The alternating failures are gone**: a
 starts with a board already in BOOTSEL now succeeds like any other, and the run after it
 succeeds too.
 
+### A board that says its own name
+
+Everything above works around a board having no name. The way out is to give it one.
+
+`bareruby target attach` writes the target entry's own name — `pico1h`, `pico2` — into a
+page of the board's flash, and the firmware reads it back and hands it to the host as its
+USB serial number. Windows files the board under it (`USB\VID_2E8A&PID_000A\PICO1H`), Linux
+publishes it in sysfs, and two Pico 1 boards of the same model, which had nothing between
+them, became `pico1h` and `pico1b`.
+
+Four things had to be true for that, and all four were measured rather than assumed.
+
+- **The name is data, not code.** It is the first page of the last flash sector —
+  `0x101FF000` on a 2 MB Pico, `0x103FF000` on a 4 MB Pico 2 — which no image comes near:
+  the largest measured here is 553 KB. So one firmware serves every board, and every
+  program flashed afterwards keeps the name.
+- **The descriptors have to be the program's own.** pico-sdk wraps its whole descriptor
+  file in `PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS`, so setting it to 0 hands the three
+  callbacks over. The vendor and product ids are kept exactly as the SDK writes them: the
+  flasher tells an RP2040 from an RP2350 by the product id. **Cost: 72 bytes of `text` and
+  44 of `bss` on an RP2040, 80 and 44 on an RP2350 — the `.uf2` did not change size.**
+- **The page and the program travel in one file, and the page goes first.** A bootloader
+  reboots the board when a download completes, so a page written on its own would reboot it
+  into the unnamed firmware it already had — needing the board found a second time, which
+  is the problem this exists to end. Announcing two blocks and supplying one leaves the
+  download open until the program's blocks replace it; pico-sdk plays the same trick with
+  the block it puts in front of an RP2350 image.
+- **An RP2350 wants the family id that means "an address".** Given the page under
+  `e48bff59`, the family its own program carries, the bootloader wrote the program and
+  **silently dropped the page** — the board came back reporting `34319CF054AB3BD6` as
+  before. Under `e48bff57`, which says the block belongs to no image and goes where it
+  says, it came back as `pico2`. An RP2040 has no such id and needs none: it has no image
+  rules for a loose page to be outside of.
+
+**BOOTSEL is what says which board, and only the first time.** Before a board carries a
+name there is nothing that could say it, so the choice is a button held by hand; afterwards
+it never has to be made again.
+
+**What it costs under WSL is one more `usbipd bind` per board.** Windows files a USB device
+under its serial number, so a board that has just been named is one it has never seen.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

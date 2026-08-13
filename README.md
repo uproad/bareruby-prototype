@@ -125,6 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
+./bareruby target attach --target=pico       # once per board: write that name into it
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -140,6 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
+| `target attach` | puts one board behind one entry, by writing that entry's name into the board. It says the name over USB from then on | yes |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -586,7 +588,9 @@ flash: 2 boards carry rp2040, so the image does not say which one to use.
 ```
 
 The serials it prints are the answer to the question it asked, so nothing has to be looked
-up to get past it.
+up to get past it. **A board can be given a name instead of a serial** — see
+[naming a board](#naming-a-board) — and `boards:` then reads as the name the entry already
+carries.
 
 **An RP2040 reports a different serial in BOOTSEL than while running** — the bootrom's id
 against the flash id pico-sdk reads. Both are stable per board, but a board cannot be
@@ -600,6 +604,62 @@ desk — `deploy` runs it and never has to be told, and by hand it is found with
 ```sh
 bundle exec gem contents bareruby_prot-binding-pico_sdk | grep flash.sh
 ```
+
+### Naming a board
+
+**A serial is a poor name for a board.** An RP2040's bootloader has none of its own —
+three boards measured on this desk, two of one model and one of another, all called
+themselves `E0C9125B0D9B`, down to the same model, revision and size — and the one its
+firmware reports is a number nobody chose. So a board can be given a name instead, once:
+
+```sh
+./bareruby build app.rb --target=pico     # what this board will run
+# hold BOOTSEL on the board being named, and plug it in
+./bareruby target attach --target=pico
+```
+
+`attach` writes the entry's own name into a page of the board's flash, with the program
+right behind it, in one pass. From then on the board hands that name to the host as its
+USB serial number:
+
+```
+SERIAL             CHIP     STATE    DEVICE         PORT
+pico1h             rp2040   running  /dev/ttyACM0   1-1
+pico1b             rp2040   running  /dev/ttyACM1   1-2
+pico2              rp2350   running  /dev/ttyACM3   1-4
+5D3F58054E676E14   rp2350   running  /dev/ttyACM4   1-5
+E66428C51F2B4F22   rp2040   running  /dev/ttyACM5   1-6
+```
+
+The first two are Pico 1 boards of the same model, which had nothing between them before.
+The last two have never been attached and report the chip's own id, which is what a board
+says until it is given something better.
+
+That name is what `boards:` takes, so two identical boards can be deployed to at the same
+time and each gets its own entry's image:
+
+```yaml
+  - name: pico1h
+    machine: pico
+    binding: pico_sdk
+    triple: thumbv6m-none-eabi
+    debug: true
+    boards: ["pico1h"]
+```
+
+**The name is data rather than code.** It sits in the last sector of flash, which no image
+comes near — the largest measured here is 553 KB against a 2 MB board — so every program
+flashed afterwards keeps it, and one firmware serves every board. A board that has never
+been attached reports the chip's own id, exactly as pico-sdk would.
+
+**BOOTSEL is what says which board, and only the first time.** Before a board carries a
+name there is nothing else that could say it, so the choice is made by hand; after that it
+never has to be made again. `attach` refuses when none or several boards of that chip are
+in BOOTSEL, for the same reason.
+
+**A bootloader still says nothing**: it is ROM, so a board in BOOTSEL reports what it
+always did. The name is read while the firmware runs, which is when the flasher chooses
+boards anyway — it picks them before it resets anything.
 
 ### From WSL
 
@@ -615,7 +675,10 @@ usbipd attach --busid <BUSID> --wsl --auto-attach
 
 **The bootloader and the running program are different USB devices** — `2e8a:0003` and
 `2e8a:000a` on an RP2040, `2e8a:000f` and `2e8a:0009` on an RP2350 — so bind the second
-one too, once the board has left BOOTSEL. And **`--auto-attach` is not optional** for a
+one too, once the board has left BOOTSEL. **And a board that has just been given a name is
+a third**: Windows files a USB device under its serial number, so the board that comes back
+out of `target attach` is one it has never seen, `Not shared`, needing `bind` once more.
+That is the whole of what naming costs here, and it is paid once per board. And **`--auto-attach` is not optional** for a
 board that stays plugged in: without it every reset drops the board out of WSL, and the
 next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
 than the board.
