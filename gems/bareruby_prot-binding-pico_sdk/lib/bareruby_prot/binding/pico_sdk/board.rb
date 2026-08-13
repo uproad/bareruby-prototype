@@ -65,46 +65,39 @@ module BareRubyProt
     # image.
     BLOCKS_ANNOUNCED = 2
 
-    def self.attach(name:, target:, directory:)
-      image = File.join(directory, PicoSdkFlash::IMAGE)
-      return unbuilt(name) unless File.exist?(image)
-
-      chip = PicoSdkFlash.chip_of(image)
-      waiting = PicoSdkFlash.attached.select { |board| board.bootsel? && board.chip == chip }
-      return by_hand(chip, waiting) unless waiting.one?
-
-      attached = File.join(directory, IMAGE)
-      File.binwrite(attached, block(name, chip, target) + File.binread(image))
-      Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", waiting.first.node, attached])
+    # **Which board this is for, asked before anything is built.** The button is something a
+    # person did a moment ago, and a run that compiles for ten seconds before saying it was
+    # not pressed has sat on the one thing it could have said at once. Nothing is read off
+    # the image to answer this — which chip an entry is for is the machine's own answer.
+    def self.waiting(target)
+      chip = target.machine.chip
+      found = PicoSdkFlash.attached.select { |board| board.bootsel? && board.chip == chip }
+      found.one? ? found.first : by_hand(chip, found)
     end
 
-    # **The name and the program go on together, so there has to be a program.** Naming a
-    # board and leaving it running what it ran before would need the board found a second
-    # time, which is the whole of what this is here to end.
-    def self.unbuilt(name)
-      warn "attach: nothing has been built for #{name}, and the name goes on with the " \
-           "program rather than on its own."
-      warn "        bareruby build --target=#{name} <your program>.rb, then attach."
-      false
+    def self.attach(name:, target:, directory:, board:)
+      image = File.join(directory, PicoSdkFlash::IMAGE)
+      attached = File.join(directory, IMAGE)
+      File.binwrite(attached, block(name, target) + File.binread(image))
+      Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, attached])
     end
 
     # **The button is the question, so this asks for it rather than choosing.** None and
     # several are the same answer from here: nothing on the bus says which board was meant.
     def self.by_hand(chip, waiting)
-      warn "attach: #{waiting.length} #{chip} board#{'s' unless waiting.one?} " \
-           "#{waiting.empty? ? 'is' : 'are'} in BOOTSEL, so nothing says which board this " \
-           "name is for."
-      warn "        Hold BOOTSEL on the one board being named while plugging it in, and " \
-           "leave every other #{chip} board out of BOOTSEL. Until a board carries a name " \
-           "there is nothing else to tell it by."
-      false
+      warn "attach: #{waiting.empty? ? "no #{chip} board is" : "#{waiting.length} #{chip} " \
+           'boards are'} in BOOTSEL, so nothing says which board this name is for."
+      warn "        Hold BOOTSEL down, plug the board in, and run this again. Leave every " \
+           "other #{chip} board out of BOOTSEL: until a board carries a name there is " \
+           "nothing else to tell it by."
+      nil
     end
 
     # The block the page travels in. Everything about it is fixed but three fields: where
     # it goes, which chip will take it, and what it says.
-    def self.block(name, chip, target)
+    def self.block(name, target)
       header = [MAGIC_START0, MAGIC_START1, FAMILY_ID_PRESENT, address(target),
-                PAYLOAD_SIZE, 0, BLOCKS_ANNOUNCED, LOOSE.fetch(chip)].pack("V8")
+                PAYLOAD_SIZE, 0, BLOCKS_ANNOUNCED, LOOSE.fetch(target.machine.chip)].pack("V8")
       padding = BLOCK_SIZE - HEADER_SIZE - PAYLOAD_SIZE - 4
       header + page(name) + ("\0" * padding) + [MAGIC_END].pack("V")
     end

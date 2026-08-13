@@ -125,7 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
-./bareruby target attach --target=pico       # once per board: write that name into it
+./bareruby target attach --target=pico       # once per board: BOOTSEL held, write the name
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -141,7 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target attach` | puts one board behind one entry, by writing that entry's name into the board. It says the name over USB from then on | yes |
+| `target attach` | builds, then puts one board behind one entry by writing that entry's name into it, and records the board under the entry. Hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -610,22 +610,23 @@ bundle exec gem contents bareruby_prot-binding-pico_sdk | grep flash.sh
 **A serial is a poor name for a board.** An RP2040's bootloader has none of its own —
 three boards measured on this desk, two of one model and one of another, all called
 themselves `E0C9125B0D9B`, down to the same model, revision and size — and the one its
-firmware reports is a number nobody chose. So a board can be given a name instead, once:
+firmware reports is a number nobody chose. So a board can be given a name instead, once.
+
+Hold BOOTSEL on the board being named, plug it in, and run one command:
 
 ```sh
-./bareruby build app.rb --target=pico     # what this board will run
-# hold BOOTSEL on the board being named, and plug it in
-./bareruby target attach --target=pico
+./bareruby target attach --target=pico app.rb
 ```
 
-Once per board, and `bareruby target attach` on its own prints all of that. The name goes
-on with the program rather than by itself, which is why there has to be a build first: a
-board named and left running what it ran before would have to be found a second time, and
-being found is the problem this ends.
+It builds, writes and records by itself — the board is looked for first, so a button that
+was not held costs nothing but the sentence saying so. `app.rb` is what that board will
+run and defaults to `app/main.rb`, as `build`'s does.
 
-`attach` writes the entry's own name into a page of the board's flash, with the program
-right behind it, in one pass, and records the board under that entry's `boards:`. From
-then on the board hands the name to the host as its USB serial number:
+**The name goes on with the program rather than by itself**, which is why there is a
+program in this at all: a board named and left running what it ran before would have to be
+found a second time, and being found is the problem this ends. So the page and the image
+travel in one file, in one pass, and the board comes back both running and saying who it
+is:
 
 ```
 SERIAL             CHIP     STATE    DEVICE         PORT
@@ -665,8 +666,8 @@ been attached reports the chip's own id, exactly as pico-sdk would.
 
 **BOOTSEL is what says which board, and only the first time.** Before a board carries a
 name there is nothing else that could say it, so the choice is made by hand; after that it
-never has to be made again. `attach` refuses when none or several boards of that chip are
-in BOOTSEL, for the same reason.
+never has to be made again. `attach` asks the bus before it does anything else, and
+refuses when none or several boards of that chip are in BOOTSEL, for the same reason.
 
 **A bootloader still says nothing**: it is ROM, so a board in BOOTSEL reports what it
 always did. The name is read while the firmware runs, which is when the flasher chooses
