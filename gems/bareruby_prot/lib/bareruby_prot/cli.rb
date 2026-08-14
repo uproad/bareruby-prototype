@@ -333,9 +333,9 @@ module BareRubyProt
     # the port a board is plugged into answers the second. Neither leaves anything for two
     # runs to take from each other.
     #
-    # **A board still takes its image one block at a time from one writer**, and the boards
-    # of a single entry are still written in turn: the row is the unit of the table, and
-    # several identical boards are one row.
+    # **A board still takes its image one block at a time from one writer.** The row is the
+    # unit this side schedules; a binding may fan one row out to several boards once it has
+    # found them without ambiguity, as the Pico binding does for a shelf taking one image.
     def flash
       planned = entries
       return nothing if planned.empty?
@@ -347,11 +347,12 @@ module BareRubyProt
     end
 
     # **Every board a run will write, put where it can be written from and then found —
-    # once, for all of them, before any of them is written.** A board that is running has
-    # to be rebooted into its bootloader first, and a bus with a board rebooting on it is
-    # the one bus nobody can be identified on: devices come and go between two lines of a
-    # scan, and a listing asked for at the wrong moment answers that nothing is there.
-    # Asked once, after everything has settled, it answers about all of them at once.
+    # once, for all of them, before any of them is written.** Some bindings can hand a
+    # named running board its image where it already is. An unnamed Pico has to be rebooted
+    # into its bootloader first, and a bus with a board rebooting on it is the one bus
+    # nobody can be identified on: devices come and go between two lines of a scan, and a
+    # listing asked for at the wrong moment answers that nothing is there. Asked once,
+    # after everything has settled, it answers about all of them at once.
     #
     # A binding with nothing to prepare has boards that are always where they are, which
     # is an answer rather than something missing.
@@ -360,15 +361,15 @@ module BareRubyProt
         planned.group_by { |entry| entry.target.binding }.each_with_object({}) do |(binding, group), all|
           next unless binding.flash.respond_to?(:prepare)
 
-          all.merge!(binding.flash.prepare(group.map { |entry| [entry, directory_of(entry)] }) || {})
+          all.merge!(binding.flash.prepare(group.map { |entry| [entry, flash_directory_of(entry)] }) || {})
         end
       end
     end
 
     def flashed(entry, found)
       @progress.at(:flash, [entry]) do
-        entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
-                                                            options: entry.options, found:)
+        entry.target.binding.flash.run(flash_directory_of(entry), boards: entry.boards,
+                                                                  options: entry.options, found:)
       end
     end
 
@@ -468,10 +469,25 @@ module BareRubyProt
       kept = File.join(ARTIFACTS, entry.name, File.basename(made))
       FileUtils.mkdir_p(File.dirname(kept))
       FileUtils.cp(made, kept)
+
+      # **Flashing later must not depend on the compiler's work directory surviving.** A
+      # compile clears that directory before it writes its own output, while `flash` means
+      # the last successful build and deliberately compiles nothing. Keep the artifact and
+      # the manifest its binding reads in a hidden, per-entry directory; public `build/`
+      # still contains the artifact and nothing else.
+      flashable = flash_directory_of(entry)
+      FileUtils.rm_rf(flashable)
+      FileUtils.mkdir_p(flashable)
+      FileUtils.cp(made, flashable)
+      FileUtils.cp(File.join(directory_of(entry), Toolchain::MANIFEST), flashable)
+
       @progress.artifact(entry, kept.delete_prefix("#{Dir.pwd}/"))
     end
 
     ARTIFACTS = File.expand_path("build", Dir.pwd)
+    FLASHABLES = File.expand_path(".bareruby/flash", Dir.pwd)
+
+    def flash_directory_of(entry) = File.join(FLASHABLES, entry.name)
 
     # A binding with no toolchain is one whose second stage the manifest already describes
     # in full, which is an answer rather than something missing: what to run and what it
