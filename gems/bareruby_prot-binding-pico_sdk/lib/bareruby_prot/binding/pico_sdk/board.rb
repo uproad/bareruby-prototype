@@ -46,8 +46,11 @@ module BareRubyProt
     PROGRAM = <<~CPP
       #include "pico/stdlib.h"
 
+      extern "C" void bareruby_agent_start(void);
+
       int main(void) {
           stdio_init_all();
+          bareruby_agent_start();
           for (;;) {
               sleep_ms(1000);
           }
@@ -178,7 +181,14 @@ module BareRubyProt
 
         add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE})
         target_compile_options(#{AGENT} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
-        target_link_libraries(#{AGENT} pico_stdlib hardware_flash)
+        target_link_libraries(#{AGENT}
+            pico_stdlib
+            hardware_flash
+            hardware_watchdog
+            hardware_sync
+            pico_flash
+            pico_multicore
+        )
 
         pico_enable_stdio_usb(#{AGENT} 1)
         pico_enable_stdio_uart(#{AGENT} 0)

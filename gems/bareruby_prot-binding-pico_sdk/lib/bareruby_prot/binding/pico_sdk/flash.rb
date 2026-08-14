@@ -7,21 +7,24 @@ module BareRubyProt
   # boards are candidates and only two of the same chip need telling apart. That is what
   # flash.sh does, and it is left in the shell it was proved on real hardware in.
   #
-  # **Writing a board is three things, and only the last of them is writing.** A board that
-  # is running has to be rebooted into its bootloader, the bus has to be given time to
-  # settle afterwards, and only then can anybody say which device is which. Done inside
-  # each board's own run, the middle of that lands on a bus that every other board is also
-  # moving: devices come and go between two lines of a scan, a listing is asked for and
-  # comes back empty, and where the boards arrive over usbipd rather than off a bus they
-  # can even come back holding each other's port.
+  # **A named running board does not need its bootloader to take a program.** Its resident
+  # listener stages the bytes and replaces the image itself, so its serial still says
+  # exactly which board is being written. An unnamed running board still has to be reset
+  # into BOOTSEL, the bus has to be given time to settle afterwards, and only then can
+  # anybody say which device is which. Done inside each board's own run, that middle step
+  # lands on a bus that every other board is also moving: devices come and go between two
+  # lines of a scan, a listing is asked for and comes back empty, and where the boards
+  # arrive over usbipd rather than off a bus they can even come back holding each other's
+  # port.
   #
-  # So the reset and the finding are done **once, for every board a run will write**, and
-  # the writing — which needs nothing but a device that is already sitting still — is what
-  # is left to run at the same time.
+  # So any reset and the finding are done **once, for every board a run will write**, and
+  # the writing — over a named port or onto a bootloader volume already sitting still — is
+  # what is left to run at the same time.
   module PicoSdkFlash
     SCRIPT = File.expand_path("flash.sh", __dir__)
     IMAGE = "bareruby_program.uf2"
     FAMILIES = { "e48bff56" => "rp2040", "e48bff57" => "rp2350" }.freeze
+    PROGRAM_FAMILIES = { "rp2040" => "e48bff56", "rp2350" => "e48bff59" }.freeze
 
     # **Which chips answer to the same name in both states.** An RP2350 reports one serial
     # whether its bootloader or its firmware is running, so it can be picked out of a
@@ -230,6 +233,7 @@ module BareRubyProt
     STREAM_DONE = "BRDONE"
     STREAM_BAUD = "115200"
     STREAM_SECONDS = 60
+    REBOOT_TICK = 0.05
 
     def self.streamed(board, image)
       bytes = flat(image)
@@ -264,23 +268,33 @@ module BareRubyProt
 
     BUFFER = 4096
 
-    # And then it is gone for as long as a reboot takes.
+    # **The old port has to leave before the new one can count as back.** The board says
+    # BRDONE, waits 200 ms, and only then reboots. Seeing its name during that wait is
+    # still seeing the firmware about to disappear; accepting it made a flash finish just
+    # before the USB device left, so an immediately following run found no board at all.
     def self.back(board)
       deadline = Time.now + STREAM_SECONDS
+      left = false
       while Time.now < deadline
-        return true if attached.any? { |one| one.serial == board.serial && !one.bootsel? }
+        present = attached.any? { |one| one.serial == board.serial && !one.bootsel? }
+        left ||= !present
+        return true if left && present
 
-        sleep TICK
+        sleep REBOOT_TICK
       end
       warn "flash: #{board.serial} did not come back after taking its program."
       false
     end
 
-    # A .uf2 is addressed blocks of 256 bytes; what a board takes is the bytes in address
-    # order, because the place they go is where it is running from and nowhere else.
+    # A .uf2 is addressed blocks of 256 bytes; what a board takes is the program family's
+    # bytes in address order. An RP2350 file also starts with an absolute-family metadata
+    # block at 0x10ffff00. The bootloader consumes that envelope, but it is not one of the
+    # bytes that belong at the start of flash.
     def self.flat(image)
       blocks = File.binread(image).unpack("a512" * (File.size(image) / 512))
-      blocks.sort_by { |block| block[12, 4].unpack1("V") }
+      family = PROGRAM_FAMILIES.fetch(chip_of(image)).to_i(16)
+      blocks.select { |block| block[28, 4].unpack1("V") == family }
+            .sort_by { |block| block[12, 4].unpack1("V") }
             .map { |block| block[32, block[16, 4].unpack1("V")] }.join
     end
 

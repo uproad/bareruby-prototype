@@ -569,6 +569,8 @@ module BareRubyProt
       #include <string.h>
 
       #include "hardware/flash.h"
+      #include "hardware/structs/psm.h"
+      #include "hardware/structs/watchdog.h"
       #include "hardware/sync.h"
       #include "hardware/watchdog.h"
       #include "pico/flash.h"
@@ -754,10 +756,10 @@ module BareRubyProt
 
          **The move runs from RAM.** Programming flash stops the chip reading flash, so a
          loop that did it while itself living in flash would be sawing the branch it sits
-         on. `__not_in_flash_func` puts the loop in RAM; between writes the chip can read
-         flash again, which is what lets the same loop pick the next page up out of
-         staging. Interrupts are off for the whole of it, since every handler is in the
-         flash being replaced. */
+         on. `__no_inline_not_in_flash_func` keeps the whole loop in RAM; between writes
+         the chip can read flash again, which is what lets the same loop pick the next page
+         up out of staging. Interrupts are off for the whole of it, since every handler is
+         in the flash being replaced. */
       #define BARERUBY_STAGING (PICO_FLASH_SIZE_BYTES / 2)
       #define BARERUBY_TAKE "BRLOAD"
       #define BARERUBY_TAKE_LENGTH 6
@@ -783,7 +785,7 @@ module BareRubyProt
          The pages are read between writes rather than during them, which is what makes
          reading them possible at all: programming flash stops the chip reading flash, and
          hands it back when it returns. */
-      static void __not_in_flash_func(bareruby_move)(uint32_t length) {
+      static void __no_inline_not_in_flash_func(bareruby_move_and_reboot)(uint32_t length) {
           uint32_t sectors = (length + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
           uint32_t written = 0;
           uint32_t index;
@@ -806,6 +808,22 @@ module BareRubyProt
               }
           }
           (void)written;
+
+          /* This function cannot return into the image it just replaced, nor call the
+             SDK's watchdog_reboot(), which lived in that image too. Trigger the same
+             ordinary flash reboot directly from the RAM-resident tail. */
+          hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
+          watchdog_hw->scratch[4] = 0;
+          hw_set_bits(&psm_hw->wdsel,
+              PSM_WDSEL_BITS & ~(PSM_WDSEL_ROSC_BITS | PSM_WDSEL_XOSC_BITS));
+          hw_clear_bits(&watchdog_hw->ctrl,
+              WATCHDOG_CTRL_PAUSE_DBG0_BITS |
+              WATCHDOG_CTRL_PAUSE_DBG1_BITS |
+              WATCHDOG_CTRL_PAUSE_JTAG_BITS);
+          hw_set_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_TRIGGER_BITS);
+          for (;;) {
+              __asm volatile ("nop");
+          }
       }
 
       static void bareruby_take(uint32_t length) {
@@ -844,11 +862,7 @@ module BareRubyProt
              the whole image arrived, the board said so, and then nothing happened. */
           multicore_lockout_start_blocking();
           save_and_disable_interrupts();
-          bareruby_move(length);
-          watchdog_reboot(0, 0, 0);
-          for (;;) {
-              tight_loop_contents();
-          }
+          bareruby_move_and_reboot(length);
       }
 
       /* `BRLOAD` and eight hex digits of length. Anything else on this channel is a
