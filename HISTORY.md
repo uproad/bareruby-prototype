@@ -753,18 +753,49 @@ Four things had to be true for that, and all four were measured rather than assu
   written by itself would reboot the board into the unnamed firmware it already had —
   needing the board found a second time, which is the problem this exists to end. So
   `target attach` writes the *agent* beside it: a resident firmware that brings USB up,
-  says the name and waits, the same one for every board of a machine, costing 25752 bytes
-  of `text` on an RP2040. **No program of the user's is in this** — programs are what
-  `deploy` and `flash` carry, and they keep the name when they arrive. The page goes first
-  in the file, announcing two blocks and supplying one, so the download stays open until
-  the agent's blocks replace it; pico-sdk plays the same trick with the block it puts in
-  front of an RP2350 image.
+  says the name and waits for the next program on core 1, the same one for every board of
+  a machine, costing 29272 bytes of `text` on a Pico and 29264 on a Pico W. **No program
+  of the user's is in this** — programs are what `deploy` and `flash` carry, and they keep
+  the name when they arrive. The page goes first in the file, announcing two blocks and
+  supplying one, so the download stays open until the agent's blocks replace it; pico-sdk
+  plays the same trick with the block it puts in front of an RP2350 image.
 - **An RP2350 wants the family id that means "an address".** Given the page under
   `e48bff59`, the family its own program carries, the bootloader wrote the program and
   **silently dropped the page** — the board came back reporting `34319CF054AB3BD6` as
   before. Under `e48bff57`, which says the block belongs to no image and goes where it
   says, it came back as `pico2`. An RP2040 has no such id and needs none: it has no image
   rules for a loose page to be outside of.
+
+The resident replacement path was then made complete rather than inferred from its first
+acknowledgement. The standalone agent had brought USB up but had never started the core-1
+listener, and the first mover that did receive an image could be inlined back into flash,
+return into the image it had erased, and call the flash-resident watchdog routine. The
+agent now starts the listener; the mover is explicitly no-inline in RAM, copies without a
+library call, and triggers the watchdog from its RAM-resident tail. Its generated RP2040
+and RP2350 ELFs put the mover and both flash operations at `0x200...`, rather than in the
+image being replaced.
+
+Two host-side boundaries mattered too. An RP2350 UF2 begins with absolute-family metadata
+at `0x10ffff00`; only its `e48bff59` program-family blocks are streamed. And `BRDONE` means
+the bytes have arrived, not that the 200 ms delayed reboot has happened, so the host now
+requires the old port to disappear and the same name to return before it reports success.
+Without that edge, immediately repeated runs alternated between apparent success and no
+board.
+
+`flash` also has to mean the last successful build after the compiler has done unrelated
+work. Its first version read the compiler's working directory, which every later `compile`
+or `build` clears; the artifact still plainly existed in `build/<target>/`, but flashing
+raised `ENOENT`. Each successful build now keeps the artifact and its manifest per entry
+under `.bareruby/flash/`, leaving public `build/` as one artifact per entry while making a
+later flash independent of compiler scratch state.
+
+On hardware, one Pico completed five successive streamed replacements, and two identical
+Picos named `pico1h` and `pico1b` completed five successive parallel runs, 2/2 each, in
+16.8 to 17.4s under WSL. The ports were renumbered between runs; the names and the images
+did not swap. A Pico W was then attached as `pico1w` and took its 37888-byte Pico W image
+over the same resident path five times. The last came after all 30 representative sources
+had been compiled and the compiler working tree cleared on every run, without the Pico W
+being confused with either plain Pico or losing the last built image.
 
 **BOOTSEL is what says which board, and only the first time.** Before a board carries a
 name there is nothing that could say it, so the choice is a button held by hand; afterwards

@@ -155,6 +155,9 @@ thing in one verb and another in the next would be a difference nobody can be to
 
 **`build/` holds what was built, and nothing else** — one file per recorded target. Everything
 else, the generated C++ and the tree a toolchain leaves behind, lives under `.bareruby/`.
+The artifact and the small manifest needed to flash it again are also kept per target
+under `.bareruby/flash/`; a later `compile` can clear its own work without erasing what
+the last successful `build` made deployable.
 
 **Targets are built at the same time, each in a process of its own.** What they build with
 is fetched once before any of them start, and each compiles into a root only it writes, so
@@ -163,28 +166,26 @@ occupying one core of a desk that has many. Four targets that took 19.9s end to 
 8.6s, which is the longest single build plus a fraction. `--jobs=N` says how many at once;
 without it, as many as there are targets, up to the number of cores.
 
-**The boards are written at the same time too.** Two boards took 28.3s end to end and take
-10 to 14s together. What had to change first was not the writing but the finding: a board
-used to be followed across its reset by noticing which one appeared in BOOTSEL since a
-moment ago, which reads the whole bus to answer a question about one board. It is followed
-by the port it is plugged into instead — the one thing it keeps, where its serial is not
-(an RP2040 reports the bootrom's id in BOOTSEL and the flash id once pico-sdk is running).
-A line in `/etc/fstab` per board, which `--list` hands out, gives each one a mount point of
-its own, and the volume is asked which chip it belongs to before anything is written to it.
+**The boards are written at the same time too.** A named running Pico takes its next image
+over the USB serial connection it already has: the resident listener stages the bytes in
+the unused half of flash, moves them into place from RAM, and reboots. The name identifies
+the board before the transfer and after it comes back, so two identical RP2040 boards can
+take different images without either entering their indistinguishable BOOTSEL state. Five
+successive two-board runs on WSL took 16.8 to 17.4s each.
 
-**A board being written moves the bus for everything else on it.** It reboots into its
-bootloader and back, arriving and leaving as two different USB devices, and the ports of
-every other board are renumbered around it. So the scans that find a board are written to
-be asked while that is happening: a device that vanishes between two lines of a scan is
-not a board rather than an error, and a board that is not there yet is asked for again
-until it is.
+The host does not count the old serial port as a successful return. The board says it has
+received the whole image before it replaces itself, then waits 200 ms and disconnects; a
+flash completes only after that port has disappeared and the same name has reappeared.
+That distinction matters to a command repeated immediately: accepting the port during the
+200 ms wait made one run report success just before the board vanished from the next.
 
-**So writing a board is three things, and only the last of them is writing.** Every board
-a run will reach is rebooted into its bootloader, the bus is then given time to settle,
-and everything on it is looked at **once** — the `FIND` column. Only then is anything
-written, and by that point every board is a device sitting still, so all of them are
-written at the same time. A board looked for while others are re-enumerating is looked for
-at the one moment nobody can be found.
+An unnamed running board still takes the BOOTSEL route. Every board on that route is reset,
+the bus is given time to settle, and everything on it is looked at **once** before any
+volume is written. A line in `/etc/fstab` per USB port, which `--list` hands out, gives
+each RP2040 bootloader a mount point of its own despite their shared serial. Scans also
+treat a device that vanishes during re-enumeration as a moving bus rather than a malformed
+board. This remains the first-write path; `target attach` is what makes later writes use
+the named resident path.
 
 **One line per USB port in `/etc/fstab`**, which `--list` prints. The line is keyed by the
 port rather than by the board on purpose: an RP2040's bootloader has no serial of its own
@@ -620,9 +621,10 @@ Hold BOOTSEL on the board being named, plug it in, and run one command:
 
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every
-board of a machine, which brings USB up, says the name and waits. Programs arrive by
-`deploy` and `flash`, which are the verbs that carry programs, and they keep the name when
-they do. It costs 25 KB of `text` on an RP2040.
+board of a machine, which brings USB up, says the name and waits for the next program on
+the other core. Programs arrive by `deploy` and `flash`, which are the verbs that carry
+programs, and they keep the name when they do. It costs about 29 KB of `text` on an
+RP2040.
 
 The name cannot travel entirely on its own — a page written by itself would leave the
 board running whatever it ran before, unnamed, and needing to be found a second time,
@@ -697,11 +699,11 @@ board that stays plugged in: without it every reset drops the board out of WSL, 
 next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
 than the board.
 
-**Even with it, a board can take a few seconds to come back**, and a run that finds none
-in that window says so and stops. It is the same failure as above and the same cause: what
-comes back is a different USB device from what left. Running the same command again once
-the board is up is usually the whole of the answer, and `--jobs=1` reduces how much of the
-bus is moving at once.
+**Even with it, a board can take a few seconds to come back.** A named stream is not
+reported complete until its old port has left and its name has returned; if usbipd does
+not reattach it inside the timeout, that target fails instead of leaving the next command
+to discover the missing device. `--jobs=1` reduces how much of the bus is moving at once
+when diagnosing a USB path.
 
 ### On macOS
 
