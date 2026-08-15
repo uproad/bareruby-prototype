@@ -821,6 +821,27 @@ present again afterwards. The CDC 1200-baud reset remains available, while the u
 vendor reset interface is omitted; each running board now presents two interfaces rather
 than three.
 
+The next names begin at `_01` rather than leaving the first board unsuffixed: a fresh
+`pico1` entry grows `pico1_01`, `pico1_02`, `pico1_03`. Existing lists still determine the
+next number by their length, so a desk already carrying the earlier spellings does not
+reuse a number while it is being changed over.
+
+The running USB descriptor now says `BareRuby Debug Firm RP Pico1 (<board name>)`, or
+`RP Pico1W`, `RP Pico2`, and `RP Pico2W` for the other machines, while keeping the SDK's
+vendor and product ids and the attached name as the serial. Four connected RP2040 boards
+— three Picos and one Pico W — accepted those images in one parallel deploy and all four
+returned on CDC with their original serials.
+
+Windows records that exact product in `DEVPKEY_Device_BusReportedDeviceDesc`, but
+`usbipd-win` does not print it for a CDC composite device: its list deliberately combines
+the friendly names of the direct children instead, which are the Windows USB serial
+driver's `USB Serial Device (COM...)` names. Reporting the device itself as vendor-specific
+removed that composite classification, but Linux then did not bind `cdc_acm`; the serial
+path disappeared and resident deploy could not finish. That experiment was reverted. The
+exact firmware descriptor and four-board CDC deployment are therefore proved; making the
+current `usbipd list` column use it is a Windows host-tool change, not another firmware
+descriptor.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

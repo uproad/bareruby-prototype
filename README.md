@@ -636,9 +636,9 @@ and the board comes back saying who it is:
 
 ```
 SERIAL             CHIP     STATE    DEVICE         PORT
-pico1h             rp2040   running  /dev/ttyACM0   1-1
-pico1b             rp2040   running  /dev/ttyACM1   1-2
-pico2              rp2350   running  /dev/ttyACM3   1-4
+pico1h_01          rp2040   running  /dev/ttyACM0   1-1
+pico1b_01          rp2040   running  /dev/ttyACM1   1-2
+pico2_01           rp2350   running  /dev/ttyACM3   1-4
 5D3F58054E676E14   rp2350   running  /dev/ttyACM4   1-5
 E66428C51F2B4F22   rp2040   running  /dev/ttyACM5   1-6
 ```
@@ -656,7 +656,7 @@ edited by hand afterwards:
     binding: pico_sdk
     triple: thumbv6m-none-eabi
     debug: true
-    boards: [pico1h]
+    boards: [pico1h_01]
 ```
 
 That is what lets two identical boards be deployed to at the same time, each getting its
@@ -665,8 +665,8 @@ own entry's image. **Until every entry sharing a chip has one, flashing refuses*
 image can say which board belongs to which. The refusal prints the `attach` line for each
 entry it is talking about.
 
-Repeating the same attach command adds another board to the same entry. The first takes
-the entry's name, then the suffix increases without changing the target name:
+Repeating the same attach command adds another board to the same entry. Every board takes
+a two-digit suffix, beginning with `_01`, without changing the target name:
 
 ```yaml
   - name: pico1
@@ -674,13 +674,18 @@ the entry's name, then the suffix increases without changing the target name:
     binding: pico_sdk
     triple: thumbv6m-none-eabi
     debug: true
-    boards: [pico1, pico1-2, pico1-3]
+    boards: [pico1_01, pico1_02, pico1_03]
 ```
 
 That list is the complete answer when `flash` chooses devices, so all three take the one
 `pico1` artifact. Each name was installed with the resident listener, so all three use the
 running serial path; resetting them together into RP2040 BOOTSEL would discard the names
 and make their identical boot-ROM serials collide.
+
+While that firmware is running, its USB product string names both the BareRuby firmware
+and the board: `BareRuby Debug Firm RP Pico1 (pico1_01)` on a Pico, and
+`BareRuby Debug Firm RP Pico1W (pico1w_01)` on a Pico W. The attached name remains the USB
+serial as well, because that is the stable key deployment uses.
 
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
