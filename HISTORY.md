@@ -804,6 +804,23 @@ it never has to be made again.
 **What it costs under WSL is one more `usbipd bind` per board.** Windows files a USB device
 under its serial number, so a board that has just been named is one it has never seen.
 
+The same entry can now own a shelf rather than one board. Repeated
+`target attach --target=pico1` runs assigned `pico1`, `pico1-2`, and `pico1-3` and appended
+all three to one `boards:` list. Two single-board assumptions had survived the earlier
+work: device selection returned the board matching the entry name before consulting the
+explicit list, and preparation trusted only that first board's resident listener while
+resetting the suffixed boards into BOOTSEL. The list is now authoritative in both places,
+so every listed running board is selected and streamed to without losing its name.
+
+That boundary matters on the RP2040 hardware measured here: all three ROM bootloaders
+reported `E0C9125B0D9B`, so two reset together cannot be distinguished reliably by the
+Windows USB stack. With all three running as `pico1`, `pico1-2`, and `pico1-3`, one
+`deploy --target=pico1` sent the same 29184 bytes over three CDC ports in parallel. The
+flash stage took 7.0s, the complete build-and-deploy took 14.5s, and all three names were
+present again afterwards. The CDC 1200-baud reset remains available, while the unused
+vendor reset interface is omitted; each running board now presents two interfaces rather
+than three.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

@@ -125,7 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
-./bareruby target attach --target=pico       # once per board: BOOTSEL held, name it
+./bareruby target attach --target=pico       # once per board: BOOTSEL held, add and name it
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -141,7 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target attach` | puts one board behind one entry: writes that entry's name and the binding's resident firmware into the board, and records the board under the entry. No program of yours; hold BOOTSEL first | writes it |
+| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -169,9 +169,11 @@ without it, as many as there are targets, up to the number of cores.
 **The boards are written at the same time too.** A named running Pico takes its next image
 over the USB serial connection it already has: the resident listener stages the bytes in
 the unused half of flash, moves them into place from RAM, and reboots. The name identifies
-the board before the transfer and after it comes back, so two identical RP2040 boards can
-take different images without either entering their indistinguishable BOOTSEL state. Five
-successive two-board runs on WSL took 16.8 to 17.4s each.
+the board before the transfer and after it comes back. That lets identical RP2040 boards
+take different images from different entries, or one image from a single entry whose
+`boards:` lists all of them, without entering their indistinguishable BOOTSEL state. Five
+successive two-board runs on WSL took 16.8 to 17.4s each; one three-board entry later
+streamed 29184 bytes to each board in a 7.0s flash stage.
 
 The host does not count the old serial port as a successful return. The board says it has
 received the whole image before it replaces itself, then waits 200 ms and disconnects; a
@@ -662,6 +664,23 @@ own entry's image. **Until every entry sharing a chip has one, flashing refuses*
 `pico` and a `pico_w` entry with empty `boards:` both take every RP2040 attached, and no
 image can say which board belongs to which. The refusal prints the `attach` line for each
 entry it is talking about.
+
+Repeating the same attach command adds another board to the same entry. The first takes
+the entry's name, then the suffix increases without changing the target name:
+
+```yaml
+  - name: pico1
+    machine: pico
+    binding: pico_sdk
+    triple: thumbv6m-none-eabi
+    debug: true
+    boards: [pico1, pico1-2, pico1-3]
+```
+
+That list is the complete answer when `flash` chooses devices, so all three take the one
+`pico1` artifact. Each name was installed with the resident listener, so all three use the
+running serial path; resetting them together into RP2040 BOOTSEL would discard the names
+and make their identical boot-ROM serials collide.
 
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
