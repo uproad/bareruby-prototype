@@ -48,7 +48,7 @@ module BareRubyProt
                             target.yml. Nothing in an entry has to be looked up.
         target attach --target=NAME
                             Hold BOOTSEL on one board and run this once per board: it
-                            writes NAME, NAME-2, ... into them and records every name
+                            writes NAME_01, NAME_02, ... into them and records every name
                             under the entry. No program of yours is involved; deploy and
                             flash are what carry those, to all of the boards at once.
         target list         Every machine that can be targeted, by family.
@@ -197,10 +197,10 @@ module BareRubyProt
 
         Hold BOOTSEL on the board being named, plug it in, and run this.
 
-        It puts one board behind one entry. The first is called NAME; later boards are
-        called NAME-2, NAME-3, and so on. The name goes into a page of the board's own
-        flash, and the board reports it over USB from then on. The entry's boards: keeps
-        every one of those names, so nothing has to be edited afterwards.
+        It puts one board behind one entry. They are called NAME_01, NAME_02, and so on,
+        in the order they are attached. The name goes into a page of the board's own flash,
+        and the board reports it over USB from then on. The entry's boards: keeps every
+        one of those names, so nothing has to be edited afterwards.
 
         NAME is an entry's name in config/target.yml, and exactly one is named, because
         one board is being named.

@@ -137,6 +137,7 @@ module BareRubyProt
         # descriptors — including the ids used to tell an RP2040 from an RP2350 — is
         # unchanged.
         target_compile_definitions(bareruby_program PRIVATE
+            BARERUBY_USB_PRODUCT="#{PicoSdkBinding.machine(@target.machine).usb_product}"
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
             PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0

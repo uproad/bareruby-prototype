@@ -51,9 +51,9 @@ module BareRubyProt
 
     def self.entries = recorded.map { |record| entry_of(record) }
 
-    # **A board has been attached to this entry, so the record says which board.** The
-    # first answers to the entry's own name; later boards add a number, because several
-    # boards taking one artifact still have to answer as several USB devices.
+    # **A board has been attached to this entry, so the record says which board.** Every
+    # board answers with a numbered name, because several boards taking one artifact still
+    # have to answer as several USB devices.
     #
     # **Edited as the text it is.** The record opens with a comment on every field and is
     # meant to be read, so a round trip through YAML would hand back a file with the
@@ -73,16 +73,11 @@ module BareRubyProt
       true
     end
 
-    # One board keeps the short name a target already has. A shelf grows stable names in
-    # the order its boards are attached: pico1, pico1-2, pico1-3. The record is the source
-    # of the next number, so a new command continues where the previous one stopped.
+    # A shelf grows stable names in the order its boards are attached: pico1_01, pico1_02,
+    # pico1_03. The record is the source of the next number, so a new command continues
+    # where the previous one stopped.
     def self.next_board_name(entry_name)
-      taken = boards_of(entry_name)
-      return entry_name unless taken.include?(entry_name)
-
-      number = 2
-      number += 1 while taken.include?("#{entry_name}-#{number}")
-      "#{entry_name}-#{number}"
+      format("%s_%02d", entry_name, boards_of(entry_name).length + 1)
     end
 
     def self.boards_of(name)

@@ -653,8 +653,7 @@ module BareRubyProt
       /* From here down this is pico-sdk's own descriptor set, which the build switched off
          to make room for this one. **The vendor and product ids are kept exactly**: the
          flasher tells an RP2040 from an RP2350 by the product id, and a board that renamed
-         itself out of that table would be a board nothing could find. What changes is one
-         string. */
+         itself out of that table would be a board nothing could find. */
       #define USBD_VID (0x2E8A)
       #if PICO_RP2040
       #define USBD_PID (0x000a)
@@ -663,7 +662,7 @@ module BareRubyProt
       #endif
 
       #define USBD_MANUFACTURER "Raspberry Pi"
-      #define USBD_PRODUCT "Pico"
+      #define USBD_PRODUCT BARERUBY_USB_PRODUCT
 
       #if !PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
       #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
@@ -688,9 +687,8 @@ module BareRubyProt
       #define USBD_STR_CDC (0x04)
       #define USBD_STR_RPI_RESET (0x05)
 
-      /* Long enough for a name a person would type. pico-sdk allows 127 and offers 20,
-         which is shorter than some of the names already in a target record. */
-      #define USBD_DESC_STR_MAX (40)
+      /* Long enough for the visible product wrapped around the longest persisted name. */
+      #define USBD_DESC_STR_MAX (64)
 
       static const tusb_desc_device_t usbd_desc_device = {
           .bLength = sizeof(tusb_desc_device_t),
@@ -724,20 +722,22 @@ module BareRubyProt
       #endif
       };
 
-      /* In the order the indices above name them. Two are answered rather than listed:
-         index 0 is the language, and the serial is whatever the board is called. */
+      /* In the order the indices above name them. The language, product, serial and CDC
+         function are answered rather than listed because three of those contain the name
+         this particular board carries. */
       static const char *const usbd_desc_str[] = {
           NULL,
           USBD_MANUFACTURER,
-          USBD_PRODUCT,
           NULL,
-          "Board CDC",
+          NULL,
+          NULL,
       #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
           "Reset",
       #endif
       };
 
       static char usbd_serial_str[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
+      static char usbd_product_str[USBD_DESC_STR_MAX];
 
       const uint8_t *tud_descriptor_device_cb(void) {
           return (const uint8_t *)&usbd_desc_device;
@@ -762,6 +762,12 @@ module BareRubyProt
           return usbd_serial_str;
       }
 
+      static const char *bareruby_product_string(void) {
+          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s (%s)",
+                   USBD_PRODUCT, bareruby_serial_string());
+          return usbd_product_str;
+      }
+
       const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
           (void)langid;
           static uint16_t desc_str[USBD_DESC_STR_MAX];
@@ -774,8 +780,14 @@ module BareRubyProt
               if (index >= sizeof(usbd_desc_str) / sizeof(usbd_desc_str[0])) {
                   return NULL;
               }
-              const char *str =
-                  (index == USBD_STR_SERIAL) ? bareruby_serial_string() : usbd_desc_str[index];
+              const char *str;
+              if (index == USBD_STR_SERIAL) {
+                  str = bareruby_serial_string();
+              } else if (index == USBD_STR_PRODUCT || index == USBD_STR_CDC) {
+                  str = bareruby_product_string();
+              } else {
+                  str = usbd_desc_str[index];
+              }
               for (len = 0; len < USBD_DESC_STR_MAX - 1 && str[len]; ++len) {
                   desc_str[1 + len] = str[len];
               }
