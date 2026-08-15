@@ -830,7 +830,10 @@ The running USB descriptor now says `BareRuby Debug Firm RP Pico1 (<board name>)
 `RP Pico1W`, `RP Pico2`, and `RP Pico2W` for the other machines, while keeping the SDK's
 vendor and product ids and the attached name as the serial. Four connected RP2040 boards
 — three Picos and one Pico W — accepted those images in one parallel deploy and all four
-returned on CDC with their original serials.
+returned on CDC as `pico1_01`, `pico1_02`, `pico1_03`, and `pico1w_01`.
+After separating USB identity from the resident updater and making its acknowledgement
+wait tolerate quiet intervals, the final run sent 38656 bytes to each Pico and 287744
+bytes to the Pico W, completing both target rows in 29.6s.
 
 Windows records that exact product in `DEVPKEY_Device_BusReportedDeviceDesc`, but
 `usbipd-win` does not print it for a CDC composite device: its list deliberately combines
@@ -844,8 +847,8 @@ descriptor.
 
 Copying each bound device's `DEVPKEY_Device_BusReportedDeviceDesc` into usbipd-win's saved
 `Description` made that host-tool change without touching the device. Its connected list
-then read `BareRuby Debug Firm RP Pico1 (pico1)`, `(pico1-2)`, `(pico1-3)`, and
-`BareRuby Debug Firm RP Pico1W (pico1w-2)` for the four boards. All remained attached at
+then read `BareRuby Debug Firm RP Pico1 (pico1_01)`, `(pico1_02)`, `(pico1_03)`, and
+`BareRuby Debug Firm RP Pico1W (pico1w_01)` for the four boards. All remained attached at
 the same Windows bus ids and appeared in WSL as four distinct `ttyACM` devices. The copy
 needs one Administrator PowerShell run after newly named devices are bound; it is recorded
 in the README rather than hidden as a firmware result.
