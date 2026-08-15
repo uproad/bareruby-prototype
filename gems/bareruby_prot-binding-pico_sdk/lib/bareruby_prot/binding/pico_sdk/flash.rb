@@ -104,10 +104,12 @@ module BareRubyProt
 
     # Which attached boards an entry is asking for: the ones it names, or every one
     # carrying its chip.
-    # **A board that carries a name has already said whose it is.** That is the whole of
-    # what `target attach` writes it for, so it is asked first: a board answering to this
-    # entry's name is this entry's, whatever else is attached and whether or not the record
-    # names anything.
+    # **An explicit list is the complete answer.** It can deliberately put several boards
+    # behind one entry, including the board whose name equals the entry, so it must be
+    # considered before that convenient single-board match.
+    #
+    # **A board that carries a name has already said whose it is.** With no explicit list,
+    # a board answering to this entry's name is this entry's, whatever else is attached.
     #
     # **And it is not anybody else's.** An entry naming no board takes every board of its
     # chip, which used to mean every board including ones plainly spoken for — a shelf
@@ -117,9 +119,10 @@ module BareRubyProt
     def self.chosen(entry, directory, listing, names = [])
       chip = chip_of(File.join(directory, IMAGE))
       carrying = listing.select { |board| board.chip == chip }
+      return carrying.select { |board| entry.boards.map(&:to_s).include?(board.serial) } unless entry.boards.empty?
+
       answering = carrying.select { |board| board.serial == entry.name }
       return answering unless answering.empty?
-      return carrying.select { |board| entry.boards.map(&:to_s).include?(board.serial) } unless entry.boards.empty?
 
       carrying.reject { |board| (names - [entry.name]).include?(board.serial) }
     end
