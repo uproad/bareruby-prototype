@@ -162,8 +162,8 @@ module BareRubyProt
 
       program = image.bytes.each_slice(BLOCK_SIZE).map { |bytes| bytes.pack("C*") }
       total = program.length + 1
-      blocks = [block(name, target, number: 0, total:)]
-      blocks.concat(program.each_with_index.map { |one, index| numbered(one, index + 1, total) })
+      blocks = program.each_with_index.map { |one, index| numbered(one, index, total) }
+      blocks << block(name, target, number: program.length, total:)
       blocks.join
     end
 

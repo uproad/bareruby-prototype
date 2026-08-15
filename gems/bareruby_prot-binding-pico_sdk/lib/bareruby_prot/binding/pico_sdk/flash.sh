@@ -296,10 +296,16 @@ cp "$UF2" "$VOLUME/" 2>/dev/null || true
 sync 2>/dev/null || true
 close_volume
 
-for _ in $(seq 20); do
+gone=0
+for _ in $(seq 24); do
     if ! bootsel_node_at_port "$PORT" | grep -qxF "$PARTITION"; then
-        echo "flash: done. The board left BOOTSEL mode and is running the firmware."
-        exit 0
+        gone=$((gone + 1))
+        if [ "$gone" -ge 4 ]; then
+            echo "flash: done. The board left BOOTSEL mode and is running the firmware."
+            exit 0
+        fi
+    else
+        gone=0
     fi
     sleep 0.5
 done
