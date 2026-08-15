@@ -918,6 +918,13 @@ module BareRubyProt
       /* `BRLOAD` and eight hex digits of length. Anything else on this channel is a
          program's own output and is left alone. */
       static void bareruby_watch(void) {
+          /* Core 0 was registered as the flash lockout victim before this core started.
+             Persisting here therefore takes the same proven path as resident deploy:
+             core 1 performs the flash operation while core 0 keeps USB alive. Give the
+             first descriptor exchange time to finish before briefly locking it out. */
+          sleep_ms(1000);
+          bareruby_persist_attached_name();
+
           char asked[BARERUBY_TAKE_LENGTH + 9];
           uint32_t held = 0;
           int one;
@@ -946,7 +953,6 @@ module BareRubyProt
 
       extern "C" void bareruby_agent_start(void) {
           flash_safe_execute_core_init();
-          bareruby_persist_attached_name();
           multicore_launch_core1(bareruby_watch);
       }
       #endif
