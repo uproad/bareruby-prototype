@@ -842,6 +842,14 @@ exact firmware descriptor and four-board CDC deployment are therefore proved; ma
 current `usbipd list` column use it is a Windows host-tool change, not another firmware
 descriptor.
 
+Copying each bound device's `DEVPKEY_Device_BusReportedDeviceDesc` into usbipd-win's saved
+`Description` made that host-tool change without touching the device. Its connected list
+then read `BareRuby Debug Firm RP Pico1 (pico1)`, `(pico1-2)`, `(pico1-3)`, and
+`BareRuby Debug Firm RP Pico1W (pico1w-2)` for the four boards. All remained attached at
+the same Windows bus ids and appeared in WSL as four distinct `ttyACM` devices. The copy
+needs one Administrator PowerShell run after newly named devices are bound; it is recorded
+in the README rather than hidden as a firmware result.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

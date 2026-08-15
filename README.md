@@ -687,6 +687,28 @@ and the board: `BareRuby Debug Firm RP Pico1 (pico1_01)` on a Pico, and
 `BareRuby Debug Firm RP Pico1W (pico1w_01)` on a Pico W. The attached name remains the USB
 serial as well, because that is the stable key deployment uses.
 
+`usbipd-win` stores the Windows description when a device is bound and displays that copy
+rather than the product string of a CDC composite device. After binding newly named boards,
+run this once in an Administrator PowerShell to copy their reported products into that
+record:
+
+```powershell
+$root = "HKLM:\SOFTWARE\usbipd-win\Devices"
+Get-ChildItem $root | ForEach-Object {
+  $item = Get-ItemProperty $_.PSPath
+  if ($item.InstanceId -like "USB\VID_2E8A&PID_000A\*") {
+    $reported = (Get-PnpDeviceProperty -InstanceId $item.InstanceId `
+      -KeyName "DEVPKEY_Device_BusReportedDeviceDesc" -ErrorAction SilentlyContinue).Data
+    if ($reported -like "BareRuby Debug Firm RP Pico*") {
+      Set-ItemProperty $_.PSPath -Name Description -Value $reported
+    }
+  }
+}
+```
+
+This changes only usbipd's saved display text. The CDC interfaces, attachment and board
+serials stay as they were.
+
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
 flashed afterwards keeps it, and one firmware serves every board. A board that has never
