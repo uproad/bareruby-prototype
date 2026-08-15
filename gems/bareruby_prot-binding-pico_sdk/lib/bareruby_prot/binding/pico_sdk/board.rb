@@ -179,15 +179,14 @@ module BareRubyProt
         #include "hardware/flash.h"
         #include "hardware/sync.h"
         #include "hardware/watchdog.h"
+        #include "pico/bootrom.h"
         #include "pico/stdlib.h"
 
         static const uint8_t firmware[] = { #{firmware} };
         static const uint8_t identity[FLASH_PAGE_SIZE] = { #{identity} };
-        static uint8_t page[FLASH_PAGE_SIZE];
+        static uint8_t page[FLASH_PAGE_SIZE] __attribute__((aligned(4)));
 
-        int main(void) {
-            save_and_disable_interrupts();
-
+        static void install(void) {
             uint32_t sectors = (sizeof(firmware) + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
             for (uint32_t sector = 0; sector < sectors; ++sector) {
                 flash_range_erase(sector * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
@@ -203,7 +202,38 @@ module BareRubyProt
             uint32_t identity_offset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
             flash_range_erase(identity_offset, FLASH_SECTOR_SIZE);
             flash_range_program(identity_offset, identity, FLASH_PAGE_SIZE);
-            watchdog_reboot(0, 0, 0);
+        }
+
+        static bool installed(void) {
+            const uint8_t *written = (const uint8_t *)XIP_BASE;
+            for (uint32_t byte = 0; byte < sizeof(firmware); ++byte) {
+                if (written[byte] != firmware[byte]) {
+                    return false;
+                }
+            }
+            written = (const uint8_t *)(XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE);
+            for (uint32_t byte = 0; byte < FLASH_PAGE_SIZE; ++byte) {
+                if (written[byte] != identity[byte]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        int main(void) {
+            save_and_disable_interrupts();
+            for (uint32_t attempt = 0; attempt < 3; ++attempt) {
+                install();
+                if (installed()) {
+                    watchdog_reboot(0, 0, 0);
+                    for (;;) {
+                        __asm volatile ("nop");
+                    }
+                }
+            }
+
+            /* A failed installer remains recoverable and makes attach fail visibly. */
+            reset_usb_boot(0, 0);
             for (;;) {
                 __asm volatile ("nop");
             }
