@@ -64,6 +64,7 @@ module BareRubyProt
 
     PROGRAM_FILE = "main.cpp"
     IDENTITY_FILE = "identity.cpp"
+    RESIDENT_UPDATE_FILE = "resident_update.cpp"
 
     # A .uf2 is a stream of fixed blocks: a 32-byte header, 476 bytes of room for a payload,
     # and a mark at the end. The bootloader takes each block as it arrives and writes the
@@ -140,6 +141,7 @@ module BareRubyProt
       program = PROGRAM.sub("BARERUBY_AGENT_NAME_BYTES", bytes)
       { PROGRAM_FILE => program,
         IDENTITY_FILE => PicoSdkBinding::IDENTITY,
+        RESIDENT_UPDATE_FILE => PicoSdkBinding::RESIDENT_UPDATE,
         "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
     end
 
@@ -302,7 +304,7 @@ module BareRubyProt
         chip = #{target.machine.chip}
         attached_name = #{name.to_s[0, NAME_SIZE - 1]}
         toolchain = arm-none-eabi-g++
-        sources = #{PROGRAM_FILE} #{IDENTITY_FILE}
+        sources = #{PROGRAM_FILE} #{IDENTITY_FILE} #{RESIDENT_UPDATE_FILE}
         stdout_channel = usb
         usb_descriptors = own
         artifact = #{IMAGE}
@@ -330,7 +332,7 @@ module BareRubyProt
 
         pico_sdk_init()
 
-        add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE})
+        add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE} #{RESIDENT_UPDATE_FILE})
         target_compile_options(#{AGENT} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
         target_link_libraries(#{AGENT}
             pico_stdlib

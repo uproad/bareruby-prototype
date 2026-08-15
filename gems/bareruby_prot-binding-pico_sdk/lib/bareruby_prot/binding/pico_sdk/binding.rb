@@ -565,18 +565,11 @@ module BareRubyProt
       #if LIB_PICO_STDIO_USB
 
       #include <stdio.h>
-      #include <stdlib.h>
       #include <string.h>
 
       #include "hardware/flash.h"
-      #include "hardware/structs/psm.h"
-      #include "hardware/structs/watchdog.h"
       #include "hardware/sync.h"
-      #include "hardware/watchdog.h"
       #include "pico/flash.h"
-      #include "pico/multicore.h"
-      #include "pico/stdio_usb.h"
-      #include "pico/stdlib.h"
       #include "pico/unique_id.h"
       #include "pico/usb_reset.h"
       #include "tusb.h"
@@ -626,7 +619,7 @@ module BareRubyProt
                               bareruby_attached_page, FLASH_PAGE_SIZE);
       }
 
-      static void bareruby_persist_attached_name(void) {
+      extern "C" void bareruby_persist_attached_name(void) {
           if (!bareruby_attaching ||
               memcmp((const void *)BARERUBY_NAME_PAGE,
                      bareruby_attached_page, FLASH_PAGE_SIZE) == 0) {
@@ -796,6 +789,30 @@ module BareRubyProt
           desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * len + 2));
           return desc_str;
       }
+      #endif
+    CPP
+
+    # The resident updater is separate from USB identity: it listens for BRLOAD, stages
+    # the image, replaces flash from RAM, and reboots. It reaches identity only once to
+    # persist an attach-time name after USB has enumerated.
+    RESIDENT_UPDATE = <<~CPP
+      #if LIB_PICO_STDIO_USB
+
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      #include "hardware/flash.h"
+      #include "hardware/structs/psm.h"
+      #include "hardware/structs/watchdog.h"
+      #include "hardware/sync.h"
+      #include "hardware/watchdog.h"
+      #include "pico/flash.h"
+      #include "pico/multicore.h"
+      #include "pico/stdio_usb.h"
+      #include "pico/stdlib.h"
+
+      extern "C" void bareruby_persist_attached_name(void);
 
       /* ---- Taking a new program without going through the bootloader ----------------
          **A board in BOOTSEL has no name.** The name lives in a page this board's own
@@ -983,6 +1000,7 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_pico.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_pico.cpp"
     IDENTITY_FILE = "bareruby_binding_identity_pico.cpp"
+    RESIDENT_UPDATE_FILE = "bareruby_binding_resident_update_pico.cpp"
 
     # A board whose indicator is on a pin of the microcontroller. Which pin is the
     # board's answer, not this file's: pico-sdk's board header defines
@@ -1054,6 +1072,7 @@ module BareRubyProt
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
       IDENTITY_FILE => IDENTITY,
+      RESIDENT_UPDATE_FILE => RESIDENT_UPDATE,
       ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN,
       ONBOARD_LED_RADIO_FILE => ONBOARD_LED_RADIO
     }.freeze
@@ -1076,7 +1095,7 @@ module BareRubyProt
     # Its name is not something a program asks for, so nothing in the Ruby reaches this
     # unit and no peripheral key names it. **What it answers is asked by the host**, over
     # USB, before the program has run a line.
-    ALWAYS = [PERIPHERAL_FILE, IDENTITY_FILE].freeze
+    ALWAYS = [PERIPHERAL_FILE, IDENTITY_FILE, RESIDENT_UPDATE_FILE].freeze
 
     # Reaching the radio's indicator is a driver and a firmware blob rather than a
     # register write, so the way that does it carries what it needs linked.
