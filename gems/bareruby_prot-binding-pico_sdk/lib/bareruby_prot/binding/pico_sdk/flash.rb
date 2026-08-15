@@ -60,7 +60,13 @@ module BareRubyProt
       running = wanted.values.flatten.reject(&:bootsel?)
       return found(wanted, listing) if running.empty?
 
-      running = running.reject { |board| board.serial == entry_of(wanted, board)&.name }
+      # An explicit board name was installed by `target attach` just as surely as the
+      # entry's own name was. Every such running board has the resident listener, so keep
+      # all of them out of the nameless BOOTSEL path.
+      running = running.reject do |board|
+        entry = entry_of(wanted, board)
+        entry && (board.serial == entry.name || entry.boards.map(&:to_s).include?(board.serial))
+      end
       return found(wanted, listing) if running.empty?
 
       reset(running)
