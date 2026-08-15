@@ -56,6 +56,11 @@
 #             which looks exactly like the board having been unplugged. An RP2350 reports
 #             one number for both. There is nothing to look up to fill this in: flashing
 #             refuses when two boards carry one chip and prints the serials it found.
+#
+#             `bareruby target attach --target=<this entry>` removes the question instead:
+#             it writes this entry's own name into the board, and the board reports that
+#             name from then on. What goes here is then the name above rather than a
+#             number nobody chose.
 #   options:  optional. What only this desk knows, passed to the binding that needs it.
 #
 # The first three fields of an entry are true of the project; boards and options are true

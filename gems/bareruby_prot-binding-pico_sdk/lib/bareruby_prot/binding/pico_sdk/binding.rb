@@ -252,8 +252,13 @@ module BareRubyProt
       #include "hardware/uart.h"
       #include "pico/stdlib.h"
 
+      /* The identity unit defines this where there is a USB channel to listen on. A
+         release firmware presents none, so the default stands and nothing is started. */
+      extern "C" __attribute__((weak)) void bareruby_agent_start(void) {}
+
       void bareruby_startup(void) {
           stdio_init_all();
+          bareruby_agent_start();
       }
 
       /* The uart_interrupt unit overrides this when a program says on_line; otherwise
@@ -535,6 +540,453 @@ module BareRubyProt
       }
     CPP
 
+    # **What the board is called, and the board saying it.**
+    #
+    # A Pico announces itself over USB as "Pico", made by "Raspberry Pi", and — in its
+    # bootloader — as a serial number three identical boards on one desk all answer to.
+    # There is nothing in that a desk can point at. So the name a target is recorded under
+    # is written into the board itself, and the board hands it back as its USB serial
+    # number: the desk asks for a name and gets the board that was given it.
+    #
+    # The name is data rather than code. It sits in a page of flash that no image reaches,
+    # is written once by `target attach`, and survives every program flashed afterwards —
+    # so one firmware serves every board and no build has to be told which board it is for.
+    #
+    # pico-sdk writes the USB descriptors itself unless the build says otherwise, and the
+    # build says otherwise only where there is a USB interface at all. A release firmware
+    # presents none, which is why the whole of this is asked of LIB_PICO_STDIO_USB: a board
+    # with nothing to speak on has no name to say.
+    #
+    # **It reaches for nothing this compiler made.** Every other unit here is written beside
+    # a program and includes the declarations that program generated. This one is about the
+    # board rather than about any program, which is what lets the agent `target attach`
+    # writes carry it with no program anywhere near it.
+    IDENTITY = <<~CPP
+      #if LIB_PICO_STDIO_USB
+
+      #include <stdio.h>
+      #include <string.h>
+
+      #include "hardware/flash.h"
+      #include "hardware/sync.h"
+      #include "pico/flash.h"
+      #include "pico/unique_id.h"
+      #include "pico/usb_reset.h"
+      #include "tusb.h"
+
+      /* The reserved page is the first page of the last sector of this board's flash. The
+         board header sizes the flash, so one expression names the end of a 2 MB Pico and
+         of a 4 MB Pico 2 without either being spelled out here, and the largest image
+         measured — 553 KB, a Pico 2 W carrying the radio's firmware — is nowhere near it. */
+      #define BARERUBY_NAME_PAGE (XIP_BASE + PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+
+      /* An erased sector reads 0xFF throughout, so a board that has never been attached
+         says so by not carrying the mark, and answers with the chip's own id instead. */
+      #define BARERUBY_NAME_MARK "BARERUBY"
+      #define BARERUBY_NAME_MARK_LENGTH 8
+
+      /* The attach agent carries the requested name in RAM first, so its USB descriptor
+         can say the right thing without asking a bootloader to update a used flash page.
+         Once USB is up, the same safe flash mechanism resident deploy uses persists the
+         page. Programs deployed afterwards simply keep reading it. */
+      static uint8_t bareruby_attached_page[FLASH_PAGE_SIZE];
+      static bool bareruby_attaching;
+
+      extern "C" void bareruby_agent_attach(const uint8_t *name, size_t length) {
+          uint32_t byte;
+          if (length > FLASH_PAGE_SIZE - BARERUBY_NAME_MARK_LENGTH - 1) {
+              length = FLASH_PAGE_SIZE - BARERUBY_NAME_MARK_LENGTH - 1;
+          }
+          for (byte = 0; byte < FLASH_PAGE_SIZE; ++byte) {
+              bareruby_attached_page[byte] = 0xff;
+          }
+          for (byte = 0; byte < BARERUBY_NAME_MARK_LENGTH; ++byte) {
+              bareruby_attached_page[byte] = BARERUBY_NAME_MARK[byte];
+          }
+          for (byte = 0; byte < length; ++byte) {
+              bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + byte] = name[byte];
+          }
+          bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + length] = 0;
+          bareruby_attaching = true;
+      }
+
+      static void bareruby_attach_erase(void *offset) {
+          flash_range_erase(*(uint32_t *)offset, FLASH_SECTOR_SIZE);
+      }
+
+      static void bareruby_attach_program(void *offset) {
+          flash_range_program(*(uint32_t *)offset,
+                              bareruby_attached_page, FLASH_PAGE_SIZE);
+      }
+
+      extern "C" void bareruby_persist_attached_name(void) {
+          if (!bareruby_attaching ||
+              memcmp((const void *)BARERUBY_NAME_PAGE,
+                     bareruby_attached_page, FLASH_PAGE_SIZE) == 0) {
+              return;
+          }
+
+          uint32_t offset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
+          if (flash_safe_execute(bareruby_attach_erase, &offset, UINT32_MAX) == 0) {
+              flash_safe_execute(bareruby_attach_program, &offset, UINT32_MAX);
+          }
+      }
+
+      static const char *bareruby_board_name(void) {
+          if (bareruby_attaching) {
+              return (const char *)bareruby_attached_page + BARERUBY_NAME_MARK_LENGTH;
+          }
+          const char *page = (const char *)BARERUBY_NAME_PAGE;
+          if (memcmp(page, BARERUBY_NAME_MARK, BARERUBY_NAME_MARK_LENGTH) != 0) {
+              return NULL;
+          }
+          return page + BARERUBY_NAME_MARK_LENGTH;
+      }
+
+      /* From here down this is pico-sdk's own descriptor set, which the build switched off
+         to make room for this one. **The vendor and product ids are kept exactly**: the
+         flasher tells an RP2040 from an RP2350 by the product id, and a board that renamed
+         itself out of that table would be a board nothing could find. */
+      #define USBD_VID (0x2E8A)
+      #if PICO_RP2040
+      #define USBD_PID (0x000a)
+      #else
+      #define USBD_PID (0x0009)
+      #endif
+
+      #define USBD_MANUFACTURER "Raspberry Pi"
+      #define USBD_PRODUCT BARERUBY_USB_PRODUCT
+
+      #if !PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+      #define USBD_ITF_MAX (2)
+      #else
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_RPI_RESET_DESC_LEN)
+      #define USBD_ITF_RPI_RESET (2)
+      #define USBD_ITF_MAX (3)
+      #endif
+
+      #define USBD_ITF_CDC (0)
+      #define USBD_CDC_EP_CMD (0x81)
+      #define USBD_CDC_EP_OUT (0x02)
+      #define USBD_CDC_EP_IN (0x82)
+      #define USBD_CDC_CMD_MAX_SIZE (8)
+      #define USBD_CDC_IN_OUT_MAX_SIZE (64)
+
+      #define USBD_STR_LANGUAGE (0x00)
+      #define USBD_STR_MANUF (0x01)
+      #define USBD_STR_PRODUCT (0x02)
+      #define USBD_STR_SERIAL (0x03)
+      #define USBD_STR_CDC (0x04)
+      #define USBD_STR_RPI_RESET (0x05)
+
+      /* Long enough for the visible product wrapped around the longest persisted name. */
+      #define USBD_DESC_STR_MAX (64)
+
+      static const tusb_desc_device_t usbd_desc_device = {
+          .bLength = sizeof(tusb_desc_device_t),
+          .bDescriptorType = TUSB_DESC_DEVICE,
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE && PICO_USB_RESET_SUPPORT_MS_OS_20_DESCRIPTOR
+          .bcdUSB = 0x0210,
+      #else
+          .bcdUSB = 0x0200,
+      #endif
+          .bDeviceClass = TUSB_CLASS_MISC,
+          .bDeviceSubClass = MISC_SUBCLASS_COMMON,
+          .bDeviceProtocol = MISC_PROTOCOL_IAD,
+          .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+          .idVendor = USBD_VID,
+          .idProduct = USBD_PID,
+          .bcdDevice = 0x0100,
+          .iManufacturer = USBD_STR_MANUF,
+          .iProduct = USBD_STR_PRODUCT,
+          .iSerialNumber = USBD_STR_SERIAL,
+          .bNumConfigurations = 1,
+      };
+
+      static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
+          TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_LANGUAGE, USBD_DESC_LEN, 0, 250),
+
+          TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
+              USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
+
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+          TUD_RPI_RESET_DESCRIPTOR(USBD_ITF_RPI_RESET, USBD_STR_RPI_RESET),
+      #endif
+      };
+
+      /* In the order the indices above name them. The language, product, serial and CDC
+         function are answered rather than listed because three of those contain the name
+         this particular board carries. */
+      static const char *const usbd_desc_str[] = {
+          NULL,
+          USBD_MANUFACTURER,
+          NULL,
+          NULL,
+          NULL,
+      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
+          "Reset",
+      #endif
+      };
+
+      static char usbd_serial_str[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
+      static char usbd_product_str[USBD_DESC_STR_MAX];
+
+      const uint8_t *tud_descriptor_device_cb(void) {
+          return (const uint8_t *)&usbd_desc_device;
+      }
+
+      const uint8_t *tud_descriptor_configuration_cb(uint8_t index) {
+          (void)index;
+          return usbd_desc_cfg;
+      }
+
+      /* **The one string this file exists for.** A board that was attached answers with
+         the name it was attached under; one that never was answers with the chip's unique
+         id, which is what pico-sdk would have said. */
+      static const char *bareruby_serial_string(void) {
+          const char *named = bareruby_board_name();
+          if (named != NULL) {
+              return named;
+          }
+          if (usbd_serial_str[0] == 0) {
+              pico_get_unique_board_id_string(usbd_serial_str, sizeof(usbd_serial_str));
+          }
+          return usbd_serial_str;
+      }
+
+      static const char *bareruby_product_string(void) {
+          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s (%s)",
+                   USBD_PRODUCT, bareruby_serial_string());
+          return usbd_product_str;
+      }
+
+      const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
+          (void)langid;
+          static uint16_t desc_str[USBD_DESC_STR_MAX];
+
+          uint8_t len;
+          if (index == USBD_STR_LANGUAGE) {
+              desc_str[1] = 0x0409;
+              len = 1;
+          } else {
+              if (index >= sizeof(usbd_desc_str) / sizeof(usbd_desc_str[0])) {
+                  return NULL;
+              }
+              const char *str;
+              if (index == USBD_STR_SERIAL) {
+                  str = bareruby_serial_string();
+              } else if (index == USBD_STR_PRODUCT || index == USBD_STR_CDC) {
+                  str = bareruby_product_string();
+              } else {
+                  str = usbd_desc_str[index];
+              }
+              for (len = 0; len < USBD_DESC_STR_MAX - 1 && str[len]; ++len) {
+                  desc_str[1 + len] = str[len];
+              }
+          }
+
+          desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * len + 2));
+          return desc_str;
+      }
+      #endif
+    CPP
+
+    # The resident updater is separate from USB identity: it listens for BRLOAD, stages
+    # the image, replaces flash from RAM, and reboots. It reaches identity only once to
+    # persist an attach-time name after USB has enumerated.
+    RESIDENT_UPDATE = <<~CPP
+      #if LIB_PICO_STDIO_USB
+
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+
+      #include "hardware/flash.h"
+      #include "hardware/structs/psm.h"
+      #include "hardware/structs/watchdog.h"
+      #include "hardware/sync.h"
+      #include "hardware/watchdog.h"
+      #include "pico/flash.h"
+      #include "pico/multicore.h"
+      #include "pico/stdio_usb.h"
+      #include "pico/stdlib.h"
+
+      extern "C" void bareruby_persist_attached_name(void);
+
+      /* ---- Taking a new program without going through the bootloader ----------------
+         **A board in BOOTSEL has no name.** The name lives in a page this board's own
+         firmware reads and hands to USB, and the bootloader is the chip's ROM, which has
+         never heard of it. So every trip through BOOTSEL loses the one thing that says
+         which board this is — and a run that failed there left boards sitting in it,
+         nameless, for the next run to fail on in turn.
+
+         The way out is not to go. A board already running can be handed its next program
+         over the wire it is already talking on.
+
+         **Core 1 listens, because core 0 never comes back.** A BareRuby program is a loop
+         that does not return, so there is nowhere in it to ask whether a new one has
+         arrived. The other core has nothing else to do.
+
+         **What arrives is put somewhere else first.** The program cannot be written
+         straight into the place it is running from, so it is collected in a staging half
+         of the flash — reachable because writing there is writing somewhere this code is
+         not — and moved into place at the end, when there is nothing left to receive.
+
+         **The move runs from RAM.** Programming flash stops the chip reading flash, so a
+         loop that did it while itself living in flash would be sawing the branch it sits
+         on. `__no_inline_not_in_flash_func` keeps the whole loop in RAM; between writes
+         the chip can read flash again, which is what lets the same loop pick the next page
+         up out of staging. Interrupts are off for the whole of it, since every handler is
+         in the flash being replaced. */
+      #define BARERUBY_STAGING (PICO_FLASH_SIZE_BYTES / 2)
+      #define BARERUBY_TAKE "BRLOAD"
+      #define BARERUBY_TAKE_LENGTH 6
+
+      static uint32_t bareruby_taking;
+      static uint8_t bareruby_page[FLASH_PAGE_SIZE];
+
+      static void bareruby_program_page(void *offset) {
+          flash_range_program(*(uint32_t *)offset, bareruby_page, FLASH_PAGE_SIZE);
+      }
+
+      static void bareruby_erase_sector(void *offset) {
+          flash_range_erase(*(uint32_t *)offset, FLASH_SECTOR_SIZE);
+      }
+
+      /* **Nothing in flash may be called once the erasing starts** — including the things
+         nobody writes down as calls. The first version of this copied each page with
+         `memcpy`, which lives in the library, which lives in the flash being replaced: the
+         moment the first sector went, so did the copier's own memcpy, and what was left on
+         the board was half an image that could not answer for itself over USB. So the copy
+         is spelled out a byte at a time, inside the one function that RAM holds.
+
+         The pages are read between writes rather than during them, which is what makes
+         reading them possible at all: programming flash stops the chip reading flash, and
+         hands it back when it returns. */
+      static void __no_inline_not_in_flash_func(bareruby_move_and_reboot)(uint32_t length) {
+          uint32_t sectors = (length + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+          uint32_t written = 0;
+          uint32_t index;
+          uint32_t page;
+          uint32_t offset;
+          for (index = 0; index < sectors; index++) {
+              flash_range_erase(index * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
+              for (page = 0; page < FLASH_SECTOR_SIZE; page += FLASH_PAGE_SIZE) {
+                  offset = index * FLASH_SECTOR_SIZE + page;
+                  if (offset >= length) {
+                      break;
+                  }
+                  const uint8_t *from = (const uint8_t *)(XIP_BASE + BARERUBY_STAGING + offset);
+                  uint32_t byte;
+                  for (byte = 0; byte < FLASH_PAGE_SIZE; byte++) {
+                      bareruby_page[byte] = from[byte];
+                  }
+                  flash_range_program(offset, bareruby_page, FLASH_PAGE_SIZE);
+                  written += FLASH_PAGE_SIZE;
+              }
+          }
+          (void)written;
+
+          /* This function cannot return into the image it just replaced, nor call the
+             SDK's watchdog_reboot(), which lived in that image too. Trigger the same
+             ordinary flash reboot directly from the RAM-resident tail. */
+          hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
+          watchdog_hw->scratch[4] = 0;
+          hw_set_bits(&psm_hw->wdsel,
+              PSM_WDSEL_BITS & ~(PSM_WDSEL_ROSC_BITS | PSM_WDSEL_XOSC_BITS));
+          hw_clear_bits(&watchdog_hw->ctrl,
+              WATCHDOG_CTRL_PAUSE_DBG0_BITS |
+              WATCHDOG_CTRL_PAUSE_DBG1_BITS |
+              WATCHDOG_CTRL_PAUSE_JTAG_BITS);
+          hw_set_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_TRIGGER_BITS);
+          for (;;) {
+              __asm volatile ("nop");
+          }
+      }
+
+      static void bareruby_take(uint32_t length) {
+          uint32_t offset = 0;
+          uint32_t filled = 0;
+          uint32_t sector;
+          int one;
+          for (sector = 0; sector < length + FLASH_SECTOR_SIZE; sector += FLASH_SECTOR_SIZE) {
+              uint32_t at = BARERUBY_STAGING + sector;
+              flash_safe_execute(bareruby_erase_sector, &at, UINT32_MAX);
+          }
+          while (offset < length) {
+              one = getchar_timeout_us(5000000);
+              if (one == PICO_ERROR_TIMEOUT) {
+                  return;
+              }
+              bareruby_page[filled++] = (uint8_t)one;
+              offset++;
+              if (filled == FLASH_PAGE_SIZE || offset == length) {
+                  uint32_t at = BARERUBY_STAGING + offset - filled;
+                  while (filled < FLASH_PAGE_SIZE) {
+                      bareruby_page[filled++] = 0xff;
+                  }
+                  flash_safe_execute(bareruby_program_page, &at, UINT32_MAX);
+                  filled = 0;
+              }
+          }
+          /* Said before the move, because after it this program is gone. */
+          printf("BRDONE\\n");
+          sleep_ms(200);
+          /* **Parking the other core comes first, and interrupts go down after it.** The
+             parking is a conversation between the cores and it is carried by interrupts,
+             so a core that has already silenced its own has nothing left to hold that
+             conversation with: it asks, is never answered, and waits there. The board
+             goes on running the program it had, which is how this first showed itself —
+             the whole image arrived, the board said so, and then nothing happened. */
+          multicore_lockout_start_blocking();
+          save_and_disable_interrupts();
+          bareruby_move_and_reboot(length);
+      }
+
+      /* `BRLOAD` and eight hex digits of length. Anything else on this channel is a
+         program's own output and is left alone. */
+      static void bareruby_watch(void) {
+          /* Core 0 was registered as the flash lockout victim before this core started.
+             Persisting here therefore takes the same proven path as resident deploy:
+             core 1 performs the flash operation while core 0 keeps USB alive. Give the
+             first descriptor exchange time to finish before briefly locking it out. */
+          sleep_ms(1000);
+          bareruby_persist_attached_name();
+
+          char asked[BARERUBY_TAKE_LENGTH + 9];
+          uint32_t held = 0;
+          int one;
+          for (;;) {
+              one = getchar_timeout_us(500000);
+              if (one == PICO_ERROR_TIMEOUT) {
+                  continue;
+              }
+              asked[held++] = (char)one;
+              if (held < BARERUBY_TAKE_LENGTH) {
+                  continue;
+              }
+              if (memcmp(asked, BARERUBY_TAKE, BARERUBY_TAKE_LENGTH) != 0) {
+                  held = 0;
+                  continue;
+              }
+              if (held < sizeof(asked) - 1) {
+                  continue;
+              }
+              asked[sizeof(asked) - 1] = '\\0';
+              bareruby_taking = (uint32_t)strtoul(asked + BARERUBY_TAKE_LENGTH, NULL, 16);
+              held = 0;
+              bareruby_take(bareruby_taking);
+          }
+      }
+
+      extern "C" void bareruby_agent_start(void) {
+          flash_safe_execute_core_init();
+          multicore_launch_core1(bareruby_watch);
+      }
+      #endif
+    CPP
+
     # Every Raspberry Pi Pico board shares one binding: the peripherals are reached
     # through pico-sdk, which spells them the same way whichever chip is underneath.
     # Only the board name handed to the SDK tells the two apart.
@@ -547,6 +999,8 @@ module BareRubyProt
     UART_INTERRUPT_FILE = "bareruby_binding_uart_interrupt_pico.cpp"
     I2C_FILE = "bareruby_binding_i2c_pico.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_pico.cpp"
+    IDENTITY_FILE = "bareruby_binding_identity_pico.cpp"
+    RESIDENT_UPDATE_FILE = "bareruby_binding_resident_update_pico.cpp"
 
     # A board whose indicator is on a pin of the microcontroller. Which pin is the
     # board's answer, not this file's: pico-sdk's board header defines
@@ -617,6 +1071,8 @@ module BareRubyProt
       UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
+      IDENTITY_FILE => IDENTITY,
+      RESIDENT_UPDATE_FILE => RESIDENT_UPDATE,
       ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN,
       ONBOARD_LED_RADIO_FILE => ONBOARD_LED_RADIO
     }.freeze
@@ -636,7 +1092,10 @@ module BareRubyProt
       found.is_a?(Symbol) ? machine(machine).public_send(found) : found
     end
 
-    ALWAYS = [PERIPHERAL_FILE].freeze
+    # Its name is not something a program asks for, so nothing in the Ruby reaches this
+    # unit and no peripheral key names it. **What it answers is asked by the host**, over
+    # USB, before the program has run a line.
+    ALWAYS = [PERIPHERAL_FILE, IDENTITY_FILE, RESIDENT_UPDATE_FILE].freeze
 
     # Reaching the radio's indicator is a driver and a firmware blob rather than a
     # register write, so the way that does it carries what it needs linked.
@@ -663,6 +1122,11 @@ module BareRubyProt
     def self.tools = PicoSdkTools
 
     def self.flash = PicoSdkFlash
+
+    # What `bareruby target attach` reaches. A binding whose boards carry no name of their
+    # own does not declare this, and the command says so rather than failing — the same
+    # shape as `init` for a family that keeps no configuration.
+    def self.board = PicoSdkBoard
 
     def self.build = PicoSdkBuild
   end

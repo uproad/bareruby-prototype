@@ -125,6 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
+./bareruby target attach --target=pico       # once per board: BOOTSEL held, add and name it
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -140,6 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
+| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -153,6 +155,9 @@ thing in one verb and another in the next would be a difference nobody can be to
 
 **`build/` holds what was built, and nothing else** — one file per recorded target. Everything
 else, the generated C++ and the tree a toolchain leaves behind, lives under `.bareruby/`.
+The artifact and the small manifest needed to flash it again are also kept per target
+under `.bareruby/flash/`; a later `compile` can clear its own work without erasing what
+the last successful `build` made deployable.
 
 **Targets are built at the same time, each in a process of its own.** What they build with
 is fetched once before any of them start, and each compiles into a root only it writes, so
@@ -161,28 +166,28 @@ occupying one core of a desk that has many. Four targets that took 19.9s end to 
 8.6s, which is the longest single build plus a fraction. `--jobs=N` says how many at once;
 without it, as many as there are targets, up to the number of cores.
 
-**The boards are written at the same time too.** Two boards took 28.3s end to end and take
-10 to 14s together. What had to change first was not the writing but the finding: a board
-used to be followed across its reset by noticing which one appeared in BOOTSEL since a
-moment ago, which reads the whole bus to answer a question about one board. It is followed
-by the port it is plugged into instead — the one thing it keeps, where its serial is not
-(an RP2040 reports the bootrom's id in BOOTSEL and the flash id once pico-sdk is running).
-A line in `/etc/fstab` per board, which `--list` hands out, gives each one a mount point of
-its own, and the volume is asked which chip it belongs to before anything is written to it.
+**The boards are written at the same time too.** A named running Pico takes its next image
+over the USB serial connection it already has: the resident listener stages the bytes in
+the unused half of flash, moves them into place from RAM, and reboots. The name identifies
+the board before the transfer and after it comes back. That lets identical RP2040 boards
+take different images from different entries, or one image from a single entry whose
+`boards:` lists all of them, without entering their indistinguishable BOOTSEL state. Five
+successive two-board runs on WSL took 16.8 to 17.4s each; one three-board entry later
+streamed 29184 bytes to each board in a 7.0s flash stage.
 
-**A board being written moves the bus for everything else on it.** It reboots into its
-bootloader and back, arriving and leaving as two different USB devices, and the ports of
-every other board are renumbered around it. So the scans that find a board are written to
-be asked while that is happening: a device that vanishes between two lines of a scan is
-not a board rather than an error, and a board that is not there yet is asked for again
-until it is.
+The host does not count the old serial port as a successful return. The board says it has
+received the whole image before it replaces itself, then waits 200 ms and disconnects; a
+flash completes only after that port has disappeared and the same name has reappeared.
+That distinction matters to a command repeated immediately: accepting the port during the
+200 ms wait made one run report success just before the board vanished from the next.
 
-**So writing a board is three things, and only the last of them is writing.** Every board
-a run will reach is rebooted into its bootloader, the bus is then given time to settle,
-and everything on it is looked at **once** — the `FIND` column. Only then is anything
-written, and by that point every board is a device sitting still, so all of them are
-written at the same time. A board looked for while others are re-enumerating is looked for
-at the one moment nobody can be found.
+An unnamed running board still takes the BOOTSEL route. Every board on that route is reset,
+the bus is given time to settle, and everything on it is looked at **once** before any
+volume is written. A line in `/etc/fstab` per USB port, which `--list` hands out, gives
+each RP2040 bootloader a mount point of its own despite their shared serial. Scans also
+treat a device that vanishes during re-enumeration as a moving bus rather than a malformed
+board. This remains the first-write path; `target attach` is what makes later writes use
+the named resident path.
 
 **One line per USB port in `/etc/fstab`**, which `--list` prints. The line is keyed by the
 port rather than by the board on purpose: an RP2040's bootloader has no serial of its own
@@ -586,7 +591,9 @@ flash: 2 boards carry rp2040, so the image does not say which one to use.
 ```
 
 The serials it prints are the answer to the question it asked, so nothing has to be looked
-up to get past it.
+up to get past it. **A board can be given a name instead of a serial** — see
+[naming a board](#naming-a-board) — and `boards:` then reads as the name the entry already
+carries.
 
 **An RP2040 reports a different serial in BOOTSEL than while running** — the bootrom's id
 against the flash id pico-sdk reads. Both are stable per board, but a board cannot be
@@ -600,6 +607,123 @@ desk — `deploy` runs it and never has to be told, and by hand it is found with
 ```sh
 bundle exec gem contents bareruby_prot-binding-pico_sdk | grep flash.sh
 ```
+
+### Naming a board
+
+**A serial is a poor name for a board.** An RP2040's bootloader has none of its own —
+three boards measured on this desk, two of one model and one of another, all called
+themselves `E0C9125B0D9B`, down to the same model, revision and size — and the one its
+firmware reports is a number nobody chose. So a board can be given a name instead, once.
+
+Hold BOOTSEL on each board being named, plug it in, and run its entry's command:
+
+```sh
+./bareruby target attach --target=pico1h
+./bareruby target attach --target=pico1b
+./bareruby target attach --target=pico2
+```
+
+**No program of yours is involved.** What goes onto the board beside its name is the
+*agent*: a small resident firmware belonging to the Pico binding, the same one for every
+board of a machine, which brings USB up, says the name and waits for the next program on
+the other core. Programs arrive by `deploy` and `flash`, which are the verbs that carry
+programs, and they keep the name when they do. It costs about 29 KB of `text` on an
+RP2040.
+
+The name cannot travel entirely on its own — a page written by itself would leave the
+board running whatever it ran before, unnamed, and needing to be found a second time,
+which is the problem this ends. The agent is what makes that firmware something this side
+can supply rather than something to go and ask you for. The two are written in one pass,
+and the board comes back saying who it is:
+
+```
+SERIAL             CHIP     STATE    DEVICE         PORT
+pico1h_01          rp2040   running  /dev/ttyACM0   1-1
+pico1b_01          rp2040   running  /dev/ttyACM1   1-2
+pico2_01           rp2350   running  /dev/ttyACM3   1-4
+5D3F58054E676E14   rp2350   running  /dev/ttyACM4   1-5
+E66428C51F2B4F22   rp2040   running  /dev/ttyACM5   1-6
+```
+
+The first two are Pico 1 boards of the same model, which had nothing between them before.
+The last two have never been attached and report the chip's own id, which is what a board
+says until it is given something better.
+
+**`attach` writes that name into the entry's `boards:` itself**, so nothing has to be
+edited by hand afterwards:
+
+```yaml
+  - name: pico1h
+    machine: pico
+    binding: pico_sdk
+    triple: thumbv6m-none-eabi
+    debug: true
+    boards: [pico1h_01]
+```
+
+That is what lets two identical boards be deployed to at the same time, each getting its
+own entry's image. **Until every entry sharing a chip has one, flashing refuses** — a
+`pico` and a `pico_w` entry with empty `boards:` both take every RP2040 attached, and no
+image can say which board belongs to which. The refusal prints the `attach` line for each
+entry it is talking about.
+
+Repeating the same attach command adds another board to the same entry. Every board takes
+a two-digit suffix, beginning with `_01`, without changing the target name:
+
+```yaml
+  - name: pico1
+    machine: pico
+    binding: pico_sdk
+    triple: thumbv6m-none-eabi
+    debug: true
+    boards: [pico1_01, pico1_02, pico1_03]
+```
+
+That list is the complete answer when `flash` chooses devices, so all three take the one
+`pico1` artifact. Each name was installed with the resident listener, so all three use the
+running serial path; resetting them together into RP2040 BOOTSEL would discard the names
+and make their identical boot-ROM serials collide.
+
+While that firmware is running, its USB product string names both the BareRuby firmware
+and the board: `BareRuby Debug Firm RP Pico1 (pico1_01)` on a Pico, and
+`BareRuby Debug Firm RP Pico1W (pico1w_01)` on a Pico W. The attached name remains the USB
+serial as well, because that is the stable key deployment uses.
+
+`usbipd-win` stores the Windows description when a device is bound and displays that copy
+rather than the product string of a CDC composite device. After binding newly named boards,
+run this once in an Administrator PowerShell to copy their reported products into that
+record:
+
+```powershell
+$root = "HKLM:\SOFTWARE\usbipd-win\Devices"
+Get-ChildItem $root | ForEach-Object {
+  $item = Get-ItemProperty $_.PSPath
+  if ($item.InstanceId -like "USB\VID_2E8A&PID_000A\*") {
+    $reported = (Get-PnpDeviceProperty -InstanceId $item.InstanceId `
+      -KeyName "DEVPKEY_Device_BusReportedDeviceDesc" -ErrorAction SilentlyContinue).Data
+    if ($reported -like "BareRuby Debug Firm RP Pico*") {
+      Set-ItemProperty $_.PSPath -Name Description -Value $reported
+    }
+  }
+}
+```
+
+This changes only usbipd's saved display text. The CDC interfaces, attachment and board
+serials stay as they were.
+
+**The name is data rather than code.** It sits in the last sector of flash, which no image
+comes near — the largest measured here is 553 KB against a 2 MB board — so every program
+flashed afterwards keeps it, and one firmware serves every board. A board that has never
+been attached reports the chip's own id, exactly as pico-sdk would.
+
+**BOOTSEL is what says which board, and only the first time.** Before a board carries a
+name there is nothing else that could say it, so the choice is made by hand; after that it
+never has to be made again. `attach` asks the bus before it does anything else, and
+refuses when none or several boards of that chip are in BOOTSEL, for the same reason.
+
+**A bootloader still says nothing**: it is ROM, so a board in BOOTSEL reports what it
+always did. The name is read while the firmware runs, which is when the flasher chooses
+boards anyway — it picks them before it resets anything.
 
 ### From WSL
 
@@ -615,16 +739,19 @@ usbipd attach --busid <BUSID> --wsl --auto-attach
 
 **The bootloader and the running program are different USB devices** — `2e8a:0003` and
 `2e8a:000a` on an RP2040, `2e8a:000f` and `2e8a:0009` on an RP2350 — so bind the second
-one too, once the board has left BOOTSEL. And **`--auto-attach` is not optional** for a
+one too, once the board has left BOOTSEL. **And a board that has just been given a name is
+a third**: Windows files a USB device under its serial number, so the board that comes back
+out of `target attach` is one it has never seen, `Not shared`, needing `bind` once more.
+That is the whole of what naming costs here, and it is paid once per board. And **`--auto-attach` is not optional** for a
 board that stays plugged in: without it every reset drops the board out of WSL, and the
 next flash stops at "no board came back in BOOTSEL mode", which is WSL plumbing rather
 than the board.
 
-**Even with it, a board can take a few seconds to come back**, and a run that finds none
-in that window says so and stops. It is the same failure as above and the same cause: what
-comes back is a different USB device from what left. Running the same command again once
-the board is up is usually the whole of the answer, and `--jobs=1` reduces how much of the
-bus is moving at once.
+**Even with it, a board can take a few seconds to come back.** A named stream is not
+reported complete until its old port has left and its name has returned; if usbipd does
+not reattach it inside the timeout, that target fails instead of leaving the next command
+to discover the missing device. `--jobs=1` reduces how much of the bus is moving at once
+when diagnosing a USB path.
 
 ### On macOS
 

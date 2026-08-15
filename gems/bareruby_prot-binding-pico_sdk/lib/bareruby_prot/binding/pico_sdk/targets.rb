@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "binding"
+require_relative "board"
 require_relative "build"
 require_relative "toolchain"
 require_relative "flash"

@@ -7,29 +7,24 @@ module BareRubyProt
   # boards are candidates and only two of the same chip need telling apart. That is what
   # flash.sh does, and it is left in the shell it was proved on real hardware in.
   #
-  # **Writing a board is three things, and only the last of them is writing.** A board that
-  # is running has to be rebooted into its bootloader, the bus has to be given time to
-  # settle afterwards, and only then can anybody say which device is which. Done inside
-  # each board's own run, the middle of that lands on a bus that every other board is also
-  # moving: devices come and go between two lines of a scan, a listing is asked for and
-  # comes back empty, and where the boards arrive over usbipd rather than off a bus they
-  # can even come back holding each other's port.
+  # **A named running board does not need its bootloader to take a program.** Its resident
+  # listener stages the bytes and replaces the image itself, so its serial still says
+  # exactly which board is being written. An unnamed running board still has to be reset
+  # into BOOTSEL, the bus has to be given time to settle afterwards, and only then can
+  # anybody say which device is which. Done inside each board's own run, that middle step
+  # lands on a bus that every other board is also moving: devices come and go between two
+  # lines of a scan, a listing is asked for and comes back empty, and where the boards
+  # arrive over usbipd rather than off a bus they can even come back holding each other's
+  # port.
   #
-  # So the reset and the finding are done **once, for every board a run will write**, and
-  # the writing — which needs nothing but a device that is already sitting still — is what
-  # is left to run at the same time.
+  # So any reset and the finding are done **once, for every board a run will write**, and
+  # the writing — over a named port or onto a bootloader volume already sitting still — is
+  # what is left to run at the same time.
   module PicoSdkFlash
     SCRIPT = File.expand_path("flash.sh", __dir__)
     IMAGE = "bareruby_program.uf2"
     FAMILIES = { "e48bff56" => "rp2040", "e48bff57" => "rp2350" }.freeze
-
-    # **Which chips answer to the same name in both states.** An RP2350 reports one serial
-    # whether its bootloader or its firmware is running, so it can be picked out of a
-    # settled bus by name. An RP2040's bootloader does not have a name of its own: three
-    # boards on one desk — two of one model and one of another — all called themselves
-    # E0C9125B0D9B, down to the same model, revision and size. Those can only be counted,
-    # not named.
-    NAMED_IN_BOOTSEL = { "rp2350" => true, "rp2040" => false }.freeze
+    PROGRAM_FAMILIES = { "rp2040" => "e48bff56", "rp2350" => "e48bff59" }.freeze
 
     SETTLE_SECONDS = 100
     TICK = 0.5
@@ -50,14 +45,27 @@ module BareRubyProt
     # another question.
     def self.prepare(plans)
       listing = attached
-      wanted = plans.to_h { |entry, directory| [entry, chosen(entry, directory, listing)] }
+      names = plans.map { |entry, _| entry.name }
+      wanted = plans.to_h { |entry, directory| [entry, chosen(entry, directory, listing, names)] }
       return nil unless apart?(wanted)
 
       running = wanted.values.flatten.reject(&:bootsel?)
       return found(wanted, listing) if running.empty?
 
+      # An explicit board name was installed by `target attach` just as surely as the
+      # entry's own name was. Every such running board has the resident listener, so keep
+      # all of them out of the nameless BOOTSEL path.
+      running = running.reject do |board|
+        entry = entry_of(wanted, board)
+        entry && (board.serial == entry.name || entry.boards.map(&:to_s).include?(board.serial))
+      end
+      return found(wanted, listing) if running.empty?
+
       reset(running)
-      settled(listing, running) or return warned(running)
+      # **What came back is what is written.** A board that has not returned inside the
+      # window is one row's bad news, not the run's: the others are sitting in their
+      # bootloaders waiting, and failing them for its sake is failing work that was ready.
+      warned(running) unless settled(listing, running)
       found(wanted, attached)
     end
 
@@ -67,26 +75,54 @@ module BareRubyProt
     # them a board belongs to — so that is a question for the record rather than a guess
     # made here.
     def self.apart?(wanted)
-      open = wanted.reject { |entry, _| entry.boards.any? }
+      open = wanted.reject { |entry, boards| settled?(entry, boards) }
                    .group_by { |_, boards| boards.first&.chip }
                    .select { |chip, pairs| chip && pairs.length > 1 }
       open.each do |chip, pairs|
-        warn "flash: #{pairs.map { |entry, _| entry.name }.join(' and ')} each take every " \
-             "#{chip} board attached, so nothing says which board is which one's."
-        warn "       Name their serials under 'boards:' in config/target.yml. A running " \
-             "board answers to a serial of its own; the flasher's --list prints them."
+        named = pairs.map { |entry, _| entry.name }
+        warn "flash: #{named.join(' and ')} each take every #{chip} board attached, so " \
+             "nothing says which board is which one's."
+        warn "       Give each board the name of the entry it belongs to. That is one " \
+             "command a board, and it settles this for good:"
+        named.each { |one| warn "         bareruby target attach --target=#{one}" }
+        warn "       Or name their serials under 'boards:' in config/target.yml — a " \
+             "running board answers to a serial of its own, and the flasher's --list " \
+             "prints them."
       end
       open.empty?
     end
 
+    # An entry is settled either because the record named its boards or because a board is
+    # answering to its name, and the second is the one `target attach` exists to arrange.
+    # Counting only the first is what left an entry whose board was standing right there
+    # being asked which of two it meant.
+    def self.settled?(entry, boards)
+      entry.boards.any? || boards.any? { |board| board.serial == entry.name }
+    end
+
     # Which attached boards an entry is asking for: the ones it names, or every one
     # carrying its chip.
-    def self.chosen(entry, directory, listing)
+    # **An explicit list is the complete answer.** It can deliberately put several boards
+    # behind one entry, including the board whose name equals the entry, so it must be
+    # considered before that convenient single-board match.
+    #
+    # **A board that carries a name has already said whose it is.** With no explicit list,
+    # a board answering to this entry's name is this entry's, whatever else is attached.
+    #
+    # **And it is not anybody else's.** An entry naming no board takes every board of its
+    # chip, which used to mean every board including ones plainly spoken for — a shelf
+    # holding a board called `pico` and a board called `pico2` left `pico2w` reporting two
+    # candidates and refusing, when one of them had been answering to another entry all
+    # along. What is left over is what an entry naming nothing takes.
+    def self.chosen(entry, directory, listing, names = [])
       chip = chip_of(File.join(directory, IMAGE))
       carrying = listing.select { |board| board.chip == chip }
       return carrying.select { |board| entry.boards.map(&:to_s).include?(board.serial) } unless entry.boards.empty?
 
-      carrying
+      answering = carrying.select { |board| board.serial == entry.name }
+      return answering unless answering.empty?
+
+      carrying.reject { |board| (names - [entry.name]).include?(board.serial) }
     end
 
     # Bytes 28..31 of a .uf2 are the family id, which is the chip the image was built for.
@@ -120,6 +156,15 @@ module BareRubyProt
       false
     end
 
+    # Said by the row it happened to, rather than by the run. The board was reset and did
+    # not come back inside the window; every other row got on with its own board.
+    def self.nothing_came_back
+      warn "flash: this board was reset and did not come back in time to be written."
+      warn "       Where the boards arrive over usbipd, each reset re-enumerates a board " \
+           "and it has to be attached again; several at once is what it keeps up with least."
+      false
+    end
+
     def self.warned(running)
       warn "flash: #{running.length} board#{'s' unless running.one?} were reset and did " \
            "not all come back within #{SETTLE_SECONDS}s."
@@ -134,18 +179,18 @@ module BareRubyProt
     # one asking — which is right as long as the boards asking take the same image, and is
     # the reason two of them that do not are not written at the same time.
     def self.found(wanted, listing)
-      pool = listing.select(&:bootsel?)
+      # **Running boards are handed out too**, because a board that says its name takes its
+      # program without ever going to its bootloader. Only boards that had to be reset are
+      # waiting in one.
+      pool = listing.dup
       wanted.to_h do |entry, boards|
         [entry, boards.filter_map { |board| claim(board, pool) }]
       end
     end
 
     def self.claim(board, pool)
-      taken = if NAMED_IN_BOOTSEL[board.chip]
-                pool.find { |one| one.serial == board.serial } || pool.find { |one| one.chip == board.chip }
-              else
-                pool.find { |one| one.chip == board.chip }
-              end
+      taken = pool.find { |one| one.serial == board.serial } ||
+              pool.select(&:bootsel?).find { |one| one.chip == board.chip }
       pool.delete(taken)
       taken
     end
@@ -155,9 +200,13 @@ module BareRubyProt
     def self.run(directory, boards:, options: {}, found: nil)
       image = File.join(directory, IMAGE)
       return by_hand(image, boards) if found.nil?
-      return false if found.empty?
+      return nothing_came_back if found.empty?
 
       written(found, image)
+    end
+
+    def self.entry_of(wanted, board)
+      wanted.find { |_, boards| boards.include?(board) }&.first
     end
 
     # **The boards of one entry are written at the same time as each other.** They take the
@@ -169,8 +218,85 @@ module BareRubyProt
     # Threads rather than processes: every one of these is waiting on a program of somebody
     # else's, which is the wait Ruby lets go of.
     def self.written(found, image)
-      found.map { |board| Thread.new { Toolchain.aloud([SCRIPT, "--device", board.node, image]) } }
-           .map(&:value).all?
+      found.map { |board| Thread.new { one(board, image) } }.map(&:value).all?
+    end
+
+    # **A board that is running and says its name takes its next program over the wire it
+    # is already talking on.** Nothing is reset, nothing re-enumerates while the handing
+    # over happens, and the name — which lives in this board's firmware and not in the
+    # chip's ROM — is there before and after. A board in its bootloader is written the old
+    # way, which is what the first program of all arrives by.
+    def self.one(board, image)
+      board.bootsel? ? Toolchain.aloud([SCRIPT, "--device", board.node, image]) : streamed(board, image)
+    end
+
+    STREAM_MARK = "BRLOAD"
+    STREAM_DONE = "BRDONE"
+    STREAM_BAUD = "115200"
+    STREAM_SECONDS = 60
+    REBOOT_TICK = 0.05
+
+    def self.streamed(board, image)
+      bytes = flat(image)
+      warn "flash: #{board.serial} takes #{bytes.bytesize} bytes over #{board.node}"
+      system("stty", "-F", board.node, "raw", "-echo", STREAM_BAUD, %i[out err] => File::NULL)
+      File.open(board.node, "r+b") do |port|
+        port.write(format("%s%08x", STREAM_MARK, bytes.bytesize))
+        port.write(bytes)
+        port.flush
+        return false unless said(port, board)
+      end
+      back(board)
+    end
+
+    # **The board says it has the whole program before it moves it into place**, and that
+    # is the only thing that says so. A board answering to its name afterwards proves
+    # nothing on its own: it was answering to it beforehand too, so a run that sent
+    # nothing at all would look exactly like one that worked. What is waited for is the
+    # board's own word, said among whatever the program running on it is also saying.
+    def self.said(port, board)
+      deadline = Time.now + STREAM_SECONDS
+      held = +""
+      while Time.now < deadline
+        next unless IO.select([port], nil, nil, TICK)
+
+        held << port.readpartial(BUFFER)
+        return true if held.include?(STREAM_DONE)
+      end
+      warn "flash: #{board.serial} did not say it had the program."
+      false
+    end
+
+    BUFFER = 4096
+
+    # **The old port has to leave before the new one can count as back.** The board says
+    # BRDONE, waits 200 ms, and only then reboots. Seeing its name during that wait is
+    # still seeing the firmware about to disappear; accepting it made a flash finish just
+    # before the USB device left, so an immediately following run found no board at all.
+    def self.back(board)
+      deadline = Time.now + STREAM_SECONDS
+      left = false
+      while Time.now < deadline
+        present = attached.any? { |one| one.serial == board.serial && !one.bootsel? }
+        left ||= !present
+        return true if left && present
+
+        sleep REBOOT_TICK
+      end
+      warn "flash: #{board.serial} did not come back after taking its program."
+      false
+    end
+
+    # A .uf2 is addressed blocks of 256 bytes; what a board takes is the program family's
+    # bytes in address order. An RP2350 file also starts with an absolute-family metadata
+    # block at 0x10ffff00. The bootloader consumes that envelope, but it is not one of the
+    # bytes that belong at the start of flash.
+    def self.flat(image)
+      blocks = File.binread(image).unpack("a512" * (File.size(image) / 512))
+      family = PROGRAM_FAMILIES.fetch(chip_of(image)).to_i(16)
+      blocks.select { |block| block[28, 4].unpack1("V") == family }
+            .sort_by { |block| block[12, 4].unpack1("V") }
+            .map { |block| block[32, block[16, 4].unpack1("V")] }.join
     end
 
     # Reached where nobody prepared anything — the flasher run on its own, which does all

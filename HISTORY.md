@@ -728,6 +728,131 @@ had not brought back inside the settle. **The alternating failures are gone**: a
 starts with a board already in BOOTSEL now succeeds like any other, and the run after it
 succeeds too.
 
+### A board that says its own name
+
+Everything above works around a board having no name. The way out is to give it one.
+
+`bareruby target attach` writes the target entry's own name — `pico1h`, `pico2` — into a
+page of the board's flash, and the firmware reads it back and hands it to the host as its
+USB serial number. Windows files the board under it (`USB\VID_2E8A&PID_000A\PICO1H`), Linux
+publishes it in sysfs, and two Pico 1 boards of the same model, which had nothing between
+them, became `pico1h` and `pico1b`.
+
+Four things had to be true for that, and all four were measured rather than assumed.
+
+- **The name is data, not code.** It is the first page of the last flash sector —
+  `0x101FF000` on a 2 MB Pico, `0x103FF000` on a 4 MB Pico 2 — which no image comes near:
+  the largest measured here is 553 KB. So one firmware serves every board, and every
+  program flashed afterwards keeps the name.
+- **The descriptors have to be the program's own.** pico-sdk wraps its whole descriptor
+  file in `PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS`, so setting it to 0 hands the three
+  callbacks over. The vendor and product ids are kept exactly as the SDK writes them: the
+  flasher tells an RP2040 from an RP2350 by the product id. **Cost: 72 bytes of `text` and
+  44 of `bss` on an RP2040, 80 and 44 on an RP2350 — the `.uf2` did not change size.**
+- **The page travels with a firmware, and that firmware is the binding's own.** A page
+  written by itself would reboot the board into the unnamed firmware it already had —
+  needing the board found a second time, which is the problem this exists to end. So
+  `target attach` writes the *agent* beside it: a resident firmware that brings USB up,
+  says the name and waits for the next program on core 1, the same one for every board of
+  a machine, costing 29272 bytes of `text` on a Pico and 29264 on a Pico W. **No program
+  of the user's is in this** — programs are what `deploy` and `flash` carry, and they keep
+  the name when they arrive. The page goes first in the file, announcing two blocks and
+  supplying one, so the download stays open until the agent's blocks replace it; pico-sdk
+  plays the same trick with the block it puts in front of an RP2350 image.
+- **An RP2350 wants the family id that means "an address".** Given the page under
+  `e48bff59`, the family its own program carries, the bootloader wrote the program and
+  **silently dropped the page** — the board came back reporting `34319CF054AB3BD6` as
+  before. Under `e48bff57`, which says the block belongs to no image and goes where it
+  says, it came back as `pico2`. An RP2040 has no such id and needs none: it has no image
+  rules for a loose page to be outside of.
+
+The resident replacement path was then made complete rather than inferred from its first
+acknowledgement. The standalone agent had brought USB up but had never started the core-1
+listener, and the first mover that did receive an image could be inlined back into flash,
+return into the image it had erased, and call the flash-resident watchdog routine. The
+agent now starts the listener; the mover is explicitly no-inline in RAM, copies without a
+library call, and triggers the watchdog from its RAM-resident tail. Its generated RP2040
+and RP2350 ELFs put the mover and both flash operations at `0x200...`, rather than in the
+image being replaced.
+
+Two host-side boundaries mattered too. An RP2350 UF2 begins with absolute-family metadata
+at `0x10ffff00`; only its `e48bff59` program-family blocks are streamed. And `BRDONE` means
+the bytes have arrived, not that the 200 ms delayed reboot has happened, so the host now
+requires the old port to disappear and the same name to return before it reports success.
+Without that edge, immediately repeated runs alternated between apparent success and no
+board.
+
+`flash` also has to mean the last successful build after the compiler has done unrelated
+work. Its first version read the compiler's working directory, which every later `compile`
+or `build` clears; the artifact still plainly existed in `build/<target>/`, but flashing
+raised `ENOENT`. Each successful build now keeps the artifact and its manifest per entry
+under `.bareruby/flash/`, leaving public `build/` as one artifact per entry while making a
+later flash independent of compiler scratch state.
+
+On hardware, one Pico completed five successive streamed replacements, and two identical
+Picos named `pico1h` and `pico1b` completed five successive parallel runs, 2/2 each, in
+16.8 to 17.4s under WSL. The ports were renumbered between runs; the names and the images
+did not swap. A Pico W was then attached as `pico1w` and took its 37888-byte Pico W image
+over the same resident path five times. The last came after all 30 representative sources
+had been compiled and the compiler working tree cleared on every run, without the Pico W
+being confused with either plain Pico or losing the last built image.
+
+**BOOTSEL is what says which board, and only the first time.** Before a board carries a
+name there is nothing that could say it, so the choice is a button held by hand; afterwards
+it never has to be made again.
+
+**What it costs under WSL is one more `usbipd bind` per board.** Windows files a USB device
+under its serial number, so a board that has just been named is one it has never seen.
+
+The same entry can now own a shelf rather than one board. Repeated
+`target attach --target=pico1` runs assigned `pico1`, `pico1-2`, and `pico1-3` and appended
+all three to one `boards:` list. Two single-board assumptions had survived the earlier
+work: device selection returned the board matching the entry name before consulting the
+explicit list, and preparation trusted only that first board's resident listener while
+resetting the suffixed boards into BOOTSEL. The list is now authoritative in both places,
+so every listed running board is selected and streamed to without losing its name.
+
+That boundary matters on the RP2040 hardware measured here: all three ROM bootloaders
+reported `E0C9125B0D9B`, so two reset together cannot be distinguished reliably by the
+Windows USB stack. With all three running as `pico1`, `pico1-2`, and `pico1-3`, one
+`deploy --target=pico1` sent the same 29184 bytes over three CDC ports in parallel. The
+flash stage took 7.0s, the complete build-and-deploy took 14.5s, and all three names were
+present again afterwards. The CDC 1200-baud reset remains available, while the unused
+vendor reset interface is omitted; each running board now presents two interfaces rather
+than three.
+
+The next names begin at `_01` rather than leaving the first board unsuffixed: a fresh
+`pico1` entry grows `pico1_01`, `pico1_02`, `pico1_03`. Existing lists still determine the
+next number by their length, so a desk already carrying the earlier spellings does not
+reuse a number while it is being changed over.
+
+The running USB descriptor now says `BareRuby Debug Firm RP Pico1 (<board name>)`, or
+`RP Pico1W`, `RP Pico2`, and `RP Pico2W` for the other machines, while keeping the SDK's
+vendor and product ids and the attached name as the serial. Four connected RP2040 boards
+— three Picos and one Pico W — accepted those images in one parallel deploy and all four
+returned on CDC as `pico1_01`, `pico1_02`, `pico1_03`, and `pico1w_01`.
+After separating USB identity from the resident updater and making its acknowledgement
+wait tolerate quiet intervals, the final run sent 38656 bytes to each Pico and 287744
+bytes to the Pico W, completing both target rows in 29.6s.
+
+Windows records that exact product in `DEVPKEY_Device_BusReportedDeviceDesc`, but
+`usbipd-win` does not print it for a CDC composite device: its list deliberately combines
+the friendly names of the direct children instead, which are the Windows USB serial
+driver's `USB Serial Device (COM...)` names. Reporting the device itself as vendor-specific
+removed that composite classification, but Linux then did not bind `cdc_acm`; the serial
+path disappeared and resident deploy could not finish. That experiment was reverted. The
+exact firmware descriptor and four-board CDC deployment are therefore proved; making the
+current `usbipd list` column use it is a Windows host-tool change, not another firmware
+descriptor.
+
+Copying each bound device's `DEVPKEY_Device_BusReportedDeviceDesc` into usbipd-win's saved
+`Description` made that host-tool change without touching the device. Its connected list
+then read `BareRuby Debug Firm RP Pico1 (pico1_01)`, `(pico1_02)`, `(pico1_03)`, and
+`BareRuby Debug Firm RP Pico1W (pico1w_01)` for the four boards. All remained attached at
+the same Windows bus ids and appeared in WSL as four distinct `ttyACM` devices. The copy
+needs one Administrator PowerShell run after newly named devices are bound; it is recorded
+in the README rather than hidden as a firmware result.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

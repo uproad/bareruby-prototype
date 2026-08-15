@@ -46,6 +46,11 @@ module BareRubyProt
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
+        target attach --target=NAME
+                            Hold BOOTSEL on one board and run this once per board: it
+                            writes NAME_01, NAME_02, ... into them and records every name
+                            under the entry. No program of yours is involved; deploy and
+                            flash are what carry those, to all of the boards at once.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -98,12 +103,125 @@ module BareRubyProt
       @progress&.finish
     end
 
+    # **The verb is taken off before the verb is answered**, so that what is left is what
+    # the verb was given. `target attach app/main.rb` names a source in the place every
+    # other command names one, and a source read out of the word `attach` is what leaving
+    # it on would have found.
     def target
-      case @arguments[0]
+      under = @arguments.shift
+      @command = "#{@command} #{under}"
+      case under
       when "add" then Catalog.add
+      when "attach" then attach
       when "list" then Catalog.list
       else usage
       end
+    end
+
+    # `bareruby target attach --target=pico`. An entry says which machine this is;
+    # attaching puts one board behind it, by writing the entry's name into the first and a
+    # numbered name into each one after that. Where in a board's flash a name goes, and how
+    # it gets there, is entirely the binding's, so this is dispatch as `init` is — and a
+    # binding whose boards carry no name of their own says so, which is an answer.
+    #
+    # **One entry, because one board is being named.** Every other command works on every
+    # entry the record holds when none is named; this one cannot, because the name it would
+    # write is the thing being chosen.
+    #
+    # **No program is named here, because none is written here.** What goes onto the board
+    # beside its name is the binding's own resident firmware, which is the same for every
+    # board of a machine; the user's program arrives by `deploy` and `flash`, which are the
+    # verbs that carry programs. So `attach` reaches for no source, and asking it for one
+    # was asking which program a board is called after.
+    #
+    # **The board is looked for first.** Everything after it takes seconds and none of it
+    # is any use if the button was not held, so that is answered while it can still be
+    # answered for nothing.
+    def attach
+      return attach_usage unless entries.one?
+
+      entry = entries.first
+      offered = entry.target.binding
+      unless offered.respond_to?(:board)
+        puts "bareruby: #{offered.key} boards carry no name of their own — nothing to attach."
+        return 0
+      end
+      board = offered.board.waiting(entry.target)
+      board ? written(entry, offered, board, Deployment.next_board_name(entry.name)) : 1
+    end
+
+    def written(entry, offered, board, board_name)
+      showing([entry], %i[tools attach])
+      fetched([entry])
+      attached(entry, offered, board, board_name) ? 0 : 1
+    end
+
+    # Where a binding puts the firmware it writes onto a board. It is the binding's to fill
+    # and this side's to place, as every other output is — and it is kept apart from what a
+    # compilation writes, because a compilation clears its own root and this is nothing a
+    # compilation produced.
+    ATTACHING = File.expand_path(".bareruby/attach", Dir.pwd)
+
+    def attaching_of(entry) = File.join(ATTACHING, entry.name)
+
+    # The board is written first and the record second, because the record is a claim about
+    # hardware: an entry saying it has a board that never took the name would send every
+    # later flash to a board answering to nothing.
+    # **Inside the stage, so that what is said comes out in the order it happened.** A run
+    # with a table up collects everything said while a stage runs and prints it above the
+    # table when the stage ends; a line said outside one is printed straight away, and so
+    # arrives before the account of what it followed.
+    def attached(entry, offered, board, board_name)
+      @progress.at(:attach, [entry]) do
+        next false unless offered.board.attach(name: board_name, target: entry.target,
+                                               directory: attaching_of(entry), board:)
+
+        recorded(entry, board_name)
+        true
+      end
+    end
+
+    def recorded(entry, board_name)
+      return unless Deployment.attached(entry.name, board_name)
+
+      warn "attach: #{Deployment::FILE.delete_prefix("#{Dir.pwd}/")} now reads " \
+           "boards: [#{Deployment.boards_of(entry.name).join(', ')}] for #{entry.name}, " \
+           "so flashing has nothing left to work out."
+    end
+
+    # **This one gets its own usage.** It is the only command that asks something of the
+    # hardware before it is run — a button held on one particular board — and a command
+    # whose precondition is physical cannot be guessed at from a line in a list.
+    ATTACH_USAGE = <<~USAGE
+      Usage: bareruby target attach --target=NAME
+
+        Hold BOOTSEL on the board being named, plug it in, and run this.
+
+        It puts one board behind one entry. They are called NAME_01, NAME_02, and so on,
+        in the order they are attached. The name goes into a page of the board's own flash,
+        and the board reports it over USB from then on. The entry's boards: keeps every
+        one of those names, so nothing has to be edited afterwards.
+
+        NAME is an entry's name in config/target.yml, and exactly one is named, because
+        one board is being named.
+
+        No program of yours is involved. What goes onto the board beside its name is a
+        small resident firmware, the same one for every board of that machine, which
+        brings USB up and says the name. Your program arrives with deploy or flash, and
+        keeps the name when it does.
+
+        The button is what says which board. Until a board carries a name, one
+        bootloader is indistinguishable from the next, so leave every other board of
+        that chip out of BOOTSEL. Run this once per board; after that the whole entry can
+        be deployed in parallel without touching the buttons again.
+    USAGE
+
+    # Named or not, the way out is the same list, so it is printed either way rather than
+    # made into a second sentence about how many were named.
+    def attach_usage
+      warn ATTACH_USAGE
+      warn "#{Deployment::FILE} records #{Deployment.entries.map(&:name).join(', ')}."
+      2
     end
 
     # An SDK and a cross compiler are gigabytes of somebody else's release, and every board
@@ -216,9 +334,9 @@ module BareRubyProt
     # the port a board is plugged into answers the second. Neither leaves anything for two
     # runs to take from each other.
     #
-    # **A board still takes its image one block at a time from one writer**, and the boards
-    # of a single entry are still written in turn: the row is the unit of the table, and
-    # several identical boards are one row.
+    # **A board still takes its image one block at a time from one writer.** The row is the
+    # unit this side schedules; a binding may fan one row out to several boards once it has
+    # found them without ambiguity, as the Pico binding does for a shelf taking one image.
     def flash
       planned = entries
       return nothing if planned.empty?
@@ -230,11 +348,12 @@ module BareRubyProt
     end
 
     # **Every board a run will write, put where it can be written from and then found —
-    # once, for all of them, before any of them is written.** A board that is running has
-    # to be rebooted into its bootloader first, and a bus with a board rebooting on it is
-    # the one bus nobody can be identified on: devices come and go between two lines of a
-    # scan, and a listing asked for at the wrong moment answers that nothing is there.
-    # Asked once, after everything has settled, it answers about all of them at once.
+    # once, for all of them, before any of them is written.** Some bindings can hand a
+    # named running board its image where it already is. An unnamed Pico has to be rebooted
+    # into its bootloader first, and a bus with a board rebooting on it is the one bus
+    # nobody can be identified on: devices come and go between two lines of a scan, and a
+    # listing asked for at the wrong moment answers that nothing is there. Asked once,
+    # after everything has settled, it answers about all of them at once.
     #
     # A binding with nothing to prepare has boards that are always where they are, which
     # is an answer rather than something missing.
@@ -243,15 +362,15 @@ module BareRubyProt
         planned.group_by { |entry| entry.target.binding }.each_with_object({}) do |(binding, group), all|
           next unless binding.flash.respond_to?(:prepare)
 
-          all.merge!(binding.flash.prepare(group.map { |entry| [entry, directory_of(entry)] }) || {})
+          all.merge!(binding.flash.prepare(group.map { |entry| [entry, flash_directory_of(entry)] }) || {})
         end
       end
     end
 
     def flashed(entry, found)
       @progress.at(:flash, [entry]) do
-        entry.target.binding.flash.run(directory_of(entry), boards: entry.boards,
-                                                            options: entry.options, found:)
+        entry.target.binding.flash.run(flash_directory_of(entry), boards: entry.boards,
+                                                                  options: entry.options, found:)
       end
     end
 
@@ -351,10 +470,25 @@ module BareRubyProt
       kept = File.join(ARTIFACTS, entry.name, File.basename(made))
       FileUtils.mkdir_p(File.dirname(kept))
       FileUtils.cp(made, kept)
+
+      # **Flashing later must not depend on the compiler's work directory surviving.** A
+      # compile clears that directory before it writes its own output, while `flash` means
+      # the last successful build and deliberately compiles nothing. Keep the artifact and
+      # the manifest its binding reads in a hidden, per-entry directory; public `build/`
+      # still contains the artifact and nothing else.
+      flashable = flash_directory_of(entry)
+      FileUtils.rm_rf(flashable)
+      FileUtils.mkdir_p(flashable)
+      FileUtils.cp(made, flashable)
+      FileUtils.cp(File.join(directory_of(entry), Toolchain::MANIFEST), flashable)
+
       @progress.artifact(entry, kept.delete_prefix("#{Dir.pwd}/"))
     end
 
     ARTIFACTS = File.expand_path("build", Dir.pwd)
+    FLASHABLES = File.expand_path(".bareruby/flash", Dir.pwd)
+
+    def flash_directory_of(entry) = File.join(FLASHABLES, entry.name)
 
     # A binding with no toolchain is one whose second stage the manifest already describes
     # in full, which is an answer rather than something missing: what to run and what it

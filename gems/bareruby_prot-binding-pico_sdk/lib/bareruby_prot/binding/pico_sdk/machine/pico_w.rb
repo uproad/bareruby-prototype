@@ -13,6 +13,12 @@ module BareRubyProt
 
       def self.pico_platform = "rp2040"
 
+      def self.usb_product = "BareRuby Debug Firm RP Pico1W"
+
+      # How much flash this board carries. The reserved page holding what the board is
+      # called sits at the top of it, so this is what says where.
+      def self.flash_bytes = 2 * 1024 * 1024
+
       def self.onboard_led_file = ONBOARD_LED_RADIO_FILE
 
       def self.onboard_led_libraries = [RADIO_LIBRARY]

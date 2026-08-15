@@ -51,6 +51,71 @@ module BareRubyProt
 
     def self.entries = recorded.map { |record| entry_of(record) }
 
+    # **A board has been attached to this entry, so the record says which board.** Every
+    # board answers with a numbered name, because several boards taking one artifact still
+    # have to answer as several USB devices.
+    #
+    # **Edited as the text it is.** The record opens with a comment on every field and is
+    # meant to be read, so a round trip through YAML would hand back a file with the
+    # explanation gone. One line of one entry changes.
+    #
+    # Answers whether anything changed. A board attached twice under one name was already
+    # recorded, and saying so a second time would claim something happened.
+    def self.attached(entry_name, board_name)
+      return false if boards_of(entry_name).include?(board_name)
+
+      lines = File.readlines(FILE)
+      span = entry_span(lines, entry_name)
+      at = span&.find { |one| lines[one].match?(/^\s*boards:/) }
+      return false unless at
+
+      File.write(FILE, added(lines, at, board_name).join)
+      true
+    end
+
+    # A shelf grows stable names in the order its boards are attached: pico1_01, pico1_02,
+    # pico1_03. The record is the source of the next number, so a new command continues
+    # where the previous one stopped.
+    def self.next_board_name(entry_name)
+      format("%s_%02d", entry_name, boards_of(entry_name).length + 1)
+    end
+
+    def self.boards_of(name)
+      Array(recorded.find { |one| one["name"].to_s == name }&.fetch("boards", nil)).map(&:to_s)
+    end
+
+    # The lines of the entry called this, from the mark that opens it to the one that opens
+    # the next. **The marks that open entries are the shallowest dashes in the file**, which
+    # is what tells them from the items of a list written inside one.
+    def self.entry_span(lines, name)
+      opens = lines.each_index.select { |at| lines[at].match?(/^\s*-\s/) }
+      shallowest = opens.map { |at| indent_of(lines[at]) }.min
+      opens = opens.select { |at| indent_of(lines[at]) == shallowest }
+      opens.each_with_index do |from, which|
+        span = from...(opens[which + 1] || lines.length)
+        return span if span.any? { |at| lines[at].match?(/name:\s*#{Regexp.escape(name)}\s*$/) }
+      end
+      nil
+    end
+
+    def self.indent_of(line) = line[/^\s*/].length
+
+    # **Two shapes, and each is left in the one it was found in.** A flow list sits on the
+    # key's own line, which is what an empty `boards: []` is; a block list hangs under it.
+    # Rewriting one into the other would be this side deciding how somebody's file looks.
+    def self.added(lines, at, name)
+      flow = lines[at].match(/^(?<lead>\s*)boards:\s*\[(?<held>.*)\]\s*$/)
+      return lines[0..at] + ["#{indent(lines[at])}  - #{name}\n"] + lines[(at + 1)..] unless flow
+
+      lines[0...at] + ["#{flow[:lead]}boards: [#{held(flow[:held], name)}]\n"] + lines[(at + 1)..]
+    end
+
+    def self.indent(line) = line[/^\s*/]
+
+    def self.held(carried, name)
+      (carried.split(",").map(&:strip).reject(&:empty?) + [name]).join(", ")
+    end
+
     def self.entry_of(record)
       Entry.new(
         target_of(record),

@@ -28,11 +28,12 @@ module BareRubyProt
     # command is neither — all three would be asked for a root they have no reason to have,
     # and the first thing anyone types after installing is one of them. Named this way
     # round, a command that is not on this list is simply run where it was typed.
-    # `target add` writes into the project and `target list` says what that project could
-    # record, so both belong to one, and the verb is not enough to answer for either half
-    # of the pair on its own.
+    # `target add` writes into the project, `target list` says what that project could
+    # record, and `target attach` reads an entry of it and writes what that entry's build
+    # left — so all three belong to one, and the verb is not enough to answer for any of
+    # them on its own.
     ROOTED = ["compile", "build", "flash", "deploy", "init",
-              "target add", "target list", "tools install"].freeze
+              "target add", "target attach", "target list", "tools install"].freeze
 
     # **What a run can see is what this project's bundle holds.** A gem installed at the
     # desk for some other project is not part of this answer — not even by existing. A
