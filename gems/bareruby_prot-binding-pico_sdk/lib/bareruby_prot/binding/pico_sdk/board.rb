@@ -344,13 +344,14 @@ module BareRubyProt
         pico_enable_stdio_usb(#{AGENT} 1)
         pico_enable_stdio_uart(#{AGENT} 0)
 
-        # The board is reset into BOOTSEL over the port rather than by the button from here
-        # on, and it answers with the name in its flash rather than with pico-sdk's own
-        # descriptors — which is the whole of why this firmware exists.
+        # The board is reset into BOOTSEL by opening its CDC port at 1200 baud rather than
+        # by the button from here on. The separate vendor reset interface is unnecessary
+        # for that path, and omitting its endpoints lets several agents coexist behind a
+        # resource-constrained USB host controller.
         target_compile_definitions(#{AGENT} PRIVATE
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
-            PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+            PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
             PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
         )
 

@@ -126,19 +126,20 @@ module BareRubyProt
         pico_enable_stdio_usb(bareruby_program 1)
         pico_enable_stdio_uart(bareruby_program 0)
 
-        # Keep the USB device enumerated so the board can be reset into BOOTSEL from
-        # the host instead of by replugging it with the button held.
+        # Keep the CDC device enumerated so opening it at 1200 baud can reset the board
+        # into BOOTSEL instead of requiring the button. The extra vendor reset interface
+        # is not involved in that path and would consume endpoints on every attached board.
         #
         # **And let the board name itself.** pico-sdk's own descriptors say "Pico" made by
         # "Raspberry Pi" and nothing that tells one board from another; switching them off
         # is what lets the identity unit answer with the name written into the board's
         # flash, which is the one thing a desk can ask for. Everything else about the
-        # descriptors — the ids, the interfaces, the reset interface above — is unchanged,
-        # because the flasher reads the product id to tell an RP2040 from an RP2350.
+        # descriptors — including the ids used to tell an RP2040 from an RP2350 — is
+        # unchanged.
         target_compile_definitions(bareruby_program PRIVATE
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
-            PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=1
+            PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
             PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
         )
       CMAKE
