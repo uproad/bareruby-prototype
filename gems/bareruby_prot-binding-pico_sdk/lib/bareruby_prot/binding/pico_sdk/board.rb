@@ -94,11 +94,10 @@ module BareRubyProt
     # family its program carries, wrote the program and silently dropped the page.
     LOOSE = { "rp2040" => 0xe48b_ff56, "rp2350" => 0xe48b_ff57 }.freeze
 
-    # **One block offered where two are announced, on purpose.** The bootloader reboots the
-    # board the moment a download is complete, and a complete download of one block would
-    # reboot it before the agent behind it in this file had arrived. Announcing a block that
-    # never comes leaves the download open until the agent's own blocks replace it — which
-    # is the same trick pico-sdk plays with the block it puts in front of an RP2350 image.
+    # **One block offered where two are announced, on purpose, for RP2350.** Its loose name
+    # page and program carry different family ids, so completing the first would reboot the
+    # board before the second arrived. An RP2040 carries one family for both and is instead
+    # assembled below as one complete, consistently numbered download.
     BLOCKS_ANNOUNCED = 2
 
     # **Which board this is for, asked before anything is built.** The button is something a
@@ -145,8 +144,33 @@ module BareRubyProt
       image = build(target, directory, name) or return false
 
       named = File.join(directory, "build", ATTACH_IMAGE)
-      File.binwrite(named, block(name, target) + File.binread(image))
+      File.binwrite(named, named_image(name, target, File.binread(image)))
       Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, named])
+    end
+
+    # An RP2040 name and program carry the same UF2 family id, so they are one download:
+    # every block announces the complete count and has one position in it. Besides keeping
+    # the bootloader from rebooting between them, this makes the name block a real write
+    # whose sector is erased first. Prepending a deliberately incomplete one happened to
+    # work on erased flash but could not reliably replace a name already there.
+    #
+    # An RP2350 uses a distinct absolute family for the loose name page; keep the measured
+    # two-download arrangement there, where the family is what makes the bootloader accept
+    # a page outside the program image.
+    def self.named_image(name, target, image)
+      return block(name, target) + image unless target.machine.chip == "rp2040"
+
+      program = image.bytes.each_slice(BLOCK_SIZE).map { |bytes| bytes.pack("C*") }
+      total = program.length + 1
+      blocks = [block(name, target, number: 0, total:)]
+      blocks.concat(program.each_with_index.map { |one, index| numbered(one, index + 1, total) })
+      blocks.join
+    end
+
+    def self.numbered(block, number, total)
+      block = block.dup
+      block[20, 8] = [number, total].pack("V2")
+      block
     end
 
     # The agent is built the way every other artifact here is: a manifest saying what it is
@@ -216,9 +240,9 @@ module BareRubyProt
 
     # The block the page travels in. Everything about it is fixed but three fields: where
     # it goes, which chip will take it, and what it says.
-    def self.block(name, target)
+    def self.block(name, target, number: 0, total: BLOCKS_ANNOUNCED)
       header = [MAGIC_START0, MAGIC_START1, FAMILY_ID_PRESENT, address(target),
-                PAYLOAD_SIZE, 0, BLOCKS_ANNOUNCED, LOOSE.fetch(target.machine.chip)].pack("V8")
+                PAYLOAD_SIZE, number, total, LOOSE.fetch(target.machine.chip)].pack("V8")
       padding = BLOCK_SIZE - HEADER_SIZE - PAYLOAD_SIZE - 4
       header + page(name) + ("\0" * padding) + [MAGIC_END].pack("V")
     end
