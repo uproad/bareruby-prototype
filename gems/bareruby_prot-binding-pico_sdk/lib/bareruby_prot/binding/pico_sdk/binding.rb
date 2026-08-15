@@ -592,6 +592,41 @@ module BareRubyProt
       #define BARERUBY_NAME_MARK "BARERUBY"
       #define BARERUBY_NAME_MARK_LENGTH 8
 
+      /* The BOOTSEL loader can program an erased name page, but cannot turn a zero back
+         into a one when an already attached board is given another name. The attach
+         agent therefore carries the requested name once, repairs the reserved sector
+         before USB starts, and only then presents its descriptor. Programs deployed
+         afterwards do not carry this call; they simply keep reading the repaired page. */
+      static uint8_t bareruby_attached_page[FLASH_PAGE_SIZE];
+
+      extern "C" void bareruby_agent_attach(const uint8_t *name, size_t length) {
+          uint32_t byte;
+          if (length > FLASH_PAGE_SIZE - BARERUBY_NAME_MARK_LENGTH - 1) {
+              length = FLASH_PAGE_SIZE - BARERUBY_NAME_MARK_LENGTH - 1;
+          }
+          for (byte = 0; byte < FLASH_PAGE_SIZE; ++byte) {
+              bareruby_attached_page[byte] = 0xff;
+          }
+          for (byte = 0; byte < BARERUBY_NAME_MARK_LENGTH; ++byte) {
+              bareruby_attached_page[byte] = BARERUBY_NAME_MARK[byte];
+          }
+          for (byte = 0; byte < length; ++byte) {
+              bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + byte] = name[byte];
+          }
+          bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + length] = 0;
+
+          if (memcmp((const void *)BARERUBY_NAME_PAGE,
+                     bareruby_attached_page, FLASH_PAGE_SIZE) == 0) {
+              return;
+          }
+
+          uint32_t interrupts = save_and_disable_interrupts();
+          uint32_t offset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
+          flash_range_erase(offset, FLASH_SECTOR_SIZE);
+          flash_range_program(offset, bareruby_attached_page, FLASH_PAGE_SIZE);
+          restore_interrupts(interrupts);
+      }
+
       static const char *bareruby_board_name(void) {
           const char *page = (const char *)BARERUBY_NAME_PAGE;
           if (memcmp(page, BARERUBY_NAME_MARK, BARERUBY_NAME_MARK_LENGTH) != 0) {

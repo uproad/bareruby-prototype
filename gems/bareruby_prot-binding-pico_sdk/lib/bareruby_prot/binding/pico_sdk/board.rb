@@ -16,10 +16,10 @@ module BareRubyProt
   # devices arrived in, or from a bootloader id three identical boards share.
   #
   # **No program of the user's is anywhere in this.** What is written beside the name is the
-  # agent: a firmware belonging to this binding that brings USB up, says what the board is
+  # agent: firmware belonging to this binding that brings USB up, says what the board is
   # called, and waits. Programs arrive later and by another verb — `deploy` and `flash` are
-  # what carry those — so naming a board never asks anybody which program they meant, and
-  # the same agent serves every board of a machine.
+  # what carry those — so naming a board never asks anybody which program they meant. Its
+  # resident logic is shared; its attach image carries the requested name for the first boot.
   #
   # The name has to travel with a firmware rather than on its own, because a page written by
   # itself would leave the board running whatever it ran before, unnamed, and needing to be
@@ -46,9 +46,12 @@ module BareRubyProt
     PROGRAM = <<~CPP
       #include "pico/stdlib.h"
 
+      extern "C" void bareruby_agent_attach(const uint8_t *name, size_t length);
       extern "C" void bareruby_agent_start(void);
 
       int main(void) {
+          static const uint8_t name[] = { BARERUBY_AGENT_NAME_BYTES };
+          bareruby_agent_attach(name, sizeof(name));
           stdio_init_all();
           bareruby_agent_start();
           for (;;) {
@@ -119,24 +122,27 @@ module BareRubyProt
       nil
     end
 
-    # The agent, built for this machine. It is the same firmware for every board of one
-    # machine — the name is data it reads rather than something compiled into it — so what
-    # decides the bytes is the machine and nothing else.
-    def self.build(target, directory)
+    # The agent, built for this machine. Its ordinary resident code reads the name as data
+    # from the reserved page. The attach build also carries that name long enough to repair
+    # the page on first boot, because flash that once held another name cannot set its zero
+    # bits back to one merely by accepting another UF2 block.
+    def self.build(target, directory, name)
       FileUtils.mkdir_p(directory)
-      files(target).each { |name, text| File.write(File.join(directory, name), text) }
+      files(target, name).each { |file, text| File.write(File.join(directory, file), text) }
       return nil unless Toolchain.as_recorded(directory, PicoSdkToolchain.environment)
 
       File.join(directory, "build", IMAGE)
     end
 
-    def self.files(target)
-      { PROGRAM_FILE => PROGRAM, IDENTITY_FILE => PicoSdkBinding::IDENTITY,
-        "manifest.txt" => manifest(target), "CMakeLists.txt" => cmake_lists(target) }
+    def self.files(target, name)
+      bytes = name.to_s[0, NAME_SIZE - 1].bytes.join(", ")
+      { PROGRAM_FILE => PROGRAM.sub("BARERUBY_AGENT_NAME_BYTES", bytes),
+        IDENTITY_FILE => PicoSdkBinding::IDENTITY,
+        "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
     end
 
     def self.attach(name:, target:, directory:, board:)
-      image = build(target, directory) or return false
+      image = build(target, directory, name) or return false
 
       named = File.join(directory, "build", ATTACH_IMAGE)
       File.binwrite(named, block(name, target) + File.binread(image))
@@ -145,11 +151,12 @@ module BareRubyProt
 
     # The agent is built the way every other artifact here is: a manifest saying what it is
     # and what turns it into one, read back by whoever runs the second stage.
-    def self.manifest(target)
+    def self.manifest(target, name)
       <<~MANIFEST
         target = agent
         board = #{target.machine.key}
         chip = #{target.machine.chip}
+        attached_name = #{name.to_s[0, NAME_SIZE - 1]}
         toolchain = arm-none-eabi-g++
         sources = #{PROGRAM_FILE} #{IDENTITY_FILE}
         stdout_channel = usb
