@@ -36,6 +36,8 @@ module BareRubyProt
     AGENT = "bareruby_agent"
     IMAGE = "#{AGENT}.uf2"
     ATTACH_IMAGE = "#{AGENT}_named.uf2"
+    INSTALLER = "#{AGENT}_installer"
+    INSTALLER_IMAGE = "#{INSTALLER}.uf2"
 
     # The agent's own translation unit. It brings USB up — which is what the identity unit
     # beside it needs in order to be asked anything — and then waits, because a board that
@@ -143,10 +145,111 @@ module BareRubyProt
 
     def self.attach(name:, target:, directory:, board:)
       image = build(target, directory, name) or return false
+      image = installer(name, target, directory) if target.machine.chip == "rp2040"
+      return false unless image
 
       named = File.join(directory, "build", ATTACH_IMAGE)
       File.binwrite(named, named_image(name, target, File.binread(image)))
       Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, named])
+    end
+
+    # RP2040's BOOTSEL transport proved able to start a small SRAM image on a board where
+    # writing the resident image through the mass-storage volume repeatedly left no
+    # bootable program. This installer follows pico-examples' flash_nuke design: it runs
+    # wholly from SRAM, erases flash itself, writes the already built agent and name page,
+    # and reboots. No USB stack or code from the flash being replaced is involved.
+    def self.installer(name, target, directory)
+      binary = File.binread(File.join(directory, "build", "#{AGENT}.bin"))
+      root = File.join(directory, "installer")
+      FileUtils.mkdir_p(root)
+      File.write(File.join(root, PROGRAM_FILE), installer_program(binary, name))
+      File.write(File.join(root, "manifest.txt"), installer_manifest(target))
+      File.write(File.join(root, "CMakeLists.txt"), installer_cmake_lists(target))
+      return nil unless Toolchain.as_recorded(root, PicoSdkToolchain.environment)
+
+      File.join(root, "build", INSTALLER_IMAGE)
+    end
+
+    def self.installer_program(binary, name)
+      firmware = binary.bytes.join(", ")
+      identity = page(name).bytes.join(", ")
+      <<~CPP
+        #include <stdint.h>
+
+        #include "hardware/flash.h"
+        #include "hardware/sync.h"
+        #include "hardware/watchdog.h"
+        #include "pico/stdlib.h"
+
+        static const uint8_t firmware[] = { #{firmware} };
+        static const uint8_t identity[FLASH_PAGE_SIZE] = { #{identity} };
+        static uint8_t page[FLASH_PAGE_SIZE];
+
+        int main(void) {
+            save_and_disable_interrupts();
+
+            uint32_t sectors = (sizeof(firmware) + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
+            for (uint32_t sector = 0; sector < sectors; ++sector) {
+                flash_range_erase(sector * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
+            }
+            for (uint32_t offset = 0; offset < sizeof(firmware); offset += FLASH_PAGE_SIZE) {
+                for (uint32_t byte = 0; byte < FLASH_PAGE_SIZE; ++byte) {
+                    uint32_t at = offset + byte;
+                    page[byte] = at < sizeof(firmware) ? firmware[at] : 0xff;
+                }
+                flash_range_program(offset, page, FLASH_PAGE_SIZE);
+            }
+
+            uint32_t identity_offset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
+            flash_range_erase(identity_offset, FLASH_SECTOR_SIZE);
+            flash_range_program(identity_offset, identity, FLASH_PAGE_SIZE);
+            watchdog_reboot(0, 0, 0);
+            for (;;) {
+                __asm volatile ("nop");
+            }
+        }
+      CPP
+    end
+
+    def self.installer_manifest(target)
+      <<~MANIFEST
+        target = agent_installer
+        board = #{target.machine.key}
+        chip = #{target.machine.chip}
+        toolchain = arm-none-eabi-g++
+        sources = #{PROGRAM_FILE}
+        artifact = #{INSTALLER_IMAGE}
+        build_command = cmake -B build -S . && cmake --build build
+      MANIFEST
+    end
+
+    def self.installer_cmake_lists(target)
+      machine = PicoSdkBinding.machine(target.machine)
+      <<~CMAKE
+        cmake_minimum_required(VERSION 3.13)
+
+        set(PICO_BOARD #{machine.pico_board})
+        set(PICO_PLATFORM #{machine.pico_platform})
+
+        include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+        project(#{INSTALLER} C CXX ASM)
+        set(CMAKE_C_STANDARD 11)
+        set(CMAKE_CXX_STANDARD 20)
+
+        pico_sdk_init()
+
+        add_executable(#{INSTALLER} #{PROGRAM_FILE})
+        target_compile_options(#{INSTALLER} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
+        target_link_libraries(#{INSTALLER}
+            pico_stdlib
+            hardware_flash
+            hardware_sync
+            hardware_watchdog
+        )
+        pico_set_binary_type(#{INSTALLER} no_flash)
+        pico_add_extra_outputs(#{INSTALLER})
+      CMAKE
     end
 
     # An RP2040 first boots the ordinary agent image, whose descriptor already carries the
