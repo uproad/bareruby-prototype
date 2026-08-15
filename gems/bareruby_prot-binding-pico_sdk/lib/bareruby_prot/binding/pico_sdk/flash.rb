@@ -26,14 +26,6 @@ module BareRubyProt
     FAMILIES = { "e48bff56" => "rp2040", "e48bff57" => "rp2350" }.freeze
     PROGRAM_FAMILIES = { "rp2040" => "e48bff56", "rp2350" => "e48bff59" }.freeze
 
-    # **Which chips answer to the same name in both states.** An RP2350 reports one serial
-    # whether its bootloader or its firmware is running, so it can be picked out of a
-    # settled bus by name. An RP2040's bootloader does not have a name of its own: three
-    # boards on one desk — two of one model and one of another — all called themselves
-    # E0C9125B0D9B, down to the same model, revision and size. Those can only be counted,
-    # not named.
-    NAMED_IN_BOOTSEL = { "rp2350" => true, "rp2040" => false }.freeze
-
     SETTLE_SECONDS = 100
     TICK = 0.5
 
@@ -266,7 +258,7 @@ module BareRubyProt
       deadline = Time.now + STREAM_SECONDS
       held = +""
       while Time.now < deadline
-        break unless IO.select([port], nil, nil, TICK)
+        next unless IO.select([port], nil, nil, TICK)
 
         held << port.readpartial(BUFFER)
         return true if held.include?(STREAM_DONE)

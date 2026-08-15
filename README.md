@@ -615,10 +615,12 @@ three boards measured on this desk, two of one model and one of another, all cal
 themselves `E0C9125B0D9B`, down to the same model, revision and size — and the one its
 firmware reports is a number nobody chose. So a board can be given a name instead, once.
 
-Hold BOOTSEL on the board being named, plug it in, and run one command:
+Hold BOOTSEL on each board being named, plug it in, and run its entry's command:
 
 ```sh
-./bareruby target attach --target=pico
+./bareruby target attach --target=pico1h
+./bareruby target attach --target=pico1b
+./bareruby target attach --target=pico2
 ```
 
 **No program of yours is involved.** What goes onto the board beside its name is the
