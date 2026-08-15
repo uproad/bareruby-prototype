@@ -592,12 +592,12 @@ module BareRubyProt
       #define BARERUBY_NAME_MARK "BARERUBY"
       #define BARERUBY_NAME_MARK_LENGTH 8
 
-      /* The RP2350 loose name-page download cannot turn a zero back into a one when an
-         already attached board is given another name. Its attach agent therefore carries
-         the requested name once as a fallback, repairs the reserved sector before USB
-         starts, and only then presents its descriptor. RP2040 uses one complete UF2 instead.
-         Programs deployed afterwards simply keep reading the repaired page. */
+      /* The attach agent carries the requested name in RAM first, so its USB descriptor
+         can say the right thing without asking a bootloader to update a used flash page.
+         Once USB is up, the same safe flash mechanism resident deploy uses persists the
+         page. Programs deployed afterwards simply keep reading it. */
       static uint8_t bareruby_attached_page[FLASH_PAGE_SIZE];
+      static bool bareruby_attaching;
 
       extern "C" void bareruby_agent_attach(const uint8_t *name, size_t length) {
           uint32_t byte;
@@ -614,20 +614,35 @@ module BareRubyProt
               bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + byte] = name[byte];
           }
           bareruby_attached_page[BARERUBY_NAME_MARK_LENGTH + length] = 0;
+          bareruby_attaching = true;
+      }
 
-          if (memcmp((const void *)BARERUBY_NAME_PAGE,
+      static void bareruby_attach_erase(void *offset) {
+          flash_range_erase(*(uint32_t *)offset, FLASH_SECTOR_SIZE);
+      }
+
+      static void bareruby_attach_program(void *offset) {
+          flash_range_program(*(uint32_t *)offset,
+                              bareruby_attached_page, FLASH_PAGE_SIZE);
+      }
+
+      static void bareruby_persist_attached_name(void) {
+          if (!bareruby_attaching ||
+              memcmp((const void *)BARERUBY_NAME_PAGE,
                      bareruby_attached_page, FLASH_PAGE_SIZE) == 0) {
               return;
           }
 
-          uint32_t interrupts = save_and_disable_interrupts();
           uint32_t offset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
-          flash_range_erase(offset, FLASH_SECTOR_SIZE);
-          flash_range_program(offset, bareruby_attached_page, FLASH_PAGE_SIZE);
-          restore_interrupts(interrupts);
+          if (flash_safe_execute(bareruby_attach_erase, &offset, UINT32_MAX) == 0) {
+              flash_safe_execute(bareruby_attach_program, &offset, UINT32_MAX);
+          }
       }
 
       static const char *bareruby_board_name(void) {
+          if (bareruby_attaching) {
+              return (const char *)bareruby_attached_page + BARERUBY_NAME_MARK_LENGTH;
+          }
           const char *page = (const char *)BARERUBY_NAME_PAGE;
           if (memcmp(page, BARERUBY_NAME_MARK, BARERUBY_NAME_MARK_LENGTH) != 0) {
               return NULL;
@@ -931,6 +946,7 @@ module BareRubyProt
 
       extern "C" void bareruby_agent_start(void) {
           flash_safe_execute_core_init();
+          bareruby_persist_attached_name();
           multicore_launch_core1(bareruby_watch);
       }
       #endif

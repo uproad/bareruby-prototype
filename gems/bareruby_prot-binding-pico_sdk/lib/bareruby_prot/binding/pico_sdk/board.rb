@@ -122,9 +122,9 @@ module BareRubyProt
     end
 
     # The agent, built for this machine. Its ordinary resident code reads the name as data
-    # from the reserved page. An RP2040 receives that page as the last block of one complete
-    # UF2 below; the RP2350 attach build also carries the name as a fallback for its separate
-    # absolute-family page.
+    # from the reserved page. The attach build carries that name for its first USB descriptor
+    # and persists it after USB starts; an RP2350 also accepts the separate absolute-family
+    # page below.
     def self.build(target, directory, name)
       FileUtils.mkdir_p(directory)
       files(target, name).each { |file, text| File.write(File.join(directory, file), text) }
@@ -136,9 +136,6 @@ module BareRubyProt
     def self.files(target, name)
       bytes = name.to_s[0, NAME_SIZE - 1].bytes.join(", ")
       program = PROGRAM.sub("BARERUBY_AGENT_NAME_BYTES", bytes)
-      if target.machine.chip == "rp2040"
-        program = program.sub("    bareruby_agent_attach(name, sizeof(name));\n", "")
-      end
       { PROGRAM_FILE => program,
         IDENTITY_FILE => PicoSdkBinding::IDENTITY,
         "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
@@ -152,29 +149,15 @@ module BareRubyProt
       Toolchain.aloud([PicoSdkFlash::SCRIPT, "--device", board.node, named])
     end
 
-    # An RP2040 name and program carry the same UF2 family id, so they are one download:
-    # every block announces the complete count and has one position in it. Besides keeping
-    # the bootloader from rebooting between them, this makes the name block a real write
-    # whose sector is erased first. Prepending a deliberately incomplete one happened to
-    # work on erased flash but could not reliably replace a name already there.
+    # An RP2040 first boots the ordinary agent image, whose descriptor already carries the
+    # requested name; the running agent persists it through the same safe flash machinery
+    # used by resident deploy. Sending a sparse UF2 that jumped from the program to the last
+    # flash sector was rejected by real RP2040 bootloaders.
     #
-    # An RP2350 uses a distinct absolute family for the loose name page; keep the measured
-    # two-download arrangement there, where the family is what makes the bootloader accept
-    # a page outside the program image.
+    # An RP2350 accepts a distinct absolute-family block for the loose name page, so keep
+    # that measured arrangement there.
     def self.named_image(name, target, image)
-      return block(name, target) + image unless target.machine.chip == "rp2040"
-
-      program = image.bytes.each_slice(BLOCK_SIZE).map { |bytes| bytes.pack("C*") }
-      total = program.length + 1
-      blocks = program.each_with_index.map { |one, index| numbered(one, index, total) }
-      blocks << block(name, target, number: program.length, total:)
-      blocks.join
-    end
-
-    def self.numbered(block, number, total)
-      block = block.dup
-      block[20, 8] = [number, total].pack("V2")
-      block
+      target.machine.chip == "rp2040" ? image : block(name, target) + image
     end
 
     # The agent is built the way every other artifact here is: a manifest saying what it is
@@ -244,9 +227,9 @@ module BareRubyProt
 
     # The block the page travels in. Everything about it is fixed but three fields: where
     # it goes, which chip will take it, and what it says.
-    def self.block(name, target, number: 0, total: BLOCKS_ANNOUNCED)
+    def self.block(name, target)
       header = [MAGIC_START0, MAGIC_START1, FAMILY_ID_PRESENT, address(target),
-                PAYLOAD_SIZE, number, total, LOOSE.fetch(target.machine.chip)].pack("V8")
+                PAYLOAD_SIZE, 0, BLOCKS_ANNOUNCED, LOOSE.fetch(target.machine.chip)].pack("V8")
       padding = BLOCK_SIZE - HEADER_SIZE - PAYLOAD_SIZE - 4
       header + page(name) + ("\0" * padding) + [MAGIC_END].pack("V")
     end
