@@ -47,11 +47,10 @@ module BareRubyProt
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
         target attach --target=NAME
-                            Hold BOOTSEL on one board and run this: it writes NAME into
-                            that board and records it under the entry. The board says
-                            that name over USB from then on, so nothing has to tell two
-                            boards of one chip apart again. No program of yours is
-                            involved; deploy and flash are what carry those.
+                            Hold BOOTSEL on one board and run this once per board: it
+                            writes NAME, NAME-2, ... into them and records every name
+                            under the entry. No program of yours is involved; deploy and
+                            flash are what carry those, to all of the boards at once.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -119,11 +118,11 @@ module BareRubyProt
       end
     end
 
-    # `bareruby target attach --target=pico`. An entry says which machine and what it is
-    # called; attaching puts one board behind it, by writing that name into the board so
-    # that it says the name back. Where in a board's flash a name goes, and how it gets
-    # there, is entirely the binding's, so this is dispatch as `init` is — and a binding
-    # whose boards carry no name of their own says so, which is an answer.
+    # `bareruby target attach --target=pico`. An entry says which machine this is;
+    # attaching puts one board behind it, by writing the entry's name into the first and a
+    # numbered name into each one after that. Where in a board's flash a name goes, and how
+    # it gets there, is entirely the binding's, so this is dispatch as `init` is — and a
+    # binding whose boards carry no name of their own says so, which is an answer.
     #
     # **One entry, because one board is being named.** Every other command works on every
     # entry the record holds when none is named; this one cannot, because the name it would
@@ -148,13 +147,13 @@ module BareRubyProt
         return 0
       end
       board = offered.board.waiting(entry.target)
-      board ? written(entry, offered, board) : 1
+      board ? written(entry, offered, board, Deployment.next_board_name(entry.name)) : 1
     end
 
-    def written(entry, offered, board)
+    def written(entry, offered, board, board_name)
       showing([entry], %i[tools attach])
       fetched([entry])
-      attached(entry, offered, board) ? 0 : 1
+      attached(entry, offered, board, board_name) ? 0 : 1
     end
 
     # Where a binding puts the firmware it writes onto a board. It is the binding's to fill
@@ -172,21 +171,22 @@ module BareRubyProt
     # with a table up collects everything said while a stage runs and prints it above the
     # table when the stage ends; a line said outside one is printed straight away, and so
     # arrives before the account of what it followed.
-    def attached(entry, offered, board)
+    def attached(entry, offered, board, board_name)
       @progress.at(:attach, [entry]) do
-        next false unless offered.board.attach(name: entry.name, target: entry.target,
+        next false unless offered.board.attach(name: board_name, target: entry.target,
                                                directory: attaching_of(entry), board:)
 
-        recorded(entry)
+        recorded(entry, board_name)
         true
       end
     end
 
-    def recorded(entry)
-      return unless Deployment.attached(entry.name)
+    def recorded(entry, board_name)
+      return unless Deployment.attached(entry.name, board_name)
 
       warn "attach: #{Deployment::FILE.delete_prefix("#{Dir.pwd}/")} now reads " \
-           "boards: [#{entry.name}] for #{entry.name}, so flashing has nothing left to work out."
+           "boards: [#{Deployment.boards_of(entry.name).join(', ')}] for #{entry.name}, " \
+           "so flashing has nothing left to work out."
     end
 
     # **This one gets its own usage.** It is the only command that asks something of the
@@ -197,10 +197,10 @@ module BareRubyProt
 
         Hold BOOTSEL on the board being named, plug it in, and run this.
 
-        It gives one board the name of one entry: NAME goes into a page of the board's
-        own flash, and the board reports it over USB from then on. So the desk asks for
-        a name and gets the board it was given to, instead of a serial nobody chose.
-        The entry's boards: is written here too, so nothing has to be edited afterwards.
+        It puts one board behind one entry. The first is called NAME; later boards are
+        called NAME-2, NAME-3, and so on. The name goes into a page of the board's own
+        flash, and the board reports it over USB from then on. The entry's boards: keeps
+        every one of those names, so nothing has to be edited afterwards.
 
         NAME is an entry's name in config/target.yml, and exactly one is named, because
         one board is being named.
@@ -212,7 +212,8 @@ module BareRubyProt
 
         The button is what says which board. Until a board carries a name, one
         bootloader is indistinguishable from the next, so leave every other board of
-        that chip out of BOOTSEL. Once per board, and never again.
+        that chip out of BOOTSEL. Run this once per board; after that the whole entry can
+        be deployed in parallel without touching the buttons again.
     USAGE
 
     # Named or not, the way out is the same list, so it is printed either way rather than

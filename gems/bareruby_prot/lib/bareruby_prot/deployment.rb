@@ -51,9 +51,9 @@ module BareRubyProt
 
     def self.entries = recorded.map { |record| entry_of(record) }
 
-    # **A board has been attached to this entry, so the record says which board.** What the
-    # board answers to is the entry's own name — that is what `target attach` wrote into it
-    # — so nothing is asked for here beyond which entry.
+    # **A board has been attached to this entry, so the record says which board.** The
+    # first answers to the entry's own name; later boards add a number, because several
+    # boards taking one artifact still have to answer as several USB devices.
     #
     # **Edited as the text it is.** The record opens with a comment on every field and is
     # meant to be read, so a round trip through YAML would hand back a file with the
@@ -61,16 +61,28 @@ module BareRubyProt
     #
     # Answers whether anything changed. A board attached twice under one name was already
     # recorded, and saying so a second time would claim something happened.
-    def self.attached(name)
-      return false if boards_of(name).include?(name)
+    def self.attached(entry_name, board_name)
+      return false if boards_of(entry_name).include?(board_name)
 
       lines = File.readlines(FILE)
-      span = entry_span(lines, name)
+      span = entry_span(lines, entry_name)
       at = span&.find { |one| lines[one].match?(/^\s*boards:/) }
       return false unless at
 
-      File.write(FILE, added(lines, at, name).join)
+      File.write(FILE, added(lines, at, board_name).join)
       true
+    end
+
+    # One board keeps the short name a target already has. A shelf grows stable names in
+    # the order its boards are attached: pico1, pico1-2, pico1-3. The record is the source
+    # of the next number, so a new command continues where the previous one stopped.
+    def self.next_board_name(entry_name)
+      taken = boards_of(entry_name)
+      return entry_name unless taken.include?(entry_name)
+
+      number = 2
+      number += 1 while taken.include?("#{entry_name}-#{number}")
+      "#{entry_name}-#{number}"
     end
 
     def self.boards_of(name)
