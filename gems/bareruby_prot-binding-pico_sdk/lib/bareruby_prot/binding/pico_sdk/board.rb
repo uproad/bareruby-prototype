@@ -122,9 +122,9 @@ module BareRubyProt
     end
 
     # The agent, built for this machine. Its ordinary resident code reads the name as data
-    # from the reserved page. The attach build also carries that name long enough to repair
-    # the page on first boot, because flash that once held another name cannot set its zero
-    # bits back to one merely by accepting another UF2 block.
+    # from the reserved page. An RP2040 receives that page as the last block of one complete
+    # UF2 below; the RP2350 attach build also carries the name as a fallback for its separate
+    # absolute-family page.
     def self.build(target, directory, name)
       FileUtils.mkdir_p(directory)
       files(target, name).each { |file, text| File.write(File.join(directory, file), text) }
@@ -135,7 +135,11 @@ module BareRubyProt
 
     def self.files(target, name)
       bytes = name.to_s[0, NAME_SIZE - 1].bytes.join(", ")
-      { PROGRAM_FILE => PROGRAM.sub("BARERUBY_AGENT_NAME_BYTES", bytes),
+      program = PROGRAM.sub("BARERUBY_AGENT_NAME_BYTES", bytes)
+      if target.machine.chip == "rp2040"
+        program = program.sub("    bareruby_agent_attach(name, sizeof(name));\n", "")
+      end
+      { PROGRAM_FILE => program,
         IDENTITY_FILE => PicoSdkBinding::IDENTITY,
         "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
     end

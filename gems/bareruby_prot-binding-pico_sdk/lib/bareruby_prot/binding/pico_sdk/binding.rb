@@ -592,11 +592,11 @@ module BareRubyProt
       #define BARERUBY_NAME_MARK "BARERUBY"
       #define BARERUBY_NAME_MARK_LENGTH 8
 
-      /* A loose name-page download cannot turn a zero back into a one when an already
-         attached board is given another name. The attach agent therefore carries the
-         requested name once as a fallback, repairs the reserved sector before USB starts,
-         and only then presents its descriptor. Programs deployed afterwards do not carry
-         this call; they simply keep reading the repaired page. */
+      /* The RP2350 loose name-page download cannot turn a zero back into a one when an
+         already attached board is given another name. Its attach agent therefore carries
+         the requested name once as a fallback, repairs the reserved sector before USB
+         starts, and only then presents its descriptor. RP2040 uses one complete UF2 instead.
+         Programs deployed afterwards simply keep reading the repaired page. */
       static uint8_t bareruby_attached_page[FLASH_PAGE_SIZE];
 
       extern "C" void bareruby_agent_attach(const uint8_t *name, size_t length) {
