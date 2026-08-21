@@ -45,10 +45,18 @@ module BareRubyProt
           definition?(statement) ? statement : infer_node(statement, type_environment:)
         end
 
+        # A class opened twice is emitted once: the second opening added its definitions
+        # to the same class, and they are all in the first one already.
+        emitted = []
         body = @bareruby_ast.program_body.zip(typed).filter_map do |original, typed_statement|
           next if module_definition?(original)
+          next typed_statement unless class_definition?(original)
 
-          class_definition?(original) ? build_class_definition(original) : typed_statement
+          name, = @bareruby_ast.children_of(original)
+          next if emitted.include?(name)
+
+          emitted << name
+          build_class_definition(original)
         end
 
         @result = @tast.replace_program(body)
@@ -114,8 +122,19 @@ module BareRubyProt
       def build_class_definition(node)
         name, = @bareruby_ast.children_of(node)
         class_definition = @classes.fetch(name)
-        methods = class_definition.definitions.filter_map { |definition| build_method_definition(definition) }
+        methods = class_definition.definitions.filter_map do |definition|
+          build_method_definition(definition) unless peripheral_constructor?(name, definition)
+        end
         @tast.create_class_definition(name, class_definition.ivars, methods, span_of(node))
+      end
+
+      # **A peripheral is constructed by the binding's own function**, so the empty
+      # initialize every class is given has nothing to answer for here. Dropping it is
+      # what keeps a program that names no UART from carrying one: the class arrives in
+      # every program, and an initialize is the one definition that is inferred without
+      # anybody calling it.
+      def peripheral_constructor?(class_name, definition)
+        definition.name == :initialize && Peripheral.known?(class_name)
       end
 
       def build_method_definition(method_info)
@@ -801,6 +820,12 @@ module BareRubyProt
       end
 
       def infer_self_method_call(name, arguments, type_environment:, span:)
+        if binding_method?(type_environment.self_class, name)
+          return infer_binding_method_call(
+            nil, type_environment.self_class, name, arguments, type_environment:, span:
+          )
+        end
+
         argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
         resolved = resolve_method_call(method_named(type_environment.self_class, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
@@ -810,9 +835,18 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, resolved.return_type, span)
       end
 
+      # **A peripheral answers a name the mapping does not have the way any class does.**
+      # The C functions are the hardware's vocabulary; what a program says to the class
+      # above them is the class's own Ruby, and there is one rule for finding a method in
+      # Ruby. So the mapping is asked first and the class after — asked in the other order,
+      # a peripheral would be answering for names it never declared.
+      def binding_method?(class_name, name)
+        !class_name.nil? && Peripheral.known?(class_name) && Peripheral[class_name].mapped?(name)
+      end
+
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, type_environment:, span:)
         class_name = receiver_type[:class_name]
-        if Peripheral.known?(class_name)
+        if binding_method?(class_name, name)
           signature = Peripheral[class_name].method_signature(name)
           printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)

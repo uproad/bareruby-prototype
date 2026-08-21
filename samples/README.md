@@ -25,6 +25,7 @@ it is given no argument.
 | `uart_on_line.rb` | UART receive interrupt: `on_line` handing each completed line to a realtime handler as a `StringView`, drained while `sleep_ms` waits |
 | `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
 | `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `send_break`. A frame a device cannot produce is refused, never replaced |
+| `peripheral_ruby.rb` | A peripheral class carrying Ruby: `can_read_line` written once in the gem that declares UART, and a method the program adds to the same class |
 | `i2c.rb` | I2C mixed-output write and repeated-start read returning a variable-length string |
 | `nilable.rb` | `nil`, inferred `T?`, tagged values, `nil?`, local `&.`, `if`/`while` narrowing, `||`, missing `else`, and assignment on one path |
 | `definite_assignment.rb` | `T?` for locals first assigned in an `if` or `while`, a missing-`else` `if` value, and an ivar not assigned on every `initialize` path. Matches Ruby |

@@ -19,20 +19,26 @@ module BareRubyProt
     #
     # A class has to be able to reach the bodies of the classes and modules it includes,
     # so they are all collected before any of them is flattened.
+    #
+    # **A name written twice is one class, opened twice**, as it is in Ruby: the bodies
+    # join in the order they were written and a later definition of a method replaces an
+    # earlier one. That is what lets a peripheral arrive with Ruby of its own and a
+    # program still add to the same class.
     def self.declared_in(statements, bareruby_ast)
-      sources = {}
+      sources = Hash.new { |hash, name| hash[name] = [] }
       statements.each do |statement|
         next unless bareruby_ast.module_definition?(statement) || bareruby_ast.class_definition?(statement)
 
-        sources[bareruby_ast.children_of(statement)[0]] = statement
+        name, body = bareruby_ast.children_of(statement)
+        sources[name] << body
       end
 
       classes = builtins
       statements.each do |statement|
         next unless bareruby_ast.class_definition?(statement)
 
-        definition = flattened(statement, bareruby_ast, sources)
-        classes[definition.name] = definition
+        name, = bareruby_ast.children_of(statement)
+        classes[name] = flattened(name, bareruby_ast, sources)
       end
       classes
     end
@@ -46,13 +52,14 @@ module BareRubyProt
       }
     end
 
-    def self.flattened(node, bareruby_ast, sources)
-      name, body = bareruby_ast.children_of(node)
+    def self.flattened(name, bareruby_ast, sources)
       methods = { initialize: MethodDefinition.empty_initialize(name) }
-      included(body, bareruby_ast, sources).each do |member|
-        method_name, parameters, method_body = bareruby_ast.children_of(member)
-        methods[method_name] =
-          MethodDefinition.new(name, method_name, parameters, method_body, ancestor: methods[method_name])
+      sources[name].each do |body|
+        included(body, bareruby_ast, sources).each do |member|
+          method_name, parameters, method_body = bareruby_ast.children_of(member)
+          methods[method_name] =
+            MethodDefinition.new(name, method_name, parameters, method_body, ancestor: methods[method_name])
+        end
       end
       methods.each_value { |definition| definition.number_from(0) }
 
@@ -65,8 +72,8 @@ module BareRubyProt
       names = body.select { |member| include_call?(member, bareruby_ast) }
                   .map { |member| included_name(member, bareruby_ast) }
       names.flat_map { |source|
-        included(bareruby_ast.children_of(sources[source])[1], bareruby_ast, sources) if sources[source]
-      }.compact + body.select { |member| bareruby_ast.node_type(member) == :method_definition }
+        sources[source].flat_map { |opened| included(opened, bareruby_ast, sources) }
+      } + body.select { |member| bareruby_ast.node_type(member) == :method_definition }
     end
 
     def self.include_call?(node, bareruby_ast)

@@ -158,10 +158,6 @@ module BareRubyProt
           hw_clear_bits(&uart_get_hw(port)->lcr_h, UART_UARTLCR_H_BRK_BITS);
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return uart_is_readable(bareruby_uart_port(self));
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           uart_tx_wait_blocking(bareruby_uart_port(self));
       }
