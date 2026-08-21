@@ -37,12 +37,38 @@ struct: :bareruby_uart_t,
         # What the line was opened at, read back. It is in the struct already, so the
         # header answers it and no binding writes anything.
         baudrate: { function: :bareruby_uart_baudrate, parameter_types: [], return_type: :Int32 },
+        # **What the line was opened with can be changed afterwards.** Every part of it is
+        # optional, and **-1 is how one says it is not being changed** — this language has
+        # no keyword that can be left out, so not changing a thing has to be sayable.
+        setmode: {
+          function: :bareruby_uart_setmode, parameter_types: [], return_type: :Nil,
+          keywords: {
+            baudrate: -1, data_bits: -1, stop_bits: -1, parity: -1, flow_control: -1,
+            rts_pin: -1, cts_pin: -1
+          }
+        },
+        # What a line ends with, on both sides of it: what `puts` puts after what it was
+        # given, and what `gets` reads up to. It is the class's own state — no hardware
+        # knows what a line is — so the header holds it and no binding writes it.
+        :line_ending= => {
+          function: :bareruby_uart_line_ending_set, parameter_types: %i[String], return_type: :Nil
+        },
+        # The byte a line ends with. **`gets` is written in Ruby and a static string
+        # answers nothing here** — no size, no index, no ord — so the ending it was given
+        # is not something Ruby can look inside. This is how it asks.
+        line_terminator: {
+          function: :bareruby_uart_line_terminator, parameter_types: [], return_type: :Int32
+        },
         write: {
           function: :bareruby_uart_write, printf_function: :bareruby_uart_printf,
           parameter_types: %i[String], return_type: :Int32
         },
+        # **What ends a line is the line's, not the compiler's.** An interpolation is
+        # expanded into a printf, and there are two of them here for that reason: the one
+        # puts reaches puts the ending after what it formatted, and the one write reaches
+        # puts nothing. Written with one, an interpolated write quietly became a puts.
         puts: {
-          function: :bareruby_uart_puts, printf_function: :bareruby_uart_printf,
+          function: :bareruby_uart_puts, printf_function: :bareruby_uart_printf_line,
           parameter_types: %i[String], return_type: :Nil
         },
         # **The whole of what the hardware answers for receiving**: take the next byte off
@@ -86,7 +112,7 @@ struct: :bareruby_uart_t,
       },
     # Where the expansion's variable arguments begin. It is a fact about this function's
     # signature, so it is stated here rather than in a table the compiler keeps.
-    variadic: { bareruby_uart_printf: 2 },
+    variadic: { bareruby_uart_printf: 2, bareruby_uart_printf_line: 2 },
     # **How deep the receive queue is, is settled while compiling.** Its storage is static,
     # so the number has to be known where the storage is declared and cannot be handed to
     # the constructor as the rest of the frame is. A program that says nothing gets what
@@ -110,6 +136,7 @@ struct: :bareruby_uart_t,
           int32_t flow_control;
           int32_t rts_pin;
           int32_t cts_pin;
+          const char *line_ending;
       } bareruby_uart_t;
 
       void bareruby_uart_init(
@@ -122,9 +149,48 @@ struct: :bareruby_uart_t,
       static inline int32_t bareruby_uart_baudrate(bareruby_uart_t *self) {
           return self->baudrate;
       }
+
+      /* **What a line ends with is the class's, not the hardware's.** No board knows what
+         a line is, so the ending lives in the struct and is set and read here; only the
+         calls that put bytes on the wire ever look at it. */
+      static inline void bareruby_uart_line_ending_set(
+          bareruby_uart_t *self, const char *value) {
+          self->line_ending = value;
+      }
+
+      static inline int32_t bareruby_uart_line_terminator(bareruby_uart_t *self) {
+          const char *ending = self->line_ending;
+          int32_t last = 0;
+          while (*ending != '\0') {
+              last = (int32_t)(unsigned char)*ending;
+              ++ending;
+          }
+          return last;
+      }
+
+      /* **-1 is how setmode says a thing is not being changed**, so what a binding has to
+         apply is the struct with the changes folded into it. Which fields moved is not a
+         question any one board answers differently, so the folding happens once here and
+         each binding applies what it finds. */
+      static inline void bareruby_uart_settle(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          if (baudrate >= 0) { self->baudrate = baudrate; }
+          if (data_bits >= 0) { self->data_bits = data_bits; }
+          if (stop_bits >= 0) { self->stop_bits = stop_bits; }
+          if (parity >= 0) { self->parity = parity; }
+          if (flow_control >= 0) { self->flow_control = flow_control; }
+          if (rts_pin >= 0) { self->rts_pin = rts_pin; }
+          if (cts_pin >= 0) { self->cts_pin = cts_pin; }
+      }
+
+      void bareruby_uart_setmode(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin);
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
+      void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...);
       int32_t bareruby_uart_read_byte(bareruby_uart_t *self);
       int32_t bareruby_uart_peek(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
@@ -139,8 +205,8 @@ struct: :bareruby_uart_t,
           bareruby_uart_t *self, int32_t events, bareruby_uart_irq_handler_t handler);
     CPP
     units: {
-      uart: %i[bareruby_uart_init bareruby_uart_write bareruby_uart_puts
-               bareruby_uart_printf bareruby_uart_bytes_available
+      uart: %i[bareruby_uart_init bareruby_uart_setmode bareruby_uart_write bareruby_uart_puts
+               bareruby_uart_printf bareruby_uart_printf_line bareruby_uart_bytes_available
                bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer
                bareruby_uart_bytes_to_write bareruby_uart_send_break],
       # **One queue, and everyone reads it.** Whatever touches the receive side brings it,

@@ -68,16 +68,38 @@ module BareRubyProt
       #include <stdlib.h>
       #include <string.h>
 
-      static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self, const char *text) {
-          fprintf(stderr, "%s(unit=%d, text=\\"", label, (int)self->unit);
+      static void bareruby_trace_escaped(const char *text) {
           for (const char *cursor = text; *cursor != '\\0'; ++cursor) {
               if (*cursor == '\\n') {
                   fputs("\\\\n", stderr);
+              } else if (*cursor == '\\r') {
+                  fputs("\\\\r", stderr);
               } else {
                   fputc(*cursor, stderr);
               }
           }
+      }
+
+      /* The ending is traced beside the text rather than left implied by the label,
+         because what a line ends with is the program's to choose now. */
+      static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self,
+                                         const char *text, const char *ending) {
+          fprintf(stderr, "%s(unit=%d, text=\\"", label, (int)self->unit);
+          bareruby_trace_escaped(text);
+          bareruby_trace_escaped(ending);
           fputs("\\")\\n", stderr);
+      }
+
+      /* What the line is opened with, traced. The constructor and setmode differ only in
+         where the values came from, so both end here and say which they were. */
+      static void bareruby_uart_apply(const bareruby_uart_t *self, const char *label) {
+          fprintf(stderr,
+                  "%s(unit=%d, txd_pin=%d, rxd_pin=%d, baudrate=%d, data_bits=%d, "
+                  "stop_bits=%d, parity=%d, flow_control=%d, rts_pin=%d, cts_pin=%d)\\n",
+                  label, (int)self->unit, (int)self->txd_pin, (int)self->rxd_pin,
+                  (int)self->baudrate, (int)self->data_bits, (int)self->stop_bits,
+                  (int)self->parity, (int)self->flow_control, (int)self->rts_pin,
+                  (int)self->cts_pin);
       }
 
       void bareruby_uart_init(
@@ -94,20 +116,28 @@ module BareRubyProt
           self->flow_control = flow_control;
           self->rts_pin = rts_pin;
           self->cts_pin = cts_pin;
-          fprintf(stderr,
-                  "uart_init(unit=%d, txd_pin=%d, rxd_pin=%d, baudrate=%d, data_bits=%d, "
-                  "stop_bits=%d, parity=%d, flow_control=%d, rts_pin=%d, cts_pin=%d)\\n",
-                  (int)unit, (int)txd_pin, (int)rxd_pin, (int)baudrate, (int)data_bits,
-                  (int)stop_bits, (int)parity, (int)flow_control, (int)rts_pin, (int)cts_pin);
+          self->line_ending = "\\n";
+          bareruby_uart_apply(self, "uart_init");
+      }
+
+      void bareruby_uart_setmode(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          bareruby_uart_settle(self, baudrate, data_bits, stop_bits, parity, flow_control,
+                               rts_pin, cts_pin);
+          bareruby_uart_apply(self, "uart_setmode");
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
-          bareruby_trace_payload("uart_write", self, value);
+          bareruby_trace_payload("uart_write", self, value, "");
           return (int32_t)strlen(value);
       }
 
+      /* **What ends a line is the line's, not the compiler's.** puts puts the ending the
+         class was given; write puts nothing after what it was handed, whether or not the
+         program wrote an interpolation. */
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
-          bareruby_trace_payload("uart_puts", self, value);
+          bareruby_trace_payload("uart_puts", self, value, self->line_ending);
       }
 
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
@@ -116,7 +146,16 @@ module BareRubyProt
           va_start(arguments, format);
           vsnprintf(payload, sizeof(payload), format, arguments);
           va_end(arguments);
-          bareruby_trace_payload("uart_printf", self, payload);
+          bareruby_trace_payload("uart_printf", self, payload, "");
+      }
+
+      void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...) {
+          char payload[256];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          bareruby_trace_payload("uart_printf_line", self, payload, self->line_ending);
       }
 
       /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the

@@ -20,6 +20,57 @@ module BareRubyProt
       #include <string.h>
       #include "bareruby_board.h"
 
+      /* What the line is opened with, applied. The constructor and setmode differ only in
+         where the values came from, so both end here. */
+      static void bareruby_uart_apply(bareruby_uart_t *self) {
+          /* **The pins are the CubeMX project's.** A port arrives here already bonded
+             out by the package the user generated, and moving it is not something this
+             side can do behind their back; nor is turning on flow control, which needs
+             two more pins that project would have to have given. A line asked for
+             elsewhere is refused rather than opened where it was not asked for. */
+          if (self->txd_pin >= 0 || self->rxd_pin >= 0 || self->flow_control != 0 ||
+              self->rts_pin >= 0 || self->cts_pin >= 0) {
+              bareruby_board_fault();
+          }
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
+          uint32_t hal_parity = UART_PARITY_NONE;
+          if (self->parity == 1) {
+              hal_parity = UART_PARITY_EVEN;
+          } else if (self->parity == 2) {
+              hal_parity = UART_PARITY_ODD;
+          } else if (self->parity != 0) {
+              bareruby_board_fault();
+          }
+          uint32_t hal_stop_bits = self->stop_bits == 2 ? UART_STOPBITS_2 : UART_STOPBITS_1;
+
+          /* **On an F4 the word length counts the parity bit.** So the frame this device
+             can produce is the sum of the two, and only 8 and 9 exist -- UART_WORDLENGTH_7B
+             arrives with the L4 / G4 / F7 generations, not here. 7E1 is therefore an 8-bit
+             word with parity on, and 7N1, 6 and 5 have no spelling at all. A frame this
+             device cannot produce is refused rather than replaced. */
+          int32_t frame_bits = self->data_bits + (hal_parity == UART_PARITY_NONE ? 0 : 1);
+          if (frame_bits != 8 && frame_bits != 9) {
+              bareruby_board_fault();
+          }
+          uint32_t word_length = frame_bits == 8 ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
+          if (port->Init.BaudRate != (uint32_t)self->baudrate || port->Init.Parity != hal_parity ||
+              port->Init.WordLength != word_length || port->Init.StopBits != hal_stop_bits) {
+              if (HAL_UART_DeInit(port) != HAL_OK) {
+                  bareruby_board_fault();
+              }
+              port->Init.BaudRate = (uint32_t)self->baudrate;
+              port->Init.WordLength = word_length;
+              port->Init.StopBits = hal_stop_bits;
+              port->Init.Parity = hal_parity;
+              port->Init.Mode = UART_MODE_TX_RX;
+              port->Init.HwFlowCtl = UART_HWCONTROL_NONE;
+              port->Init.OverSampling = UART_OVERSAMPLING_16;
+              if (HAL_UART_Init(port) != HAL_OK) {
+                  bareruby_board_fault();
+              }
+          }
+      }
+
       void bareruby_uart_init(
           bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
           int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
@@ -34,51 +85,16 @@ module BareRubyProt
           self->flow_control = flow_control;
           self->rts_pin = rts_pin;
           self->cts_pin = cts_pin;
-          /* **The pins are the CubeMX project's.** A port arrives here already bonded
-             out by the package the user generated, and moving it is not something this
-             side can do behind their back; nor is turning on flow control, which needs
-             two more pins that project would have to have given. A line asked for
-             elsewhere is refused rather than opened where it was not asked for. */
-          if (txd_pin >= 0 || rxd_pin >= 0 || flow_control != 0 || rts_pin >= 0 || cts_pin >= 0) {
-              bareruby_board_fault();
-          }
-          UART_HandleTypeDef *port = bareruby_board_uart(unit);
-          uint32_t hal_parity = UART_PARITY_NONE;
-          if (parity == 1) {
-              hal_parity = UART_PARITY_EVEN;
-          } else if (parity == 2) {
-              hal_parity = UART_PARITY_ODD;
-          } else if (parity != 0) {
-              bareruby_board_fault();
-          }
-          uint32_t hal_stop_bits = stop_bits == 2 ? UART_STOPBITS_2 : UART_STOPBITS_1;
+          self->line_ending = "\\n";
+          bareruby_uart_apply(self);
+      }
 
-          /* **On an F4 the word length counts the parity bit.** So the frame this device
-             can produce is the sum of the two, and only 8 and 9 exist -- UART_WORDLENGTH_7B
-             arrives with the L4 / G4 / F7 generations, not here. 7E1 is therefore an 8-bit
-             word with parity on, and 7N1, 6 and 5 have no spelling at all. A frame this
-             device cannot produce is refused rather than replaced. */
-          int32_t frame_bits = data_bits + (hal_parity == UART_PARITY_NONE ? 0 : 1);
-          if (frame_bits != 8 && frame_bits != 9) {
-              bareruby_board_fault();
-          }
-          uint32_t word_length = frame_bits == 8 ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
-          if (port->Init.BaudRate != (uint32_t)baudrate || port->Init.Parity != hal_parity ||
-              port->Init.WordLength != word_length || port->Init.StopBits != hal_stop_bits) {
-              if (HAL_UART_DeInit(port) != HAL_OK) {
-                  bareruby_board_fault();
-              }
-              port->Init.BaudRate = (uint32_t)baudrate;
-              port->Init.WordLength = word_length;
-              port->Init.StopBits = hal_stop_bits;
-              port->Init.Parity = hal_parity;
-              port->Init.Mode = UART_MODE_TX_RX;
-              port->Init.HwFlowCtl = UART_HWCONTROL_NONE;
-              port->Init.OverSampling = UART_OVERSAMPLING_16;
-              if (HAL_UART_Init(port) != HAL_OK) {
-                  bareruby_board_fault();
-              }
-          }
+      void bareruby_uart_setmode(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          bareruby_uart_settle(self, baudrate, data_bits, stop_bits, parity, flow_control,
+                               rts_pin, cts_pin);
+          bareruby_uart_apply(self);
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -88,10 +104,12 @@ module BareRubyProt
           return status == HAL_OK ? length : -1;
       }
 
+      /* **What ends a line is the line's, not the compiler's.** puts puts the ending the
+         class was given; write puts nothing after what it was handed, whether or not the
+         program wrote an interpolation. */
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
           (void)bareruby_uart_write(self, value);
-          static uint8_t newline = '\\n';
-          (void)HAL_UART_Transmit(bareruby_board_uart(self->unit), &newline, 1, HAL_MAX_DELAY);
+          (void)bareruby_uart_write(self, self->line_ending);
       }
 
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
@@ -106,6 +124,15 @@ module BareRubyProt
           uint16_t transmitted = (uint16_t)(length < (int)sizeof(payload) ? length : (int)sizeof(payload) - 1);
           (void)HAL_UART_Transmit(
               bareruby_board_uart(self->unit), (uint8_t *)payload, transmitted, HAL_MAX_DELAY);
+      }
+
+      void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...) {
+          char payload[256];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          bareruby_uart_puts(self, payload);
       }
 
       /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the
