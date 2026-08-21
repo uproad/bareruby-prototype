@@ -378,6 +378,16 @@ module BareRubyProt
          calling read_byte are the same kind of consumer, reaching it through the same
          call. Emptying it is the uart unit's clear_rx_buffer, which is already the same
          buffer — so there is nothing to override here. */
+      /* **The size of this queue is not this binding's to choose.** The core declared the
+         buffer and fills it from its own interrupt, so a program asking for another size is
+         asking this board for something it cannot give — and the build stops rather than
+         running quietly with a different one. Saying nothing gets the core's size. */
+      #ifdef BARERUBY_UART_RX_BUFFER_SIZE
+      #if BARERUBY_UART_RX_BUFFER_SIZE != SERIAL_RX_BUFFER_SIZE
+      #error "rx_buffer_size: the core owns the receive queue here, and its size is SERIAL_RX_BUFFER_SIZE"
+      #endif
+      #endif
+
       static HardwareSerial *bareruby_uart_receive_port(bareruby_uart_t *self) {
           switch (self->id) {
           case 1: return &Serial1;

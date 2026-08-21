@@ -21,6 +21,7 @@ module BareRubyProt
       @methods = entry[:methods]
       @declaration = entry[:declaration]
       @library = entry[:library]
+      @definitions = entry[:definitions] || []
       @required_name = entry[:required_name]
       @units = entry[:units] || {}
       @variadic = entry[:variadic] || {}
@@ -37,6 +38,16 @@ module BareRubyProt
     def constructor_function = @constructor[:function]
 
     def constructor_keywords = @constructor[:keywords] || {}
+
+    # **The keywords the generated C++ is compiled with rather than called with.** The size
+    # of a buffer whose storage is static cannot be handed to a function: it has to be
+    # known where the storage is declared. So a keyword named here leaves the call and
+    # becomes a definition the second stage compiles against.
+    def settled?(keyword) = @definitions.include?(keyword)
+
+    # What that definition is called. A peripheral's own name is in it because the header
+    # is shared: every installed peripheral writes into the same one.
+    def definition_name(keyword) = :"BARERUBY_#{@name.to_s.upcase}_#{keyword.to_s.upcase}"
 
     def method_signature(name) = @methods.fetch(name)
 

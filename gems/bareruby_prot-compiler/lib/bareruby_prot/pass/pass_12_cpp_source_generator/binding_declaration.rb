@@ -69,13 +69,29 @@ module BareRubyProt
     # this build knows about, and nothing else.**
     CLOSING = /^\#ifdef __cplusplus\n\}\n/
 
-    def self.header
-      registered = Peripheral.declarations
-      return HEADER if registered.empty?
+    # **What the program settled goes in ahead of everything a peripheral declares**, since
+    # a declaration may be written in terms of one and nothing settled can depend on a
+    # declaration. A binding that is told nothing chooses for itself, which is why only
+    # what was actually asked for is written here: there is a difference between a size a
+    # program chose and one it never mentioned, and a binding whose queue is not its own to
+    # size can only answer for the first.
+    def self.definitions(settled)
+      return "" if settled.empty?
 
-      HEADER.sub(CLOSING) { |closing| "#{registered.join("\n\n")}\n\n#{closing}" }
+      lines = settled.sort.map { |name, value| "#define #{name} #{value}" }
+      "\n/* What the program asked the build for. */\n#{lines.join("\n")}\n"
     end
 
-    def self.files = { HEADER_FILE => header }
+    def self.header(settled = {})
+      body = HEADER.sub("#include \"bareruby_runtime.h\"\n") do |include|
+        "#{include}#{definitions(settled)}"
+      end
+      registered = Peripheral.declarations
+      return body if registered.empty?
+
+      body.sub(CLOSING) { |closing| "#{registered.join("\n\n")}\n\n#{closing}" }
+    end
+
+    def self.files(settled = {}) = { HEADER_FILE => header(settled) }
   end
 end

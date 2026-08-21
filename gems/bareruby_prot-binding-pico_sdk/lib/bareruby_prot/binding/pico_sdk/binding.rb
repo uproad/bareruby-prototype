@@ -344,17 +344,30 @@ module BareRubyProt
          whoever asks first takes what is in it: a registered handler and a program calling
          read_byte are the same kind of consumer, reaching the queue through the same call.
          What is not taken is nobody else's loss. */
+      /* What this binding gives when the program did not ask. A program that asks reaches
+         the same name from the header, settled where the call was written. */
+      #ifndef BARERUBY_UART_RX_BUFFER_SIZE
+      #define BARERUBY_UART_RX_BUFFER_SIZE 256
+      #endif
+
       typedef struct {
-          volatile uint8_t data[256];   /* the 256 bytes the receive side costs */
-          volatile uint8_t head;        /* interrupt-owned */
-          volatile uint8_t tail;        /* consumer-owned */
+          volatile uint8_t data[BARERUBY_UART_RX_BUFFER_SIZE];   /* what the receive side costs */
+          volatile uint16_t head;       /* interrupt-owned */
+          volatile uint16_t tail;       /* consumer-owned */
           uart_inst_t *port;
       } bareruby_uart_receive_t;
 
       static bareruby_uart_receive_t bareruby_uart_receive;
 
+      /* The indices count entries rather than wrapping a byte, because how many entries
+         there are is the program's answer now and is not always 256. */
+      static uint16_t bareruby_uart_receive_next(uint16_t index) {
+          uint16_t next = (uint16_t)(index + 1u);
+          return next == BARERUBY_UART_RX_BUFFER_SIZE ? (uint16_t)0u : next;
+      }
+
       static void bareruby_uart_receive_push(uint8_t byte) {
-          uint8_t next = (uint8_t)(bareruby_uart_receive.head + 1u);
+          uint16_t next = bareruby_uart_receive_next(bareruby_uart_receive.head);
           if (next == bareruby_uart_receive.tail) {
               return;   /* a full queue drops the byte, and says nothing */
           }
@@ -396,7 +409,7 @@ module BareRubyProt
               return -1;
           }
           uint8_t byte = bareruby_uart_receive.data[bareruby_uart_receive.tail];
-          bareruby_uart_receive.tail = (uint8_t)(bareruby_uart_receive.tail + 1u);
+          bareruby_uart_receive.tail = bareruby_uart_receive_next(bareruby_uart_receive.tail);
           return (int32_t)byte;
       }
 
@@ -412,7 +425,9 @@ module BareRubyProt
          exists it is what the receive side is, so emptying the buffer empties it. */
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
           bareruby_uart_receive_attach(self);
-          return (int32_t)(uint8_t)(bareruby_uart_receive.head - bareruby_uart_receive.tail);
+          uint16_t head = bareruby_uart_receive.head;
+          uint16_t tail = bareruby_uart_receive.tail;
+          return (int32_t)(head >= tail ? head - tail : head + BARERUBY_UART_RX_BUFFER_SIZE - tail);
       }
 
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {

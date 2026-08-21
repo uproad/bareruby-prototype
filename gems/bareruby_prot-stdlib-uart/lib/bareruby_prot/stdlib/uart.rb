@@ -72,6 +72,13 @@ struct: :bareruby_uart_t,
     # Where the expansion's variable arguments begin. It is a fact about this function's
     # signature, so it is stated here rather than in a table the compiler keeps.
     variadic: { bareruby_uart_printf: 2 },
+    # **How deep the receive queue is, is settled while compiling.** Its storage is static,
+    # so the number has to be known where the storage is declared and cannot be handed to
+    # the constructor as the rest of the frame is. A program that says nothing gets what
+    # the binding chooses; one that asks reaches a binding that owns its queue, and one
+    # whose queue belongs to the core it is built on refuses rather than quietly giving a
+    # different size.
+    definitions: %i[rx_buffer_size],
     # What UART is above the hardware's vocabulary, written once rather than once per
     # board. can_read_line was four identical C functions until it moved here.
     library: File.expand_path("uart/program.rb", __dir__),

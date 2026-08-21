@@ -101,7 +101,15 @@ module BareRubyProt
 
     def pass_03(bareruby_ast) = Pass::LiteralFolder.new(bareruby_ast).run.result
 
-    def pass_05(bareruby_ast) = Pass::TypeInferrer.new(bareruby_ast).run.result
+    # **What the program settled for the build travels beside the tree, not in it.** The
+    # size of a receive queue is not a value any later pass computes with — it is a number
+    # the generated C++ has to be compiled against — so carrying it through four
+    # representations that have no use for it would be carrying it for nothing.
+    def pass_05(bareruby_ast)
+      inferrer = Pass::TypeInferrer.new(bareruby_ast).run
+      @definitions = inferrer.definitions
+      inferrer.result
+    end
 
     def pass_06(typed_ast) = Pass::BlockInliner.new(typed_ast).run.result
 
@@ -114,7 +122,9 @@ module BareRubyProt
     def pass_11(low_ir) = Pass::RealtimeContextChecker.new(low_ir).run.result
 
     def pass_12(low_ir)
-      Pass::CppSourceGenerator.new(low_ir, targets: @targets, debug: @debug, exceptions: @exceptions).run
+      Pass::CppSourceGenerator.new(
+        low_ir, targets: @targets, debug: @debug, exceptions: @exceptions, definitions: @definitions
+      ).run
     end
 
     # --no-exceptions removes the mechanism, so begin has nothing to land on and is
