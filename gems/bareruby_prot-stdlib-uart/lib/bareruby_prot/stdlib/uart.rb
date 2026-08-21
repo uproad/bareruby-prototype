@@ -20,14 +20,23 @@ struct: :bareruby_uart_t,
       constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4, RX_RECEIVE: 1 },
       constructor: {
         function: :bareruby_uart_init,
-        parameter_types: %i[Int32],
-        # The frame, in the order the standard guideline states it. A binding that cannot
-        # produce the frame asked for refuses; it never quietly sends a different one,
-        # because a wrong frame is rubbish on the wire and there is nowhere safe to fall.
-        keywords: { baud: 115_200, data_bits: 8, stop_bits: 1, parity: 0 }
+        parameter_types: [],
+        # **Everything the line is opened with is named**, in the order and with the
+        # spelling PicoRuby and the standard guideline use — which unit, which pins, the
+        # frame, and whether the line has flow control. A binding that cannot produce what
+        # was asked for refuses; it never quietly opens a different line, because a wrong
+        # frame is rubbish on the wire and a pin that was not taken is a line that is not
+        # there. **-1 is how a pin says nothing was asked**, and the board's own is used.
+        keywords: {
+          unit: 0, txd_pin: -1, rxd_pin: -1, baudrate: 9600, data_bits: 8, stop_bits: 1,
+          parity: 0, flow_control: 0, rts_pin: -1, cts_pin: -1
+        }
       },
       methods: {
         # puts and write on a UART take the same printf expansion as the global puts.
+        # What the line was opened at, read back. It is in the struct already, so the
+        # header answers it and no binding writes anything.
+        baudrate: { function: :bareruby_uart_baudrate, parameter_types: [], return_type: :Int32 },
         write: {
           function: :bareruby_uart_write, printf_function: :bareruby_uart_printf,
           parameter_types: %i[String], return_type: :Int32
@@ -91,16 +100,28 @@ struct: :bareruby_uart_t,
     required_name: "uart",
     declaration: <<~CPP.chomp,
       typedef struct {
-          int32_t id;
-          int32_t baud;
+          int32_t unit;
+          int32_t txd_pin;
+          int32_t rxd_pin;
+          int32_t baudrate;
           int32_t data_bits;
           int32_t stop_bits;
           int32_t parity;
+          int32_t flow_control;
+          int32_t rts_pin;
+          int32_t cts_pin;
       } bareruby_uart_t;
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud,
-          int32_t data_bits, int32_t stop_bits, int32_t parity);
+          bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
+          int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
+          int32_t flow_control, int32_t rts_pin, int32_t cts_pin);
+
+      /* Reading back what the line was opened at is reading a field the constructor
+         already wrote, so it is answered here rather than four times over. */
+      static inline int32_t bareruby_uart_baudrate(bareruby_uart_t *self) {
+          return self->baudrate;
+      }
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);

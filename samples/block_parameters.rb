@@ -9,7 +9,7 @@ end
   puts "turn #{turn}, spare is nil: #{spare.nil?}, and it renders as '#{spare}'"
 end
 
-uart = UART.new(0, baud: 115_200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE)
 
 # The binding hands this one the port it is about and the event that fired. Looking at
 # neither is allowed; the handler still has the shape the binding calls it through.

@@ -69,7 +69,7 @@ module BareRubyProt
       #include <string.h>
 
       static void bareruby_trace_payload(const char *label, const bareruby_uart_t *self, const char *text) {
-          fprintf(stderr, "%s(id=%d, text=\\"", label, (int)self->id);
+          fprintf(stderr, "%s(unit=%d, text=\\"", label, (int)self->unit);
           for (const char *cursor = text; *cursor != '\\0'; ++cursor) {
               if (*cursor == '\\n') {
                   fputs("\\\\n", stderr);
@@ -81,15 +81,24 @@ module BareRubyProt
       }
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud,
-          int32_t data_bits, int32_t stop_bits, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
+          bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
+          int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
+          int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          self->unit = unit;
+          self->txd_pin = txd_pin;
+          self->rxd_pin = rxd_pin;
+          self->baudrate = baudrate;
           self->data_bits = data_bits;
           self->stop_bits = stop_bits;
           self->parity = parity;
-          fprintf(stderr, "uart_init(id=%d, baud=%d, data_bits=%d, stop_bits=%d, parity=%d)\\n",
-                  (int)id, (int)baud, (int)data_bits, (int)stop_bits, (int)parity);
+          self->flow_control = flow_control;
+          self->rts_pin = rts_pin;
+          self->cts_pin = cts_pin;
+          fprintf(stderr,
+                  "uart_init(unit=%d, txd_pin=%d, rxd_pin=%d, baudrate=%d, data_bits=%d, "
+                  "stop_bits=%d, parity=%d, flow_control=%d, rts_pin=%d, cts_pin=%d)\\n",
+                  (int)unit, (int)txd_pin, (int)rxd_pin, (int)baudrate, (int)data_bits,
+                  (int)stop_bits, (int)parity, (int)flow_control, (int)rts_pin, (int)cts_pin);
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -113,34 +122,34 @@ module BareRubyProt
       /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the
          moment a program touches the buffered receive side. */
       __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_bytes_available(id=%d) -> 0\\n", (int)self->id);
+          fprintf(stderr, "uart_bytes_available(unit=%d) -> 0\\n", (int)self->unit);
           return 0;
       }
 
       void bareruby_uart_flush(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_flush(id=%d)\\n", (int)self->id);
+          fprintf(stderr, "uart_flush(unit=%d)\\n", (int)self->unit);
       }
 
       /* Nothing is held back here: a write reaches the descriptor before it returns, so
          the send side owes the wire nothing by the time this can be asked. */
       int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_bytes_to_write(id=%d) -> 0\\n", (int)self->id);
+          fprintf(stderr, "uart_bytes_to_write(unit=%d) -> 0\\n", (int)self->unit);
           return 0;
       }
 
       void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
-          fprintf(stderr, "uart_send_break(id=%d, milliseconds=%d)\\n",
-                  (int)self->id, (int)milliseconds);
+          fprintf(stderr, "uart_send_break(unit=%d, milliseconds=%d)\\n",
+                  (int)self->unit, (int)milliseconds);
       }
 
       /* Weak for the same reason as bytes_available: once the receive queue exists it is
          what the receive buffer is, and the uart_receive unit empties that instead. */
       __attribute__((weak)) void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_clear_rx_buffer(id=%d)\\n", (int)self->id);
+          fprintf(stderr, "uart_clear_rx_buffer(unit=%d)\\n", (int)self->unit);
       }
 
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_clear_tx_buffer(id=%d)\\n", (int)self->id);
+          fprintf(stderr, "uart_clear_tx_buffer(unit=%d)\\n", (int)self->unit);
       }
     CPP
 
@@ -326,23 +335,23 @@ module BareRubyProt
       int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
           bareruby_uart_receive_fill(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
-              fprintf(stderr, "uart_read_byte(id=%d) -> -1\\n", (int)self->id);
+              fprintf(stderr, "uart_read_byte(unit=%d) -> -1\\n", (int)self->unit);
               return -1;
           }
           uint8_t byte = bareruby_uart_receive.data[bareruby_uart_receive.tail];
           bareruby_uart_receive.tail = bareruby_uart_receive_next(bareruby_uart_receive.tail);
-          fprintf(stderr, "uart_read_byte(id=%d) -> %d\\n", (int)self->id, (int)byte);
+          fprintf(stderr, "uart_read_byte(unit=%d) -> %d\\n", (int)self->unit, (int)byte);
           return (int32_t)byte;
       }
 
       int32_t bareruby_uart_peek(bareruby_uart_t *self) {
           bareruby_uart_receive_fill(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
-              fprintf(stderr, "uart_peek(id=%d) -> -1\\n", (int)self->id);
+              fprintf(stderr, "uart_peek(unit=%d) -> -1\\n", (int)self->unit);
               return -1;
           }
           int32_t byte = (int32_t)bareruby_uart_receive.data[bareruby_uart_receive.tail];
-          fprintf(stderr, "uart_peek(id=%d) -> %d\\n", (int)self->id, (int)byte);
+          fprintf(stderr, "uart_peek(unit=%d) -> %d\\n", (int)self->unit, (int)byte);
           return byte;
       }
 
@@ -353,14 +362,14 @@ module BareRubyProt
           uint16_t head = bareruby_uart_receive.head;
           uint16_t tail = bareruby_uart_receive.tail;
           int32_t depth = (int32_t)(head >= tail ? head - tail : head + BARERUBY_UART_RX_BUFFER_SIZE - tail);
-          fprintf(stderr, "uart_bytes_available(id=%d) -> %d\\n", (int)self->id, (int)depth);
+          fprintf(stderr, "uart_bytes_available(unit=%d) -> %d\\n", (int)self->unit, (int)depth);
           return depth;
       }
 
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
           bareruby_uart_receive_fill(self);
           bareruby_uart_receive.tail = bareruby_uart_receive.head;
-          fprintf(stderr, "uart_clear_rx_buffer(id=%d)\\n", (int)self->id);
+          fprintf(stderr, "uart_clear_rx_buffer(unit=%d)\\n", (int)self->unit);
       }
     CPP
 
@@ -389,7 +398,7 @@ module BareRubyProt
           bareruby_uart_irq_handler = handler;
           bareruby_uart_irq_port = self;
           bareruby_uart_irq_events = events;
-          fprintf(stderr, "uart_irq(id=%d, events=%d)\\n", (int)self->id, (int)events);
+          fprintf(stderr, "uart_irq(unit=%d, events=%d)\\n", (int)self->unit, (int)events);
           bareruby_uart_bytes_available(self);   /* the touch that arms the receive side */
       }
 

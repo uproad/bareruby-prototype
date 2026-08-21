@@ -1,4 +1,4 @@
-uart = UART.new(0, baud: 115200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115200, parity: UART::NONE)
 button = GPIO.new(14, GPIO::IN | GPIO::PULL_UP)
 
 uart.puts("logger ready")

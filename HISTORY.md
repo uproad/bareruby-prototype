@@ -321,6 +321,32 @@ README lists.
   calls. Lines are still reached the other way — `gets` from the program's own loop, which
   is where the queue's Ruby lives. Verified on host with bytes piped in; built for pico1h,
   mega2560 and f446, and no board was flashed.
+- **The line is spelled the way the standard says it is** (`samples/uart_flow_control.rb`):
+  the class claims to follow the mruby/c Common I/O API guidelines and PicoRuby, and it was
+  reading its own spelling in six places — `baud:` for `baudrate:`, a unit counted from the
+  front of the call instead of named, a default of 115200 where both say 9600, no pins at
+  all, and a `UART::RTSCTS` constant with nowhere to hand it. **Everything the line is
+  opened with is now named**, in the order the documented constructor lists it: `unit:`,
+  `txd_pin:`, `rxd_pin:`, `baudrate:`, `data_bits:`, `stop_bits:`, `parity:`,
+  `flow_control:`, `rts_pin:`, `cts_pin:` — and `baudrate` reads back what it was opened
+  at, answered by an inline in the header over a field the constructor already wrote,
+  rather than by four bindings each writing the same line. **-1 is how a pin says nothing
+  was asked for**, and the board's own is used. Which boards can give what differs, and
+  each says so rather than opening a different line: an RP2040 puts a UART on any GPIO, so
+  a pin asked for is taken and flow control is the PL011's own; the Arduino core reaches a
+  USART's fixed pins and has no RTS/CTS at all; a CubeMX project has already bonded its
+  port out. The last two **refuse** — the same answer they already give a frame they
+  cannot produce. The naming reaches the C side too: the struct's fields are `unit` and
+  `baudrate` now, and the hosted trace says `unit=` — one word per thing, through every
+  layer. What it cost on pico1h: `samples/logger.rb` went from 44,740 B to 44,796 B of
+  text with `bss` unmoved, which is the ten arguments and the pin choosing. The sample is
+  44,788 B of text and 6,676 B of bss there, and 14,084 B of text and 1,980 B of bss on
+  the F4. **Two of the eight deviations are not here**: `setmode` and `line_ending=` are
+  their own change. And one is a deliberate divergence: PicoRuby names a unit with a
+  symbol (`unit: :RP2040_UART0`), and this takes the number, because naming one needs a
+  table of names per board that nothing else here would use yet. Verified on host; built
+  for pico1h, mega2560 and f446, and no board was flashed — **the refusals on those two
+  boards are compiled but not run**.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
