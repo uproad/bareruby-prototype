@@ -21,14 +21,28 @@ module BareRubyProt
       #include "bareruby_board.h"
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud,
-          int32_t data_bits, int32_t stop_bits, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
+          bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
+          int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
+          int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          self->unit = unit;
+          self->txd_pin = txd_pin;
+          self->rxd_pin = rxd_pin;
+          self->baudrate = baudrate;
           self->data_bits = data_bits;
           self->stop_bits = stop_bits;
           self->parity = parity;
-          UART_HandleTypeDef *port = bareruby_board_uart(id);
+          self->flow_control = flow_control;
+          self->rts_pin = rts_pin;
+          self->cts_pin = cts_pin;
+          /* **The pins are the CubeMX project's.** A port arrives here already bonded
+             out by the package the user generated, and moving it is not something this
+             side can do behind their back; nor is turning on flow control, which needs
+             two more pins that project would have to have given. A line asked for
+             elsewhere is refused rather than opened where it was not asked for. */
+          if (txd_pin >= 0 || rxd_pin >= 0 || flow_control != 0 || rts_pin >= 0 || cts_pin >= 0) {
+              bareruby_board_fault();
+          }
+          UART_HandleTypeDef *port = bareruby_board_uart(unit);
           uint32_t hal_parity = UART_PARITY_NONE;
           if (parity == 1) {
               hal_parity = UART_PARITY_EVEN;
@@ -49,12 +63,12 @@ module BareRubyProt
               bareruby_board_fault();
           }
           uint32_t word_length = frame_bits == 8 ? UART_WORDLENGTH_8B : UART_WORDLENGTH_9B;
-          if (port->Init.BaudRate != (uint32_t)baud || port->Init.Parity != hal_parity ||
+          if (port->Init.BaudRate != (uint32_t)baudrate || port->Init.Parity != hal_parity ||
               port->Init.WordLength != word_length || port->Init.StopBits != hal_stop_bits) {
               if (HAL_UART_DeInit(port) != HAL_OK) {
                   bareruby_board_fault();
               }
-              port->Init.BaudRate = (uint32_t)baud;
+              port->Init.BaudRate = (uint32_t)baudrate;
               port->Init.WordLength = word_length;
               port->Init.StopBits = hal_stop_bits;
               port->Init.Parity = hal_parity;
@@ -70,14 +84,14 @@ module BareRubyProt
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
           int32_t length = (int32_t)strlen(value);
           HAL_StatusTypeDef status = HAL_UART_Transmit(
-              bareruby_board_uart(self->id), (uint8_t *)value, (uint16_t)length, HAL_MAX_DELAY);
+              bareruby_board_uart(self->unit), (uint8_t *)value, (uint16_t)length, HAL_MAX_DELAY);
           return status == HAL_OK ? length : -1;
       }
 
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
           (void)bareruby_uart_write(self, value);
           static uint8_t newline = '\\n';
-          (void)HAL_UART_Transmit(bareruby_board_uart(self->id), &newline, 1, HAL_MAX_DELAY);
+          (void)HAL_UART_Transmit(bareruby_board_uart(self->unit), &newline, 1, HAL_MAX_DELAY);
       }
 
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
@@ -91,19 +105,19 @@ module BareRubyProt
           }
           uint16_t transmitted = (uint16_t)(length < (int)sizeof(payload) ? length : (int)sizeof(payload) - 1);
           (void)HAL_UART_Transmit(
-              bareruby_board_uart(self->id), (uint8_t *)payload, transmitted, HAL_MAX_DELAY);
+              bareruby_board_uart(self->unit), (uint8_t *)payload, transmitted, HAL_MAX_DELAY);
       }
 
       /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the
          moment a program touches the buffered receive side. */
       __attribute__((weak)) int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          return __HAL_UART_GET_FLAG(bareruby_board_uart(self->id), UART_FLAG_RXNE) != RESET ? 1 : 0;
+          return __HAL_UART_GET_FLAG(bareruby_board_uart(self->unit), UART_FLAG_RXNE) != RESET ? 1 : 0;
       }
 
       /* The HAL transmits by blocking, so nothing is queued behind the call. What can
          still be owed is the frame in the shift register: TC falls while it goes out. */
       int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
-          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           return __HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET ? 1 : 0;
       }
 
@@ -112,7 +126,7 @@ module BareRubyProt
          characters until it has passed -- the line is low for very nearly the whole of
          it, with one character's worth of idle between. */
       void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
-          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           bareruby_uart_flush(self);
           uint32_t deadline = HAL_GetTick() + (uint32_t)(milliseconds > 0 ? milliseconds : 0);
           do {
@@ -123,7 +137,7 @@ module BareRubyProt
       }
 
       void bareruby_uart_flush(bareruby_uart_t *self) {
-          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           while (__HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET) {
           }
       }
@@ -131,7 +145,7 @@ module BareRubyProt
       /* Weak for the same reason as bytes_available: once the receive queue exists it is
          what the receive buffer is, and the uart_receive unit empties that instead. */
       __attribute__((weak)) void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
-          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           while (__HAL_UART_GET_FLAG(port, UART_FLAG_RXNE) != RESET) {
               __HAL_UART_FLUSH_DRREGISTER(port);
           }
@@ -490,7 +504,7 @@ module BareRubyProt
           if (bareruby_uart_receive.port != NULL) {
               return;
           }
-          UART_HandleTypeDef *port = bareruby_board_uart(self->id);
+          UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           bareruby_uart_receive.port = port;   /* published before the IRQ can fire */
           IRQn_Type interrupt = bareruby_uart_receive_irq(port->Instance);
 

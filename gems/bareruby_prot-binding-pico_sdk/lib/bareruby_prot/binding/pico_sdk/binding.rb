@@ -94,26 +94,40 @@ module BareRubyProt
       #include "pico/stdlib.h"
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud,
-          int32_t data_bits, int32_t stop_bits, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
+          bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
+          int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
+          int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          self->unit = unit;
+          self->txd_pin = txd_pin;
+          self->rxd_pin = rxd_pin;
+          self->baudrate = baudrate;
           self->data_bits = data_bits;
           self->stop_bits = stop_bits;
           self->parity = parity;
-          uart_inst_t *port = (id == 0) ? uart0 : uart1;
-          uart_init(port, (uint)baud);
+          self->flow_control = flow_control;
+          self->rts_pin = rts_pin;
+          self->cts_pin = cts_pin;
+          uart_inst_t *port = (unit == 0) ? uart0 : uart1;
+          uart_init(port, (uint)baudrate);
           /* The PL011 takes the data bits as their own field, 5 through 8, so the frame
              asked for goes straight through. */
           uart_set_format(port, (uint)data_bits, stop_bits == 2 ? 2 : 1,
                           parity == 1 ? UART_PARITY_EVEN
                                       : (parity == 2 ? UART_PARITY_ODD : UART_PARITY_NONE));
-          gpio_set_function((id == 0) ? 0u : 4u, GPIO_FUNC_UART);
-          gpio_set_function((id == 0) ? 1u : 5u, GPIO_FUNC_UART);
+          /* **Any GPIO here can carry a UART**, so a pin that was asked for is taken and
+             one that was not falls back to the two this unit is bonded out on. Flow
+             control is the PL011's own, and takes two more pins the same way. */
+          gpio_set_function(txd_pin >= 0 ? (uint)txd_pin : ((unit == 0) ? 0u : 4u), GPIO_FUNC_UART);
+          gpio_set_function(rxd_pin >= 0 ? (uint)rxd_pin : ((unit == 0) ? 1u : 5u), GPIO_FUNC_UART);
+          if (flow_control != 0) {
+              gpio_set_function(cts_pin >= 0 ? (uint)cts_pin : ((unit == 0) ? 2u : 6u), GPIO_FUNC_UART);
+              gpio_set_function(rts_pin >= 0 ? (uint)rts_pin : ((unit == 0) ? 3u : 7u), GPIO_FUNC_UART);
+          }
+          uart_set_hw_flow(port, flow_control != 0, flow_control != 0);
       }
 
       static uart_inst_t *bareruby_uart_port(const bareruby_uart_t *self) {
-          return (self->id == 0) ? uart0 : uart1;
+          return (self->unit == 0) ? uart0 : uart1;
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -393,8 +407,8 @@ module BareRubyProt
           if (bareruby_uart_receive.port != NULL) {
               return;
           }
-          uart_inst_t *port = (self->id == 0) ? uart0 : uart1;
-          uint irq = (self->id == 0) ? UART0_IRQ : UART1_IRQ;
+          uart_inst_t *port = (self->unit == 0) ? uart0 : uart1;
+          uint irq = (self->unit == 0) ? UART0_IRQ : UART1_IRQ;
           bareruby_uart_receive.port = port;   /* published before the IRQ can fire */
           irq_set_exclusive_handler(irq, bareruby_uart_receive_isr);
           irq_set_enabled(irq, true);

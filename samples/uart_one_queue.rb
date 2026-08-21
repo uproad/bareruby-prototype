@@ -1,7 +1,7 @@
 # One queue, and everyone reads it. peek, gets and bytes_available all answer about the
 # same bytes, whichever asks first is the one that gets them, and what nobody took is
 # still there afterwards. Feed it 'A\nBCDEFG\n'.
-uart = UART.new(0, baud: 115_200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE)
 
 puts "peek before anything: #{uart.peek}"
 

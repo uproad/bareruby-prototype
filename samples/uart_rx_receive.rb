@@ -4,7 +4,7 @@
 led = OnboardLED.new
 led.off
 
-uart = UART.new(0, baud: 115_200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE)
 
 uart.irq(UART::RX_RECEIVE) do |port, event|
   indicator = OnboardLED.new

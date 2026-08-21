@@ -1,6 +1,6 @@
 # A wait is where a notification handler gets to run, and interrupt: false says it may
 # not. Send "ON" and "OFF", each followed by Enter.
-uart = UART.new(0, baud: 115200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115200, parity: UART::NONE)
 
 uart.irq(UART::RX_RECEIVE) do |port, event|
   byte = port.read_byte

@@ -12,7 +12,7 @@ class UART
   end
 end
 
-uart = UART.new(0, baud: 115_200, parity: UART::NONE)
+uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE)
 
 puts "waiting: #{uart.can_read_line}"
 puts "dropped #{uart.drop_waiting} bytes"

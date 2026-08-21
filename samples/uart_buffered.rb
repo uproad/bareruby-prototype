@@ -1,7 +1,7 @@
 # Arduino HardwareSerial-style buffered receive: available/read_byte/peek backed by the
 # interrupt-fed ring, and ticks_ms, composed into the timeout line read the framework
 # calls readBytesUntil. No callback is registered; the main loop owns the bytes.
-uart = UART.new(0, baud: 115_200, parity: UART::NONE, stop_bits: 1)
+uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE, stop_bits: 1)
 
 puts "buffered receive: reading until LF or 2000 ms"
 

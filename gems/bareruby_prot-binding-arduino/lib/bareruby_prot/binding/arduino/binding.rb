@@ -82,7 +82,7 @@ module BareRubyProt
       /* This board carries four of them. Serial is the one on the USB bridge, which is
          why it is also the console, and 1 through 3 are the pin headers. */
       static HardwareSerial *bareruby_uart_port(const bareruby_uart_t *self) {
-          switch (self->id) {
+          switch (self->unit) {
           case 1: return &Serial1;
           case 2: return &Serial2;
           case 3: return &Serial3;
@@ -108,15 +108,29 @@ module BareRubyProt
       }
 
       void bareruby_uart_init(
-          bareruby_uart_t *self, int32_t id, int32_t baud,
-          int32_t data_bits, int32_t stop_bits, int32_t parity) {
-          self->id = id;
-          self->baud = baud;
+          bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
+          int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
+          int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          self->unit = unit;
+          self->txd_pin = txd_pin;
+          self->rxd_pin = rxd_pin;
+          self->baudrate = baudrate;
           self->data_bits = data_bits;
           self->stop_bits = stop_bits;
           self->parity = parity;
+          self->flow_control = flow_control;
+          self->rts_pin = rts_pin;
+          self->cts_pin = cts_pin;
+          /* **Which pins a port is on is the board's, not the program's.** The core
+             reaches a USART's own pins and offers no way to move them, and it has no
+             hardware flow control at all — so a line asked for on other pins, or with
+             RTS/CTS, is a line this board cannot open. It is refused rather than opened
+             somewhere else. */
+          if (txd_pin >= 0 || rxd_pin >= 0 || flow_control != 0 || rts_pin >= 0 || cts_pin >= 0) {
+              bareruby_panic("UART: the pins and flow control here are the board's");
+          }
           bareruby_uart_port(self)->begin(
-              (unsigned long)baud, bareruby_uart_configuration(data_bits, stop_bits, parity));
+              (unsigned long)baudrate, bareruby_uart_configuration(data_bits, stop_bits, parity));
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -158,7 +172,7 @@ module BareRubyProt
          port, drive the pin, and start it again from what the program asked for -- which
          is the one place the frame kept in the struct is read back. */
       static uint8_t bareruby_uart_transmit_pin(const bareruby_uart_t *self) {
-          switch (self->id) {
+          switch (self->unit) {
           case 1: return 18;
           case 2: return 16;
           case 3: return 14;
@@ -175,7 +189,7 @@ module BareRubyProt
           digitalWrite(pin, LOW);
           delay((unsigned long)(milliseconds > 0 ? milliseconds : 0));
           digitalWrite(pin, HIGH);
-          port->begin((unsigned long)self->baud,
+          port->begin((unsigned long)self->baudrate,
                       bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
       }
 
@@ -389,7 +403,7 @@ module BareRubyProt
       #endif
 
       static HardwareSerial *bareruby_uart_receive_port(bareruby_uart_t *self) {
-          switch (self->id) {
+          switch (self->unit) {
           case 1: return &Serial1;
           case 2: return &Serial2;
           case 3: return &Serial3;
