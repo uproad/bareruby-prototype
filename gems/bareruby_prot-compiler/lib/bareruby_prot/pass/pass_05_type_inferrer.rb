@@ -992,8 +992,18 @@ module BareRubyProt
       # argument: the Ruby call keeps the shape the program wrote.
       def infer_binding_method_call(receiver_tast, class_name, name, arguments, type_environment:, span:)
         signature = Peripheral[class_name].method_signature(name)
-        refuse_unknown_keywords(keyword_names(arguments), signature[:keywords] || {}, "#{class_name}##{name}")
-        argument_tasts = written_arguments(arguments, signature[:payload_from], type_environment:)
+        keywords = signature[:keywords] || {}
+        # **A method takes its keywords the way a constructor does** — declared, defaulted,
+        # and turned into trailing positionals in declaration order. A call with none of
+        # them is left to the path that knows about bytes being sent, which is where a
+        # written argument is turned into the one the binding takes.
+        argument_tasts =
+          if keywords.empty?
+            refuse_unknown_keywords(keyword_names(arguments), keywords, "#{class_name}##{name}")
+            written_arguments(arguments, signature[:payload_from], type_environment:)
+          else
+            resolve_keywords(arguments, keywords, "#{class_name}##{name}", type_environment:, span:)
+          end
         argument_tasts = [current_arena(span)] + argument_tasts if region_of(signature)
         return_type = answers_string?(signature) ? ArenaString.type(@tast) : signature[:return_type]
         callee = @tast.create_callee(
@@ -1165,9 +1175,14 @@ module BareRubyProt
 
       def formatted?(node) = !node.nil? && @bareruby_ast.interpolation?(node)
 
+      # **Where the line ends is not this side's business when a peripheral is the one
+      # writing.** The language's own puts ends its line here, because nothing else can;
+      # a peripheral's puts is handed exactly what the program wrote and ends the line
+      # itself, with whatever the class was told a line ends with.
       def infer_printf_call(function, receiver_tast, node, type_environment:, span:)
         format = format_of(node, type_environment:)
-        arguments = [@tast.create_string("#{format.text}\n", :String, span_of(node))] + format.values
+        text = receiver_tast ? format.text : "#{format.text}\n"
+        arguments = [@tast.create_string(text, :String, span_of(node))] + format.values
         kind = receiver_tast ? :binding_printf : :builtin_printf
         callee = @tast.create_callee(kind, nil, :printf, function, argument_types(arguments), :Nil)
         @tast.create_call(receiver_tast, callee, arguments, nil, :Nil, span)

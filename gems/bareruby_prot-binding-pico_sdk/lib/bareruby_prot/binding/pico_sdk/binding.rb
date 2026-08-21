@@ -93,6 +93,32 @@ module BareRubyProt
       #include "hardware/uart.h"
       #include "pico/stdlib.h"
 
+      /* What the line is opened with, applied. The constructor and setmode differ only in
+         where the values came from, so both end here. */
+      static void bareruby_uart_apply(bareruby_uart_t *self) {
+          uart_inst_t *port = (self->unit == 0) ? uart0 : uart1;
+          uart_init(port, (uint)self->baudrate);
+          /* The PL011 takes the data bits as their own field, 5 through 8, so the frame
+             asked for goes straight through. */
+          uart_set_format(port, (uint)self->data_bits, self->stop_bits == 2 ? 2 : 1,
+                          self->parity == 1 ? UART_PARITY_EVEN
+                                            : (self->parity == 2 ? UART_PARITY_ODD : UART_PARITY_NONE));
+          /* **Any GPIO here can carry a UART**, so a pin that was asked for is taken and
+             one that was not falls back to the two this unit is bonded out on. Flow
+             control is the PL011's own, and takes two more pins the same way. */
+          gpio_set_function(self->txd_pin >= 0 ? (uint)self->txd_pin : ((self->unit == 0) ? 0u : 4u),
+                            GPIO_FUNC_UART);
+          gpio_set_function(self->rxd_pin >= 0 ? (uint)self->rxd_pin : ((self->unit == 0) ? 1u : 5u),
+                            GPIO_FUNC_UART);
+          if (self->flow_control != 0) {
+              gpio_set_function(self->cts_pin >= 0 ? (uint)self->cts_pin : ((self->unit == 0) ? 2u : 6u),
+                                GPIO_FUNC_UART);
+              gpio_set_function(self->rts_pin >= 0 ? (uint)self->rts_pin : ((self->unit == 0) ? 3u : 7u),
+                                GPIO_FUNC_UART);
+          }
+          uart_set_hw_flow(port, self->flow_control != 0, self->flow_control != 0);
+      }
+
       void bareruby_uart_init(
           bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
           int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
@@ -107,23 +133,16 @@ module BareRubyProt
           self->flow_control = flow_control;
           self->rts_pin = rts_pin;
           self->cts_pin = cts_pin;
-          uart_inst_t *port = (unit == 0) ? uart0 : uart1;
-          uart_init(port, (uint)baudrate);
-          /* The PL011 takes the data bits as their own field, 5 through 8, so the frame
-             asked for goes straight through. */
-          uart_set_format(port, (uint)data_bits, stop_bits == 2 ? 2 : 1,
-                          parity == 1 ? UART_PARITY_EVEN
-                                      : (parity == 2 ? UART_PARITY_ODD : UART_PARITY_NONE));
-          /* **Any GPIO here can carry a UART**, so a pin that was asked for is taken and
-             one that was not falls back to the two this unit is bonded out on. Flow
-             control is the PL011's own, and takes two more pins the same way. */
-          gpio_set_function(txd_pin >= 0 ? (uint)txd_pin : ((unit == 0) ? 0u : 4u), GPIO_FUNC_UART);
-          gpio_set_function(rxd_pin >= 0 ? (uint)rxd_pin : ((unit == 0) ? 1u : 5u), GPIO_FUNC_UART);
-          if (flow_control != 0) {
-              gpio_set_function(cts_pin >= 0 ? (uint)cts_pin : ((unit == 0) ? 2u : 6u), GPIO_FUNC_UART);
-              gpio_set_function(rts_pin >= 0 ? (uint)rts_pin : ((unit == 0) ? 3u : 7u), GPIO_FUNC_UART);
-          }
-          uart_set_hw_flow(port, flow_control != 0, flow_control != 0);
+          self->line_ending = "\\n";
+          bareruby_uart_apply(self);
+      }
+
+      void bareruby_uart_setmode(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          bareruby_uart_settle(self, baudrate, data_bits, stop_bits, parity, flow_control,
+                               rts_pin, cts_pin);
+          bareruby_uart_apply(self);
       }
 
       static uart_inst_t *bareruby_uart_port(const bareruby_uart_t *self) {
@@ -136,9 +155,12 @@ module BareRubyProt
           return (int32_t)length;
       }
 
+      /* **What ends a line is the line's, not the compiler's.** puts puts the ending the
+         class was given; write puts nothing after what it was handed, whether or not the
+         program wrote an interpolation. */
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
           uart_puts(bareruby_uart_port(self), value);
-          uart_putc(bareruby_uart_port(self), '\\n');
+          uart_puts(bareruby_uart_port(self), self->line_ending);
       }
 
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
@@ -148,6 +170,15 @@ module BareRubyProt
           vsnprintf(payload, sizeof(payload), format, arguments);
           va_end(arguments);
           uart_puts(bareruby_uart_port(self), payload);
+      }
+
+      void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...) {
+          char payload[256];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          bareruby_uart_puts(self, payload);
       }
 
       /* Weak, so the uart_interrupt unit's ring-backed answer replaces this one the

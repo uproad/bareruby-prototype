@@ -107,6 +107,23 @@ module BareRubyProt
           return configuration;
       }
 
+      /* What the line is opened with, applied. The constructor and setmode differ only in
+         where the values came from, so both end here.
+
+         **Which pins a port is on is the board's, not the program's.** The core reaches a
+         USART's own pins and offers no way to move them, and it has no hardware flow
+         control at all — so a line asked for on other pins, or with RTS/CTS, is a line
+         this board cannot open. It is refused rather than opened somewhere else. */
+      static void bareruby_uart_apply(bareruby_uart_t *self) {
+          if (self->txd_pin >= 0 || self->rxd_pin >= 0 || self->flow_control != 0 ||
+              self->rts_pin >= 0 || self->cts_pin >= 0) {
+              bareruby_panic("UART: the pins and flow control here are the board's");
+          }
+          bareruby_uart_port(self)->begin(
+              (unsigned long)self->baudrate,
+              bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
+      }
+
       void bareruby_uart_init(
           bareruby_uart_t *self, int32_t unit, int32_t txd_pin, int32_t rxd_pin,
           int32_t baudrate, int32_t data_bits, int32_t stop_bits, int32_t parity,
@@ -121,16 +138,16 @@ module BareRubyProt
           self->flow_control = flow_control;
           self->rts_pin = rts_pin;
           self->cts_pin = cts_pin;
-          /* **Which pins a port is on is the board's, not the program's.** The core
-             reaches a USART's own pins and offers no way to move them, and it has no
-             hardware flow control at all — so a line asked for on other pins, or with
-             RTS/CTS, is a line this board cannot open. It is refused rather than opened
-             somewhere else. */
-          if (txd_pin >= 0 || rxd_pin >= 0 || flow_control != 0 || rts_pin >= 0 || cts_pin >= 0) {
-              bareruby_panic("UART: the pins and flow control here are the board's");
-          }
-          bareruby_uart_port(self)->begin(
-              (unsigned long)baudrate, bareruby_uart_configuration(data_bits, stop_bits, parity));
+          self->line_ending = "\\n";
+          bareruby_uart_apply(self);
+      }
+
+      void bareruby_uart_setmode(
+          bareruby_uart_t *self, int32_t baudrate, int32_t data_bits, int32_t stop_bits,
+          int32_t parity, int32_t flow_control, int32_t rts_pin, int32_t cts_pin) {
+          bareruby_uart_settle(self, baudrate, data_bits, stop_bits, parity, flow_control,
+                               rts_pin, cts_pin);
+          bareruby_uart_apply(self);
       }
 
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value) {
@@ -139,9 +156,12 @@ module BareRubyProt
           return (int32_t)length;
       }
 
+      /* **What ends a line is the line's, not the compiler's.** puts puts the ending the
+         class was given; write puts nothing after what it was handed, whether or not the
+         program wrote an interpolation. */
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value) {
           (void)bareruby_uart_write(self, value);
-          bareruby_uart_port(self)->write((uint8_t)'\\n');
+          (void)bareruby_uart_write(self, self->line_ending);
       }
 
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...) {
@@ -151,6 +171,15 @@ module BareRubyProt
           vsnprintf(payload, sizeof(payload), format, arguments);
           va_end(arguments);
           (void)bareruby_uart_write(self, payload);
+      }
+
+      void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...) {
+          char payload[128];
+          va_list arguments;
+          va_start(arguments, format);
+          vsnprintf(payload, sizeof(payload), format, arguments);
+          va_end(arguments);
+          bareruby_uart_puts(self, payload);
       }
 
       /* Weak for the same shape the other bindings have, though HardwareSerial's own

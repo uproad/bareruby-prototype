@@ -14,12 +14,14 @@ class UART
     bytes_available > 0
   end
 
-  # Everything up to and including the newline. A wire that is saying nothing is waited
-  # for, because a wire that is saying nothing is not a wire that has finished.
+  # Everything up to and including what a line ends with here. A wire that is saying
+  # nothing is waited for, because a wire that is saying nothing is not a wire that has
+  # finished.
   def gets
     line = Arena::String.new("")
+    ending = line_terminator
     byte = 0
-    while byte != 10
+    while byte != ending
       byte = read_byte
       line << byte if byte >= 0
     end
