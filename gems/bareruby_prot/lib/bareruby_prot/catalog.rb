@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "io/console"
 require "yaml"
 
 require_relative "deployment"
+require_relative "screen"
 require_relative "stop"
 
 module BareRubyProt
@@ -60,12 +60,6 @@ module BareRubyProt
     # name is found by looking where it would be, and so anything attaching later has one
     # obvious place to go: below.
     OWN = "host"
-
-    DIM = "\e[2m"
-    BOLD = "\e[1m"
-    ACCENT = "\e[36m"
-    WARN = "\e[31m"
-    OFF = "\e[0m"
 
     # The three a machine settles at once. They are shown together for that reason.
     COMPOSITION = %w[machine binding triple].freeze
@@ -199,6 +193,8 @@ module BareRubyProt
     # One run of `target add`. It keeps the answers, knows which question is current, and
     # moves either way through them — a choice made early is not a choice made forever.
     class Session
+      include Screen
+
       def initialize
         @answers = {}
         @cursor = {}
@@ -208,12 +204,11 @@ module BareRubyProt
       end
 
       def run
-        print "\e[?25l"
-        advance while @at < steps.length
-        Catalog.write(written) if @answers["confirm"]
-        0
-      ensure
-        print "\e[?25h"
+        hidden do
+          advance while @at < steps.length
+          Catalog.write(written) if @answers["confirm"]
+          0
+        end
       end
 
       # Going back un-answers the question it lands on and everything after it. The screen
@@ -548,9 +543,7 @@ module BareRubyProt
         body += ["", *choices] unless choices.empty?
         body += ["", "  #{WARN}#{problem}#{OFF}"] if problem
         body += ["", "  #{DIM}#{keys}#{OFF}", ""]
-        print "\e[#{@drawn}A\e[0J" if @drawn.positive?
-        puts body
-        @drawn = body.length
+        redraw(body)
       end
 
       def row(current, label) = current ? "    #{ACCENT}› #{label}#{OFF}" : "      #{label}"
@@ -624,41 +617,6 @@ module BareRubyProt
 
           "[#{ACCENT}✓#{OFF}] #{short}"
         end.join("  ")
-      end
-
-      ARROWS = { "A" => :up, "B" => :down, "C" => :right, "D" => :left }.freeze
-
-      # One reader for both kinds of question. A printable character comes back as itself,
-      # which is what lets typing and choosing share a loop.
-      #
-      # **No key means two things.** Going back is escape everywhere, so the arrows are
-      # free to mean only movement — which is what they mean in a list and what they have
-      # to mean in a line of text. Escape arrives both alone and as the first byte of an
-      # arrow, and nothing but time tells them apart: a sequence sends its rest at once,
-      # a person cannot.
-      def keypress
-        $stdin.raw do |io|
-          case (char = io.getc)
-          when "\r", "\n" then :enter
-          when "\u0003", nil then stop
-          when "\u007f", "\b" then :backspace
-          when "\t" then :tab
-          when "\e" then escape(io)
-          else char
-          end
-        end
-      end
-
-      def escape(io)
-        return :back unless IO.select([io], nil, nil, 0.05)
-
-        io.getc == "[" ? ARROWS[io.getc] : :none
-      end
-
-      def stop
-        print "\e[?25h"
-        puts
-        exit 130
       end
     end
 
