@@ -18,6 +18,10 @@ module BareRubyProt
     class TypeInferrer
       RECEIVER_ITERATOR_NAMES = %i[times upto].freeze
       SIZE_NAMES = %i[size length].freeze
+      # The two that take an index. A name that is none of an array's own used to be
+      # treated as one of these, which turned a method it does not have into a crash
+      # somewhere below rather than a sentence about the array.
+      INDEX_NAMES = %i[[] []=].freeze
       UNARY_OPERATORS = %i[-@ ~].freeze
       BINARY_OPERATORS = %i[+ - * / % << >> & | ^].freeze
       COMPARISON_OPERATORS = %i[== != < <= > >=].freeze
@@ -484,6 +488,10 @@ module BareRubyProt
         case kind
         when :local
           binding, type = type_environment.fetch(name)
+          # **A name that can only ever be nil is nil.** It has no storage to read, so
+          # reading it produces the one value it stands for, settled while compiling.
+          return @tast.create_nil(span_of(node)) if type == :Nil
+
           @tast.create_reference(binding, type, span_of(node))
         when :instance
           type = @classes.fetch(type_environment.self_class).ivar_type(name)
@@ -612,6 +620,8 @@ module BareRubyProt
 
         capacity = receiver_type[:capacity]
         return @tast.create_integer(capacity, TypeUnion.literal(capacity), span) if SIZE_NAMES.include?(name)
+
+        raise "a fixed-capacity array answers [], []=, size, length and dup, not #{name}" unless INDEX_NAMES.include?(name)
 
         index = infer_node(arguments[0], type_environment:)
         return infer_index_assign(receiver_tast, receiver_type, index, arguments[1], type_environment:, span:) if name == :[]=
@@ -742,6 +752,8 @@ module BareRubyProt
         return @tast.create_arena_length(receiver_tast, :Int32, span) if SIZE_NAMES.include?(name)
         return @tast.create_arena_dup(receiver_tast, receiver_type, span) if name == :dup
         return infer_arena_push(receiver_tast, receiver_type, arguments[0], type_environment:, span:) if name == :<<
+
+        raise "a growing array answers [], []=, <<, size, length and dup, not #{name}" unless INDEX_NAMES.include?(name)
 
         index = infer_node(arguments[0], type_environment:)
         if name == :[]=
@@ -977,15 +989,8 @@ module BareRubyProt
         parameter_types = (signature[:block_parameter_types] || [])
                           .map { |declared| StringView.block_parameter_type(@tast, declared) }
         handler_environment = type_environment.without_locals
-        bindings = parameters.zip(parameter_types).map do |parameter, type|
-          binding = @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
-          handler_environment.bind(binding[:name], binding, type)
-          binding
-        end
+        typed_parameters = block_parameters(parameters, parameter_types, handler_environment, span_of(block))
         typed_body = infer_body(body, type_environment: handler_environment)
-        typed_parameters = bindings.zip(parameters, parameter_types).map do |binding, parameter, type|
-          @tast.create_parameter(binding, type, span_of(parameter))
-        end
         typed_block = @tast.create_block(typed_parameters, typed_body, :Nil, span_of(block))
         @tast.create_interrupt(receiver_tast, registration, typed_block, signature[:function], :Nil, span)
       end
@@ -1066,13 +1071,13 @@ module BareRubyProt
       def infer_iterator_call(name, receiver_tast, receiver_type, arguments, block, type_environment:, span:)
         argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
         element_type = name == :upto ? TypeUnion.widest(receiver_type, @tast.value_type(argument_tasts.first)) : receiver_type
-        block_tast = block && infer_iterator_block(block, element_type, type_environment:)
+        block_tast = block && infer_iterator_block(block, [element_type], type_environment:)
         callee = @tast.create_callee(:builtin_iterator, nil, name, nil, argument_types(argument_tasts), :Nil)
         @tast.create_call(receiver_tast, callee, argument_tasts, block_tast, :Nil, span)
       end
 
       def infer_loop_call(block, type_environment:, span:)
-        block_tast = block && infer_iterator_block(block, nil, type_environment:)
+        block_tast = block && infer_iterator_block(block, [], type_environment:)
         callee = @tast.create_callee(:builtin_iterator, nil, :loop, nil, [], :Nil)
         @tast.create_call(nil, callee, [], block_tast, :Nil, span)
       end
@@ -1116,18 +1121,32 @@ module BareRubyProt
         PrintfFormat.new(parts, @tast)
       end
 
-      def infer_iterator_block(block_node, element_type, type_environment:)
+      def infer_iterator_block(block_node, value_types, type_environment:)
         parameters, body = @bareruby_ast.children_of(block_node)
         block_type_environment = type_environment.branched
-        bindings = parameters.map do |parameter|
-          @tast.create_binding(:local, @bareruby_ast.children_of(parameter)[0])
-        end
-        bindings.each { |binding| block_type_environment.bind(binding[:name], binding, element_type) }
+        typed_parameters = block_parameters(parameters, value_types, block_type_environment, span_of(block_node))
         typed_body = infer_body(body, type_environment: block_type_environment)
-        typed_parameters = bindings.zip(parameters).map do |binding, parameter|
-          @tast.create_parameter(binding, element_type, span_of(parameter))
-        end
         @tast.create_block(typed_parameters, typed_body, :Nil, span_of(block_node))
+      end
+
+      # **A block takes what it is handed, and the two do not have to be the same length.**
+      # A value nobody named is dropped and a name nothing was handed to is nil, which is
+      # what Ruby does on both sides. What is emitted is one parameter per value, because
+      # the shape of the thing that runs the block is the sender's — a handler is called
+      # through a pointer whose type the binding wrote, and a counted loop needs its
+      # counter whether or not the block asked for it. A name beyond them is bound and not
+      # emitted: it stands for nil, and nil is not something this language stores.
+      def block_parameters(parameters, value_types, environment, span)
+        names = parameters.map { |parameter| @bareruby_ast.children_of(parameter)[0] }
+        taken = value_types.each_with_index.map do |type, index|
+          binding = @tast.create_binding(:local, names[index] || :"bareruby_unnamed_#{index}")
+          environment.bind(binding[:name], binding, type) if names[index]
+          @tast.create_parameter(binding, type, span)
+        end
+        names.drop(value_types.length).each do |name|
+          environment.bind(name, @tast.create_binding(:local, name), :Nil)
+        end
+        taken
       end
 
       def argument_types(argument_tasts) = argument_tasts.map { |argument| @tast.value_type(argument) }
