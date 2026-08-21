@@ -160,6 +160,7 @@ module BareRubyProt
       { PROGRAM_FILE => program,
         IDENTITY_FILE => PicoSdkBinding::IDENTITY,
         RESIDENT_UPDATE_FILE => PicoSdkBinding::RESIDENT_UPDATE,
+        PicoSdkBinding::TUSB_CONFIG_FILE => PicoSdkBinding::TUSB_CONFIG,
         "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
     end
 
@@ -351,6 +352,7 @@ module BareRubyProt
         pico_sdk_init()
 
         add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE} #{RESIDENT_UPDATE_FILE})
+        target_include_directories(#{AGENT} BEFORE PRIVATE ${CMAKE_CURRENT_LIST_DIR})
         target_compile_options(#{AGENT} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
         target_link_libraries(#{AGENT}
             pico_stdlib

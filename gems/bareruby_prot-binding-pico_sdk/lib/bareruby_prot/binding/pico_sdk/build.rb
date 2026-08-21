@@ -26,7 +26,10 @@ module BareRubyProt
       @exceptions = exceptions
     end
 
-    def files = { "manifest.txt" => manifest, "CMakeLists.txt" => cmake_lists }
+    def files
+      { "manifest.txt" => manifest, "CMakeLists.txt" => cmake_lists,
+        PicoSdkBinding::TUSB_CONFIG_FILE => PicoSdkBinding::TUSB_CONFIG }
+    end
 
     # Without a debug build there is no channel for output to leave by, so a puts has
     # nowhere to arrive and the generated code does not make the call.
@@ -91,7 +94,7 @@ module BareRubyProt
         #{@sources.map { |source| "    #{source}" }.join("\n")}
         )
 
-        target_include_directories(bareruby_program PRIVATE ..)
+        target_include_directories(bareruby_program BEFORE PRIVATE ${CMAKE_CURRENT_LIST_DIR} ..)
         target_compile_options(bareruby_program PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti#{@exceptions ? '' : ' -fno-exceptions'}>)
         target_link_libraries(bareruby_program #{libraries.join(' ')})
 

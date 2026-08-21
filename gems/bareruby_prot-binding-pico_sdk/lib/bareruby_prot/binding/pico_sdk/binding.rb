@@ -561,6 +561,33 @@ module BareRubyProt
     # a program and includes the declarations that program generated. This one is about the
     # board rather than about any program, which is what lets the agent `target attach`
     # writes carry it with no program anywhere near it.
+    # **TinyUSB is configured by a header it finds, and pico-sdk ships one that answers
+    # for it.** That answer turns the vendor class off — pico-sdk reaches its own vendor
+    # interface with a driver of its own and needs no more — so a board that wants BRDF's
+    # pipe has to answer first. Written beside the CMakeLists that names it, on an include
+    # path put ahead of the SDK's; `#include_next` then reaches the SDK's own answer and
+    # only the one line that has to differ is changed.
+    #
+    # It has to be found by TinyUSB's own sources as well as by this side's, which is why
+    # it is an include directory on the target rather than a define: pico-sdk links
+    # TinyUSB as an interface library, so its units are compiled into this target and see
+    # this target's include path.
+    TUSB_CONFIG_FILE = "tusb_config.h"
+
+    TUSB_CONFIG = <<~CPP
+      #ifndef BARERUBY_TUSB_CONFIG_H
+      #define BARERUBY_TUSB_CONFIG_H
+
+      #include_next <tusb_config.h>
+
+      #undef CFG_TUD_VENDOR
+      #define CFG_TUD_VENDOR (1)
+      #define CFG_TUD_VENDOR_RX_BUFSIZE (64)
+      #define CFG_TUD_VENDOR_TX_BUFSIZE (64)
+
+      #endif
+    CPP
+
     IDENTITY = <<~CPP
       #if LIB_PICO_STDIO_USB
 
@@ -657,14 +684,14 @@ module BareRubyProt
       #define USBD_MANUFACTURER "Raspberry Pi"
       #define USBD_PRODUCT BARERUBY_USB_PRODUCT
 
-      /* **One function, so there is no association to describe.** TinyUSB's CDC template
-         opens with an Interface Association Descriptor, which is how a device says "these
-         two interfaces are one of my functions" — a sentence that only means anything
-         where there are others. This board is a serial port and nothing else, so the
-         association goes, and the eight bytes with it. */
-      #define BARERUBY_IAD_LEN (8)
-      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN - BARERUBY_IAD_LEN)
-      #define USBD_ITF_MAX (2)
+      /* **Two functions, and the association is what says which interfaces make each.**
+         The serial port is a function anybody's terminal can open and read a program's
+         output from; BRDF is a function only this ecosystem's tools speak, and it is not
+         layered on the serial port — it has a pipe of its own. Two peers rather than two
+         layers, so the device is a composite and the association describes the CDC half
+         of it. */
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN)
+      #define USBD_ITF_MAX (3)
 
       #define USBD_ITF_CDC (0)
       #define USBD_CDC_EP_CMD (0x81)
@@ -672,6 +699,14 @@ module BareRubyProt
       #define USBD_CDC_EP_IN (0x82)
       #define USBD_CDC_CMD_MAX_SIZE (8)
       #define USBD_CDC_IN_OUT_MAX_SIZE (64)
+
+      /* BRDF's own pipe. **Nothing a program writes can reach it**, which is the whole
+         point of it being here rather than mixed into the serial stream: a program that
+         printed this protocol's words used to be able to answer for the board. */
+      #define USBD_ITF_BRDF (2)
+      #define USBD_BRDF_EP_OUT (0x03)
+      #define USBD_BRDF_EP_IN (0x83)
+      #define USBD_BRDF_EP_SIZE (64)
 
       #define USBD_STR_LANGUAGE (0x00)
       #define USBD_STR_MANUF (0x01)
@@ -686,14 +721,13 @@ module BareRubyProt
           .bLength = sizeof(tusb_desc_device_t),
           .bDescriptorType = TUSB_DESC_DEVICE,
           .bcdUSB = 0x0200,
-          /* **The device says what it is, because it is one thing.** A serial port, named
-             at the device rather than left for a host to work out of the interfaces.
-             TUSB_CLASS_MISC is the opposite claim — "I am a container, look inside" — and
-             a host that believes it takes this board apart and calls it after whichever
-             part a driver happened to claim. */
-          .bDeviceClass = TUSB_CLASS_CDC,
-          .bDeviceSubClass = 0,
-          .bDeviceProtocol = 0,
+          /* **A container, and this time it is one.** The three together are how a device
+             says "what I am is written in my interfaces, and the associations tell you
+             which of them go together" — which is exactly true of a board carrying a
+             serial port and BRDF side by side. */
+          .bDeviceClass = TUSB_CLASS_MISC,
+          .bDeviceSubClass = MISC_SUBCLASS_COMMON,
+          .bDeviceProtocol = MISC_PROTOCOL_IAD,
           .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
           .idVendor = USBD_VID,
           .idProduct = USBD_PID,
@@ -704,37 +738,19 @@ module BareRubyProt
           .bNumConfigurations = 1,
       };
 
-      /* TinyUSB's TUD_CDC_DESCRIPTOR, written out without the association it opens with.
-         Everything after that is the template byte for byte — including the Union
-         functional descriptor, which is what actually says that the data interface belongs
-         to the control one. That is how a CDC host pairs them; the association was the
-         same fact again for hosts that do not read CDC, and there is no second function
-         here for such a host to be confused about. */
+      /* **BRDF's interface is given no name of its own, on purpose.** A host that has no
+         driver for it falls back to the device's product string to describe it — which is
+         this board's name, the one thing worth reading there. An interface string would
+         stand in front of that and say something less useful. It is how the chip's own
+         bootloader reads on a Windows desk, for the same reason. */
       static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
           TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_LANGUAGE, USBD_DESC_LEN, 0, 250),
 
-          /* CDC Control Interface */
-          9, TUSB_DESC_INTERFACE, USBD_ITF_CDC, 0, 1, TUSB_CLASS_CDC,
-          CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_NONE, USBD_STR_CDC,
-          /* CDC Header */
-          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_HEADER, U16_TO_U8S_LE(0x0120),
-          /* CDC Call */
-          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_CALL_MANAGEMENT, 0, (uint8_t)(USBD_ITF_CDC + 1),
-          /* CDC ACM: support line request + send break */
-          4, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_ABSTRACT_CONTROL_MANAGEMENT, 6,
-          /* CDC Union */
-          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_UNION, USBD_ITF_CDC, (uint8_t)(USBD_ITF_CDC + 1),
-          /* Endpoint Notification */
-          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_CMD, TUSB_XFER_INTERRUPT,
-          U16_TO_U8S_LE(USBD_CDC_CMD_MAX_SIZE), 16,
-          /* CDC Data Interface */
-          9, TUSB_DESC_INTERFACE, (uint8_t)(USBD_ITF_CDC + 1), 0, 2, TUSB_CLASS_CDC_DATA, 0, 0, 0,
-          /* Endpoint Out */
-          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_OUT, TUSB_XFER_BULK,
-          U16_TO_U8S_LE(USBD_CDC_IN_OUT_MAX_SIZE), 0,
-          /* Endpoint In */
-          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_IN, TUSB_XFER_BULK,
-          U16_TO_U8S_LE(USBD_CDC_IN_OUT_MAX_SIZE), 0,
+          TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
+              USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
+
+          TUD_VENDOR_DESCRIPTOR(USBD_ITF_BRDF, 0, USBD_BRDF_EP_OUT, USBD_BRDF_EP_IN,
+              USBD_BRDF_EP_SIZE),
       };
 
       /* In the order the indices above name them. The language, product, serial and CDC
