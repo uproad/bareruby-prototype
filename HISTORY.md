@@ -220,6 +220,27 @@ README lists.
   unverifiable by running them, which is the only way anything here is verified. No sample
   demonstrates it: a program that must be refused cannot sit among the ones that must
   compile.
+- **A wait is where a notification handler runs** (`samples/sleep_interrupt.rb`): time
+  spent waiting is time the program is not using, so every wait now delivers what the
+  interrupt has queued — the `asleep` family included, which registered a handler and
+  then never called it. Which wait may deliver is written as `interrupt: false`, a
+  keyword like every other option in this language, and it holds back **the delivery
+  only**: the interrupt keeps running and the bytes keep arriving, because forbidding
+  interrupts would stop the tick the wait is measured with. So nothing is lost by saying
+  no — the sample says `asleep_ms(10, interrupt: false)`, gets nothing, then says
+  `asleep_ms(10)` and is handed both lines that arrived during the first. It reaches the
+  handler in an ISR not at all: a GPIO interrupt runs the moment the pin moves and no
+  keyword on a wait is between it and the pin. **A period is only long enough to deliver
+  in if it is longer than delivering takes**, so `asleep` waits in whole milliseconds
+  while more than one remains and finishes with one exact wait: `asleep_us(25)` keeps its
+  40 kHz and hands over nothing, and the next wait with room does it instead. The
+  exception is `asleep_us` on the F4, which delivers nothing at any length — it does not
+  go through the shared wait and does not move the period mark either, a fault of its own
+  that is tracked separately. The flag cost nothing measurable: `samples/uart_on_line.rb`
+  on pico1h is 44,876 B of text and 7,208 B of bss both before and after, to the byte.
+  The new sample is 45,136 B of text and 7,216 B of bss there (80.5 KB UF2), and 13,396 B
+  of text and 2,512 B of bss on the F4. Verified on host, where the trace now carries the
+  flag beside the interval; built for pico1h, mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
