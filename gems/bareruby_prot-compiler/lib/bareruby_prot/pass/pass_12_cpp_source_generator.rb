@@ -11,16 +11,17 @@ module BareRubyProt
     class CppSourceGenerator
       attr_reader :result, :stdout_notice
 
-      def initialize(low_ir, targets:, debug:, exceptions: true)
+      def initialize(low_ir, targets:, debug:, exceptions: true, definitions: {})
         @lir = low_ir
         @targets = targets
         @debug = debug
         @exceptions = exceptions
+        @definitions = definitions
         @stdout_notice = false
       end
 
       def run
-        @result = RuntimeSource::FILES.merge(BindingDeclaration.files)
+        @result = RuntimeSource::FILES.merge(BindingDeclaration.files(@definitions))
         @targets.each { |target| @result.merge!(target.binding::FILES) }
         @targets.each { |target| @result.merge!(target_sources(target)) }
 

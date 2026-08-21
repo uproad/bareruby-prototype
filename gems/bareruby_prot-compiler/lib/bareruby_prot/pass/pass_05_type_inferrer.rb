@@ -27,12 +27,13 @@ module BareRubyProt
       COMPARISON_OPERATORS = %i[== != < <= > >=].freeze
 
 
-      attr_reader :result
+      attr_reader :result, :definitions
 
       def initialize(bareruby_ast)
         @bareruby_ast = bareruby_ast
         @tast = TypedAST.new
         @classes = {}
+        @definitions = {}
         @current_method = nil
         @initializing = false
         @arena = nil
@@ -908,6 +909,7 @@ module BareRubyProt
 
       def infer_binding_new_call(class_name, arguments, type_environment:, span:)
         peripheral = Peripheral[class_name]
+        arguments = settle_definitions(peripheral, arguments, type_environment:)
         argument_tasts = resolve_keywords(
           arguments, peripheral.constructor_keywords, "#{class_name}.new", type_environment:, span:
         )
@@ -917,6 +919,27 @@ module BareRubyProt
           argument_types(argument_tasts), instance_type
         )
         @tast.create_call(nil, callee, argument_tasts, nil, instance_type, span)
+      end
+
+      # **A keyword the build is settled by leaves the call.** It names something the
+      # second stage has to know while it is compiling — the size of a static buffer is the
+      # one that exists — so there is no argument it could travel as, and a value that is
+      # not settled while compiling is no use to it. What is left of the call is the shape
+      # the program wrote minus this, and the value goes to the generated C++ as a
+      # definition instead.
+      def settle_definitions(peripheral, arguments, type_environment:)
+        arguments.reject do |argument|
+          next false unless @bareruby_ast.node_type(argument) == :keyword_argument
+
+          keyword, value = @bareruby_ast.children_of(argument)
+          next false unless peripheral.settled?(keyword)
+
+          settled = constant_capacity(value, type_environment:)
+          raise "#{peripheral.name}.new: #{keyword}: must be known at compile time" if settled.nil?
+
+          @definitions[peripheral.definition_name(keyword)] = settled
+          true
+        end
       end
 
       # A fixed key set: every declared keyword becomes a

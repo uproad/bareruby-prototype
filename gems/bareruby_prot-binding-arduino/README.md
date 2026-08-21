@@ -41,6 +41,11 @@ built there without this repository.
   unwinder, so `begin` has nowhere to land: a program that uses it has no build for this
   board either way round. `--no-exceptions` is what the first stage should be told, and
   it is not a choice here the way it is on a Pico.
+- **The receive queue's size is the core's.** `HardwareSerial` declared that buffer and
+  fills it from its own interrupt, so this binding buys no second one — which also means
+  `UART.new(..., rx_buffer_size: 512)` is asking this board for something it cannot give.
+  The build stops on it rather than running quietly with a different size. Saying nothing
+  gets `SERIAL_RX_BUFFER_SIZE`, which is 64 bytes on an ATmega2560.
 - **`%lld` is not implemented** by this libc's `printf`. Interpolating an `Int64` prints
   the line up to that point and stops.
 

@@ -276,6 +276,28 @@ README lists.
   byte waits rather than a whole line, and a program waiting on a wire that has gone quiet
   now waits rather than aborting — on the host a closed stdin is such a wire. Verified on
   host with bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
+- **How deep the receive queue is, is the program's to say** (`samples/uart_rx_buffer.rb`):
+  the queue was 256 bytes because that is what was written in four bindings, and there was
+  no road for a number to travel from a program to the place a static buffer is declared.
+  Keywords become trailing arguments of the call, and an argument arrives too late to give
+  a buffer its dimension. So `rx_buffer_size:` **leaves the call**: it is declared as a
+  keyword the build is settled by, pass 5 takes it out of the arguments, insists it is
+  known while compiling, and it reaches the second stage as `#define
+  BARERUBY_UART_RX_BUFFER_SIZE` in the shared header. The value travels beside the tree
+  rather than in it — no later pass computes with it, so carrying it through four
+  representations would be carrying it for nothing. It lands where it was asked to: on
+  pico1h the sample moves `bss` from 6,940 B to 7,708 B, **exactly the 768 bytes between
+  256 and 1024**, and text by 8 B, because the queue's indices now count entries instead
+  of relying on a byte wrapping at 256. On the F4 the sample is 14,456 B of text and
+  3,008 B of bss. **Only what a program actually asked for is written into the header**,
+  which is what lets a binding tell a chosen size from an unmentioned one: the three that
+  own a queue supply 256 when nothing was said, and the Arduino core, whose queue is its
+  own and whose size is `SERIAL_RX_BUFFER_SIZE`, **stops the build** rather than running
+  quietly at another size — the same answer that binding already gives a frame it cannot
+  produce. Measured on the host: with the default, 300 bytes offered and 255 taken (the
+  ring keeps one slot free); asking for 1024, 300 offered and 300 taken, 1000 offered and
+  1000 taken. Verified on host; built for pico1h and f446, and `samples/uart_rx_buffer.rb`
+  has no mega2560 build by design. No board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
