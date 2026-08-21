@@ -862,7 +862,9 @@ module BareRubyProt
 
       def infer_binding_new_call(class_name, arguments, type_environment:, span:)
         peripheral = Peripheral[class_name]
-        argument_tasts = resolve_keywords(arguments, peripheral.constructor_keywords, type_environment:, span:)
+        argument_tasts = resolve_keywords(
+          arguments, peripheral.constructor_keywords, "#{class_name}.new", type_environment:, span:
+        )
         instance_type = peripheral.instance_type(@tast)
         callee = @tast.create_callee(
           :binding_new, class_name, :new, peripheral.constructor_function,
@@ -873,7 +875,13 @@ module BareRubyProt
 
       # A fixed key set: every declared keyword becomes a
       # trailing positional parameter, in declaration order, defaulted when absent.
-      def resolve_keywords(arguments, keywords, type_environment:, span:)
+      #
+      # **A keyword the declaration does not have is refused rather than dropped.** A
+      # peripheral that quietly ignores what it was told looks exactly like one that
+      # obeyed: the program says 7E1 and the wire carries 8N1, and nothing anywhere says
+      # so. Which keywords a peripheral takes is its declaration's answer, so a key that
+      # is not in it is a question this side can settle and must.
+      def resolve_keywords(arguments, keywords, subject, type_environment:, span:)
         positional, keyword_nodes = arguments.partition do |argument|
           @bareruby_ast.node_type(argument) != :keyword_argument
         end
@@ -881,6 +889,7 @@ module BareRubyProt
           name, value = @bareruby_ast.children_of(argument)
           [name, value]
         end
+        refuse_unknown_keywords(supplied.keys, keywords, subject)
 
         tasts = positional.map { |argument| infer_node(argument, type_environment:) }
         keywords.each do |name, default|
@@ -888,6 +897,25 @@ module BareRubyProt
           tasts << (value ? infer_node(value, type_environment:) : @tast.create_integer(default, TypeUnion.literal(default), span))
         end
         tasts
+      end
+
+      def refuse_unknown_keywords(supplied, keywords, subject)
+        unknown = supplied - keywords.keys
+        return if unknown.empty?
+
+        raise "#{subject} takes #{spelled(keywords.keys)}, not #{spelled(unknown)}"
+      end
+
+      def keyword_names(arguments)
+        arguments.filter_map do |argument|
+          @bareruby_ast.children_of(argument)[0] if @bareruby_ast.node_type(argument) == :keyword_argument
+        end
+      end
+
+      def spelled(names)
+        return "no keywords" if names.empty?
+
+        names.map { |name| "#{name}:" }.join(", ")
       end
 
       # **What a peripheral call takes beyond what the program wrote is the declaration's
@@ -899,6 +927,7 @@ module BareRubyProt
       # argument: the Ruby call keeps the shape the program wrote.
       def infer_binding_method_call(receiver_tast, class_name, name, arguments, type_environment:, span:)
         signature = Peripheral[class_name].method_signature(name)
+        refuse_unknown_keywords(keyword_names(arguments), signature[:keywords] || {}, "#{class_name}##{name}")
         argument_tasts = written_arguments(arguments, signature[:payload_from], type_environment:)
         argument_tasts = [current_arena(span)] + argument_tasts if region_of(signature)
         return_type = answers_string?(signature) ? ArenaString.type(@tast) : signature[:return_type]
@@ -941,7 +970,9 @@ module BareRubyProt
       def infer_realtime_handler_call(receiver_type, receiver_tast, name, arguments, block,
                                       type_environment:, span:)
         signature = Peripheral[receiver_type[:class_name]].method_signature(name)
-        registration = resolve_keywords(arguments, signature[:keywords] || {}, type_environment:, span:)
+        registration = resolve_keywords(
+          arguments, signature[:keywords] || {}, "#{receiver_type[:class_name]}##{name}", type_environment:, span:
+        )
         parameters, body = @bareruby_ast.children_of(block)
         parameter_types = (signature[:block_parameter_types] || [])
                           .map { |declared| StringView.block_parameter_type(@tast, declared) }
