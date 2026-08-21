@@ -141,9 +141,9 @@ module BareRubyProt
     end
 
     # A board sitting in its bootloader has no name yet, and on an RP2040 not even an id of
-    # its own — three boards on this desk all called themselves the same thing. So the
-    # device and the port are said beside it: they are what tells one from the next until
-    # this command has given them something better.
+    # its own — three boards on this desk all called themselves the same thing. So where it
+    # is plugged in leads the row, and what its firmware calls itself comes next: the first
+    # is each board's alone, and the second says whether this board has been here before.
     def note_for(entry)
       offered = entry.target.binding
       return ["#{offered.key} boards carry no name of their own.",
@@ -152,8 +152,8 @@ module BareRubyProt
               "Hold the button down, plug the board in, and start this again."] if
         boards_of(entry).empty?
 
-      ["In BOOTSEL a board answers with its chip's own id, which several of them share.",
-       "What tells them apart is the device and the port."]
+      ["Where it is plugged in, what its firmware calls it, what it answers to, its device.",
+       "In BOOTSEL the id is the chip's own and boards share it; the place is each board's."]
     end
 
     # --- the screen ---------------------------------------------------------------
@@ -172,13 +172,25 @@ module BareRubyProt
     # boards:. The name is the entry's answer rather than a question of its own, which is
     # why it settles the moment the entry does.
     def decided
-      rows = { "entry" => @entries[@at[:entry]].name, "board" => chosen_board&.label,
+      rows = { "entry" => @entries[@at[:entry]].name, "board" => chosen_board&.cells&.join("   "),
                "name" => Deployment.next_board_name(@entries[@at[:entry]].name) }
       width = rows.keys.map(&:length).max + 1
       rows.map { |field, value| "    #{"#{field}:".ljust(width)} #{shown(field, value)}" }
     end
 
     def chosen_board = boards_of(@entries[@at[:entry]])[@at[:board]]
+
+    # **What a board is called is the binding's to say and this side's to line up.** It
+    # hands over the parts rather than a sentence, so that a column here is as wide as the
+    # widest thing in it — and so that a binding whose boards need a fifth part needs
+    # nothing here to change.
+    def laid_out(boards)
+      rows = boards.map(&:cells)
+      return [] if rows.empty?
+
+      width = rows.transpose.map { |column| column.map(&:length).max }
+      rows.map { |cells| cells.zip(width).map { |text, room| text.ljust(room) }.join("   ").rstrip }
+    end
 
     # Dim says one thing only: nobody has settled this yet. A field is settled once the
     # question that answers it has been passed — and the name is the entry's answer rather
@@ -209,7 +221,7 @@ module BareRubyProt
     # for, or they would sit two characters left of what they head.
     def columns
       names = @entries.map(&:name)
-      boards = boards_of(@entries[@at[:entry]]).map(&:label)
+      boards = laid_out(boards_of(@entries[@at[:entry]]))
       width = names.map(&:length).max
       ["      #{'entry'.ljust(width + 5)}board", ""] +
         Array.new([names.length, boards.length].max) do |at|

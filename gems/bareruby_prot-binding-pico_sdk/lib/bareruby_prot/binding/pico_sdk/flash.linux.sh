@@ -80,6 +80,62 @@ attached_boards() {
     done
 }
 
+# Where usbip has put the devices it is carrying: one line per attached port, saying what
+# this side calls it and what the far side does.
+#
+# **Under WSL a board is not on a bus, it is a Windows device handed over.** `usbipd list`
+# calls it `7-1`, `usbipd attach --busid 7-1` is how it got here, and `7-1` is what is
+# written on the screen the person is looking at while they hold the button. The kernel's
+# own number for it says nothing they can act on.
+#
+# **The far side's name is in the status table already.** Its `dev` column is the device
+# id the server sent: the bus number in its top half and the device number in its bottom,
+# which is exactly how a busid is spelled. Reading it back beats asking usbipd, which
+# would mean running a Windows program per listing and matching on a serial three boards
+# of one model are known to share.
+#
+# The vhci hub has one root per speed — full and high on the first, SuperSpeed on the
+# second — and its ports are numbered from zero across both, while the kernel numbers a
+# root hub's ports from one. A Pico is full speed and has only ever arrived on the first.
+VHCI_STATUS=/sys/devices/platform/vhci_hcd.0/status
+
+usbip_ports() {
+    local hub port sta spd dev rest
+    [ -r "$VHCI_STATUS" ] || return 0
+    {
+        read -r _
+        while read -r hub port sta spd dev rest; do
+            [ "$dev" != 00000000 ] || continue
+            if [ "$hub" = ss ]; then
+                printf '2-%d %d-%d\n' "$((10#$port - 7))" "$((16#${dev:0:4}))" "$((16#${dev:4:4}))"
+            else
+                printf '1-%d %d-%d\n' "$((10#$port + 1))" "$((16#${dev:0:4}))" "$((16#${dev:4:4}))"
+            fi
+        done
+    } < "$VHCI_STATUS"
+}
+
+# A board carried by usbip is where the far side says it is; anything else is where the
+# kernel says it is, and those are the same place said twice.
+location_of() {
+    local here there
+    while read -r here there; do
+        [ "$here" = "$1" ] && { echo "$there"; return 0; }
+    done < <(usbip_ports)
+    echo "$1"
+}
+
+# **What the board says it is, in its own words.** The bootloader answers `RP2 Boot`, and
+# a board this side has named answers with the product string its agent was built with —
+# so a row saying `BareRuby Debug Firm RP Pico1` is a board that has been through this
+# already, and one saying `RP2 Boot` is a board that has not. That is the one field on
+# the screen that is the board's own claim rather than the desk's bookkeeping.
+firmware_of() {
+    local said
+    said=$(cat "/sys/bus/usb/devices/$2/product" 2>/dev/null) || said=""
+    echo "${said:--}"
+}
+
 # **A volume is named by the port it arrived on, not by the board on it.** The by-id path
 # carries the board's serial, and an RP2040's bootloader does not have one of its own:
 # three boards measured on this desk — two of one model and one of another — all called

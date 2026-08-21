@@ -1,6 +1,6 @@
 # How a Raspberry Pi Pico is found on macOS, and why nothing here mounts anything.
 #
-# Sourced by flash.sh, which says what these six functions are for. Nothing here is run
+# Sourced by flash.sh, which says what these eight functions are for. Nothing here is run
 # on its own.
 #
 # **The bootloader volume is already mounted before this file is reached.** macOS mounts
@@ -29,7 +29,9 @@ chip_of_usb_product() {
     esac
 }
 
-# One line per thing a Raspberry Pi USB device presents: SERIAL PRODUCT KIND NAME PORT.
+# One line per thing a Raspberry Pi USB device presents:
+# SERIAL PRODUCT KIND NAME PORT FIRMWARE. The last is what the device calls itself and is
+# the only one of them that can hold a space, so it is last.
 #
 # A device's own properties are printed before its children, so the serial and the
 # product id standing above a BSD name are that name's — which is the whole of the
@@ -37,6 +39,33 @@ chip_of_usb_product() {
 # holds the devices below it and each of those is matched in its own right, so every
 # board is reached twice and the duplicates are dropped at the end.
 #
+# **Nothing hands these boards over from anywhere else**, so where a board is and where a
+# person reading a screen would say it is are the same place: the location id, which is
+# what ioreg and system_profiler both print. This exists so that flash.sh does not have to
+# know that, and so that a desk where it stops being true has one function to change.
+location_of() {
+    echo "$1"
+}
+
+# **What the board says it is, in its own words.** The bootloader answers `RP2 Boot`, and
+# a board this side has named answers with the product string its agent was built with, so
+# the row says whether this board has been through here before. It is looked up by where
+# the board is rather than by what it answers to: an RP2040's bootloader shares its serial
+# with every board of its model, and the location is the board's alone.
+#
+# **Not verified on a Mac.** It reads what the pass above already reads, so it is the same
+# question asked twice rather than a new one — but no Apple hardware was in reach.
+firmware_of() {
+    local serial product kind name location said
+    while read -r serial product kind name location said; do
+        [ "$location" = "$2" ] || continue
+        [ -n "$said" ] || continue
+        echo "$said"
+        return 0
+    done < <(usb_nodes)
+    echo -
+}
+
 # **The location id is where the board is plugged in.** It encodes the path through the
 # hubs that reaches the device, so it is the same number before and after a reset into
 # BOOTSEL, which the serial is not: an RP2040 reports the bootrom's id in the bootloader
@@ -47,9 +76,10 @@ usb_nodes() {
         /"idProduct" = /         { product = $NF; next }
         /"locationID" = /        { location = $NF; next }
         /"USB Serial Number" = / { serial = $NF; gsub(/"/, "", serial); next }
+        /"USB Product Name" = /  { said = $0; sub(/.*"USB Product Name" = "/, "", said); sub(/".*$/, "", said); next }
         device != vendor         { next }
-        /"BSD Name" = /          { name = $NF; gsub(/"/, "", name); print serial, product, "disk", name, location; next }
-        /"IOCalloutDevice" = /   { name = $NF; gsub(/"/, "", name); print serial, product, "tty", name, location; next }
+        /"BSD Name" = /          { name = $NF; gsub(/"/, "", name); print serial, product, "disk", name, location, said; next }
+        /"IOCalloutDevice" = /   { name = $NF; gsub(/"/, "", name); print serial, product, "tty", name, location, said; next }
     ' | sort -u
 }
 
@@ -62,8 +92,8 @@ usb_nodes() {
 # and the volume is on the first partition, so the whole disk is what is matched and the
 # partition is named from it.
 attached_boards() {
-    local serial product kind name location chip counted
-    usb_nodes | while read -r serial product kind name location; do
+    local serial product kind name location said chip counted
+    usb_nodes | while read -r serial product kind name location said; do
         chip=$(chip_of_usb_product "$product")
         [ "$chip" != unknown ] || continue
         case "$kind" in
