@@ -9,12 +9,23 @@ module BareRubyProt
   # deadline is written as a signed difference and carries the wrap — which is what a
   # timeout composed from non-blocking reads needs.
   module BindingFunction
+    # **A wait is where a notification handler gets to run.** Time spent waiting is time
+    # the program is not using, and delivering what has arrived in it is what keeps a
+    # handler from waiting for the next call into the binding. `interrupt: false` says a
+    # particular wait may not do that; it holds back the delivery only. The interrupt
+    # itself is never turned off — bytes keep arriving into the queue and are read later —
+    # because forbidding interrupts would stop the tick the wait is measured with.
+    WAIT = { interrupt: true }.freeze
+
     BARE = {
-      sleep: { function: :bareruby_sleep, parameter_types: %i[Int32], return_type: :Nil },
-      sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32], return_type: :Nil },
-      asleep: { function: :bareruby_asleep, parameter_types: %i[Int32], return_type: :Nil },
-      asleep_ms: { function: :bareruby_asleep_ms, parameter_types: %i[Int32], return_type: :Nil },
-      asleep_us: { function: :bareruby_asleep_us, parameter_types: %i[Int32], return_type: :Nil },
+      sleep: { function: :bareruby_sleep, parameter_types: %i[Int32 Bool], return_type: :Nil, keywords: WAIT },
+      sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32 Bool], return_type: :Nil,
+                  keywords: WAIT },
+      asleep: { function: :bareruby_asleep, parameter_types: %i[Int32 Bool], return_type: :Nil, keywords: WAIT },
+      asleep_ms: { function: :bareruby_asleep_ms, parameter_types: %i[Int32 Bool], return_type: :Nil,
+                   keywords: WAIT },
+      asleep_us: { function: :bareruby_asleep_us, parameter_types: %i[Int32 Bool], return_type: :Nil,
+                   keywords: WAIT },
       ticks_ms: { function: :bareruby_ticks_ms, parameter_types: [], return_type: :Int32 }
     }.freeze
 

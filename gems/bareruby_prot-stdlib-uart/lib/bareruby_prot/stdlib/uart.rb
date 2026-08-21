@@ -44,9 +44,6 @@ struct: :bareruby_uart_t,
         bytes_available: {
           function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
         },
-        can_read_line: {
-          function: :bareruby_uart_can_read_line, parameter_types: [], return_type: :Bool
-        },
         flush: { function: :bareruby_uart_flush, parameter_types: [], return_type: :Nil },
         clear_rx_buffer: {
           function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :Nil
@@ -73,6 +70,9 @@ struct: :bareruby_uart_t,
     # Where the expansion's variable arguments begin. It is a fact about this function's
     # signature, so it is stated here rather than in a table the compiler keeps.
     variadic: { bareruby_uart_printf: 2 },
+    # What UART is above the hardware's vocabulary, written once rather than once per
+    # board. can_read_line was four identical C functions until it moved here.
+    library: File.expand_path("uart/program.rb", __dir__),
     required_name: "uart",
     declaration: <<~CPP.chomp,
       typedef struct {
@@ -97,7 +97,6 @@ struct: :bareruby_uart_t,
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self);
       void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds);
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self);
       void bareruby_uart_flush(bareruby_uart_t *self);
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
@@ -107,7 +106,7 @@ struct: :bareruby_uart_t,
     CPP
     units: {
       uart: %i[bareruby_uart_init bareruby_uart_write bareruby_uart_puts
-               bareruby_uart_printf bareruby_uart_bytes_available bareruby_uart_can_read_line
+               bareruby_uart_printf bareruby_uart_bytes_available
                bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer
                bareruby_uart_bytes_to_write bareruby_uart_send_break],
       uart_receive: %i[bareruby_uart_read bareruby_uart_gets],

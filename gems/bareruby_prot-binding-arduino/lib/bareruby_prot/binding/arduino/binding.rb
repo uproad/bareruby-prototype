@@ -179,10 +179,6 @@ module BareRubyProt
                       bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return bareruby_uart_port(self)->available() > 0;
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           bareruby_uart_port(self)->flush();
       }
@@ -310,10 +306,12 @@ module BareRubyProt
          below does with micros(). The wait is counted unsigned for the same reason the
          mark is, so that the seconds form can turn its argument into milliseconds
          without overflowing a signed multiplication. */
-      static void bareruby_sleep_for(uint32_t milliseconds) {
+      static void bareruby_sleep_for(uint32_t milliseconds, bool interrupt) {
           uint32_t deadline = millis() + milliseconds;
           for (;;) {
-              bareruby_uart_interrupt_drain();
+              if (interrupt) {
+                  bareruby_uart_interrupt_drain();
+              }
               if ((int32_t)(deadline - millis()) <= 0) {
                   break;
               }
@@ -321,12 +319,12 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
       }
 
-      void bareruby_sleep(int32_t seconds) {
-          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
+      void bareruby_sleep(int32_t seconds, bool interrupt) {
+          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
       }
 
       /* One mark serves all three units, counted in microseconds since the core started
@@ -335,23 +333,33 @@ module BareRubyProt
          wrap correctly as long as no single wait is longer than half of that. */
       static uint32_t bareruby_asleep_mark;
 
-      static void bareruby_asleep_until(uint32_t interval) {
+      /* **A period is only long enough to deliver in if it is longer than delivering
+         takes.** So the wait is spent in whole milliseconds while more than one of them
+         remains, and what is left is the spin below: a 25 us period keeps its exactness
+         and delivers nothing, which is the honest answer for a period that has no room
+         for a handler. Notifications are not lost by it — the core's own interrupt keeps
+         filling its buffer, and the next wait long enough will hand them over. */
+      static void bareruby_asleep_until(uint32_t interval, bool interrupt) {
           uint32_t deadline = bareruby_asleep_mark + interval;
+          while (interrupt && (int32_t)(deadline - micros()) > 1000) {
+              bareruby_uart_interrupt_drain();
+              delay(1);
+          }
           while ((int32_t)(deadline - micros()) > 0) {
           }
           bareruby_asleep_mark = micros();
       }
 
-      void bareruby_asleep(int32_t seconds) {
-          bareruby_asleep_until((uint32_t)seconds * 1000000ul);
+      void bareruby_asleep(int32_t seconds, bool interrupt) {
+          bareruby_asleep_until((uint32_t)seconds * 1000000ul, interrupt);
       }
 
-      void bareruby_asleep_ms(int32_t milliseconds) {
-          bareruby_asleep_until((uint32_t)milliseconds * 1000ul);
+      void bareruby_asleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_asleep_until((uint32_t)milliseconds * 1000ul, interrupt);
       }
 
-      void bareruby_asleep_us(int32_t microseconds) {
-          bareruby_asleep_until((uint32_t)microseconds);
+      void bareruby_asleep_us(int32_t microseconds, bool interrupt) {
+          bareruby_asleep_until((uint32_t)microseconds, interrupt);
       }
 
       int32_t bareruby_ticks_ms(void) {

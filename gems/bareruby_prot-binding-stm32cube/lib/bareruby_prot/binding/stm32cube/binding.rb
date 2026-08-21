@@ -122,10 +122,6 @@ module BareRubyProt
           } while ((int32_t)(deadline - HAL_GetTick()) > 0);
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return bareruby_uart_bytes_available(self) != 0;
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           UART_HandleTypeDef *port = bareruby_board_uart(self->id);
           while (__HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET) {
@@ -334,10 +330,12 @@ module BareRubyProt
       /* The wait is counted unsigned, as the asleep mark below is, so that the seconds
          form can turn its argument into milliseconds without overflowing a signed
          multiplication. */
-      static void bareruby_sleep_for(uint32_t milliseconds) {
+      static void bareruby_sleep_for(uint32_t milliseconds, bool interrupt) {
           uint32_t deadline = HAL_GetTick() + milliseconds;
           for (;;) {
-              bareruby_uart_interrupt_drain();
+              if (interrupt) {
+                  bareruby_uart_interrupt_drain();
+              }
               if ((int32_t)(deadline - HAL_GetTick()) <= 0) {
                   break;
               }
@@ -345,35 +343,45 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
       }
 
-      void bareruby_sleep(int32_t seconds) {
-          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
+      void bareruby_sleep(int32_t seconds, bool interrupt) {
+          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
       }
 
       static uint32_t bareruby_asleep_mark;
 
-      static void bareruby_asleep_until(uint32_t interval) {
-          uint32_t now = HAL_GetTick();
+      /* The tick this mark is kept in counts milliseconds, so the whole wait is spent in
+         them and delivering costs the period nothing it did not already cost. */
+      static void bareruby_asleep_until(uint32_t interval, bool interrupt) {
           uint32_t deadline = bareruby_asleep_mark + interval;
-          int32_t remaining = (int32_t)(deadline - now);
+          while (interrupt && (int32_t)(deadline - HAL_GetTick()) > 0) {
+              bareruby_uart_interrupt_drain();
+              HAL_Delay(1);
+          }
+          int32_t remaining = (int32_t)(deadline - HAL_GetTick());
           if (remaining > 0) {
               HAL_Delay((uint32_t)remaining);
           }
           bareruby_asleep_mark = HAL_GetTick();
       }
 
-      void bareruby_asleep(int32_t seconds) {
-          bareruby_asleep_until(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
+      void bareruby_asleep(int32_t seconds, bool interrupt) {
+          bareruby_asleep_until(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
       }
 
-      void bareruby_asleep_ms(int32_t milliseconds) {
-          bareruby_asleep_until(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      void bareruby_asleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_asleep_until(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
       }
 
-      void bareruby_asleep_us(int32_t microseconds) {
+      /* **This one delivers nothing, whatever it is asked for.** It does not go through
+         the wait above at all: it delays microseconds directly and never moves the mark
+         the other two keep their period by, which is a fault of its own and is being
+         tracked as one. Until that is settled there is no loop here to deliver in. */
+      void bareruby_asleep_us(int32_t microseconds, bool interrupt) {
+          (void)interrupt;
           bareruby_machine_delay_us(microseconds);
       }
 

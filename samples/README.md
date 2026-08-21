@@ -25,6 +25,7 @@ it is given no argument.
 | `uart_on_line.rb` | UART receive interrupt: `on_line` handing each completed line to a realtime handler as a `StringView`, drained while `sleep_ms` waits |
 | `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
 | `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `send_break`. A frame a device cannot produce is refused, never replaced |
+| `peripheral_ruby.rb` | A peripheral class carrying Ruby: `can_read_line` written once in the gem that declares UART, and a method the program adds to the same class |
 | `i2c.rb` | I2C mixed-output write and repeated-start read returning a variable-length string |
 | `nilable.rb` | `nil`, inferred `T?`, tagged values, `nil?`, local `&.`, `if`/`while` narrowing, `||`, missing `else`, and assignment on one path |
 | `definite_assignment.rb` | `T?` for locals first assigned in an `if` or `while`, a missing-`else` `if` value, and an ivar not assigned on every `initialize` path. Matches Ruby |
@@ -36,6 +37,7 @@ it is given no argument.
 | `arena.rb` | `arena(N)` as a form: nested blocks as release points, `arena` without a size, methods that allocate without being handed a region, growing arrays (`Arena::Array`, `[]`, `[]=` past the end, `<<`), `::Array` for the fixed-capacity one, a region left by an exception, and the three ways of running one out — all caught and carried on from |
 | `string.rb` | Variable-length strings in a region: `Arena::String.new`, the empty literal `""` as sugar for it, grown, aliased, joined, compared, duplicated, and one built from an interpolation measured while running |
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
+| `sleep_interrupt.rb` | A wait is where a notification handler runs: `asleep_ms` delivers what arrived, and `interrupt: false` holds it back without losing a byte |
 | `tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
 | `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel. Its detectors set their bounds through a helper `initialize` calls. Its heartbeat is `OnboardLED`, so it says it is alive on any board rather than only on one whose LED is a pin |

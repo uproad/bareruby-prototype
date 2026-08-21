@@ -49,10 +49,18 @@ module BareRubyProt
           definition?(statement) ? statement : infer_node(statement, type_environment:)
         end
 
+        # A class opened twice is emitted once: the second opening added its definitions
+        # to the same class, and they are all in the first one already.
+        emitted = []
         body = @bareruby_ast.program_body.zip(typed).filter_map do |original, typed_statement|
           next if module_definition?(original)
+          next typed_statement unless class_definition?(original)
 
-          class_definition?(original) ? build_class_definition(original) : typed_statement
+          name, = @bareruby_ast.children_of(original)
+          next if emitted.include?(name)
+
+          emitted << name
+          build_class_definition(original)
         end
 
         @result = @tast.replace_program(body)
@@ -118,8 +126,19 @@ module BareRubyProt
       def build_class_definition(node)
         name, = @bareruby_ast.children_of(node)
         class_definition = @classes.fetch(name)
-        methods = class_definition.definitions.filter_map { |definition| build_method_definition(definition) }
+        methods = class_definition.definitions.filter_map do |definition|
+          build_method_definition(definition) unless peripheral_constructor?(name, definition)
+        end
         @tast.create_class_definition(name, class_definition.ivars, methods, span_of(node))
+      end
+
+      # **A peripheral is constructed by the binding's own function**, so the empty
+      # initialize every class is given has nothing to answer for here. Dropping it is
+      # what keeps a program that names no UART from carrying one: the class arrives in
+      # every program, and an initialize is the one definition that is inferred without
+      # anybody calling it.
+      def peripheral_constructor?(class_name, definition)
+        definition.name == :initialize && Peripheral.known?(class_name)
       end
 
       def build_method_definition(method_info)
@@ -813,6 +832,12 @@ module BareRubyProt
       end
 
       def infer_self_method_call(name, arguments, type_environment:, span:)
+        if binding_method?(type_environment.self_class, name)
+          return infer_binding_method_call(
+            nil, type_environment.self_class, name, arguments, type_environment:, span:
+          )
+        end
+
         argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
         resolved = resolve_method_call(method_named(type_environment.self_class, name), argument_types(argument_tasts))
         callee = @tast.create_callee(
@@ -822,9 +847,18 @@ module BareRubyProt
         @tast.create_call(nil, callee, argument_tasts, nil, resolved.return_type, span)
       end
 
+      # **A peripheral answers a name the mapping does not have the way any class does.**
+      # The C functions are the hardware's vocabulary; what a program says to the class
+      # above them is the class's own Ruby, and there is one rule for finding a method in
+      # Ruby. So the mapping is asked first and the class after — asked in the other order,
+      # a peripheral would be answering for names it never declared.
+      def binding_method?(class_name, name)
+        !class_name.nil? && Peripheral.known?(class_name) && Peripheral[class_name].mapped?(name)
+      end
+
       def infer_instance_method_call(receiver_tast, receiver_type, name, arguments, type_environment:, span:)
         class_name = receiver_type[:class_name]
-        if Peripheral.known?(class_name)
+        if binding_method?(class_name, name)
           signature = Peripheral[class_name].method_signature(name)
           printf_function = signature[:printf_function]
           if printf_function && formatted?(arguments.first)
@@ -906,9 +940,17 @@ module BareRubyProt
         tasts = positional.map { |argument| infer_node(argument, type_environment:) }
         keywords.each do |name, default|
           value = supplied[name]
-          tasts << (value ? infer_node(value, type_environment:) : @tast.create_integer(default, TypeUnion.literal(default), span))
+          tasts << (value ? infer_node(value, type_environment:) : default_written(default, span))
         end
         tasts
+      end
+
+      # What a keyword left out stands for. A default is written in the declaration in the
+      # type the call takes, so the literal the program did not write is built in that type.
+      def default_written(default, span)
+        return @tast.create_boolean(default, :Bool, span) if [true, false].include?(default)
+
+        @tast.create_integer(default, TypeUnion.literal(default), span)
       end
 
       def refuse_unknown_keywords(supplied, keywords, subject)
@@ -997,19 +1039,25 @@ module BareRubyProt
 
       def infer_module_function_call(module_name, name, arguments, type_environment:, span:)
         signature = BindingFunction.of_module(module_name, name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
-        callee = @tast.create_callee(
-          :binding_function, module_name, name, signature[:function],
-          signature[:parameter_types], signature[:return_type]
-        )
-        @tast.create_call(nil, callee, argument_tasts, nil, signature[:return_type], span)
+        infer_binding_signature_call(signature, module_name, name, "#{module_name}.#{name}",
+                                     arguments, type_environment:, span:)
       end
 
       def infer_binding_function_call(name, arguments, type_environment:, span:)
-        signature = BindingFunction.bare(name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
+        infer_binding_signature_call(BindingFunction.bare(name), nil, name, name.to_s,
+                                     arguments, type_environment:, span:)
+      end
+
+      # **A function reached without a receiver takes its keywords the way a peripheral
+      # does** — declared, defaulted, and turned into trailing positionals in declaration
+      # order. There is one rule for what a keyword is in this language, and the waits are
+      # not an exception to it just because no object owns them.
+      def infer_binding_signature_call(signature, owner, name, subject, arguments, type_environment:, span:)
+        argument_tasts = resolve_keywords(
+          arguments, signature[:keywords] || {}, subject, type_environment:, span:
+        )
         callee = @tast.create_callee(
-          :binding_function, nil, name, signature[:function],
+          :binding_function, owner, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
         )
         @tast.create_call(nil, callee, argument_tasts, nil, signature[:return_type], span)

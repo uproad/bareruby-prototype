@@ -40,11 +40,13 @@ module BareRubyProt
       void bareruby_startup(void);
 
       void bareruby_machine_delay_us(int32_t microseconds);
-      void bareruby_sleep(int32_t seconds);
-      void bareruby_sleep_ms(int32_t milliseconds);
-      void bareruby_asleep(int32_t seconds);
-      void bareruby_asleep_ms(int32_t milliseconds);
-      void bareruby_asleep_us(int32_t microseconds);
+
+      /* Every wait takes whether it may deliver notifications while it waits. */
+      void bareruby_sleep(int32_t seconds, bool interrupt);
+      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt);
+      void bareruby_asleep(int32_t seconds, bool interrupt);
+      void bareruby_asleep_ms(int32_t milliseconds, bool interrupt);
+      void bareruby_asleep_us(int32_t microseconds, bool interrupt);
       int32_t bareruby_ticks_ms(void);
 
       #ifdef __cplusplus
