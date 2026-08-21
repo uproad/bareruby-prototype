@@ -268,10 +268,12 @@ module BareRubyProt
       /* The wait is counted unsigned, as the asleep mark below is, so that the seconds
          form can turn its argument into milliseconds without overflowing a signed
          multiplication. */
-      static void bareruby_sleep_for(uint32_t milliseconds) {
+      static void bareruby_sleep_for(uint32_t milliseconds, bool interrupt) {
           absolute_time_t deadline = make_timeout_time_ms(milliseconds);
           for (;;) {
-              bareruby_uart_interrupt_drain();
+              if (interrupt) {
+                  bareruby_uart_interrupt_drain();
+              }
               if (time_reached(deadline)) {
                   break;
               }
@@ -279,12 +281,12 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
       }
 
-      void bareruby_sleep(int32_t seconds) {
-          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
+      void bareruby_sleep(int32_t seconds, bool interrupt) {
+          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
       }
 
       // One mark serves all three units, and it counts microseconds since boot in 64
@@ -295,24 +297,34 @@ module BareRubyProt
       // to back.
       static uint64_t bareruby_asleep_mark = 0;
 
-      static void bareruby_asleep_until(uint64_t interval) {
+      // **A period is only long enough to deliver in if it is longer than delivering
+      // takes.** So the wait is spent in whole milliseconds while more than one of them
+      // remains, and what is left is one exact wait to the deadline: a 25 us period keeps
+      // its exactness and delivers nothing, which is the honest answer for a period that
+      // has no room for a handler. Notifications are not lost by it — the interrupt keeps
+      // filling the queue, and the next wait long enough will hand them over.
+      static void bareruby_asleep_until(uint64_t interval, bool interrupt) {
           uint64_t deadline = bareruby_asleep_mark + interval;
+          while (interrupt && time_us_64() + 1000u < deadline) {
+              bareruby_uart_interrupt_drain();
+              sleep_ms(1);
+          }
           if (time_us_64() < deadline) {
               sleep_until(from_us_since_boot(deadline));
           }
           bareruby_asleep_mark = time_us_64();
       }
 
-      void bareruby_asleep(int32_t seconds) {
-          bareruby_asleep_until((uint64_t)seconds * 1000000u);
+      void bareruby_asleep(int32_t seconds, bool interrupt) {
+          bareruby_asleep_until((uint64_t)seconds * 1000000u, interrupt);
       }
 
-      void bareruby_asleep_ms(int32_t milliseconds) {
-          bareruby_asleep_until((uint64_t)milliseconds * 1000u);
+      void bareruby_asleep_ms(int32_t milliseconds, bool interrupt) {
+          bareruby_asleep_until((uint64_t)milliseconds * 1000u, interrupt);
       }
 
-      void bareruby_asleep_us(int32_t microseconds) {
-          bareruby_asleep_until((uint64_t)microseconds);
+      void bareruby_asleep_us(int32_t microseconds, bool interrupt) {
+          bareruby_asleep_until((uint64_t)microseconds, interrupt);
       }
 
       int32_t bareruby_ticks_ms(void) {

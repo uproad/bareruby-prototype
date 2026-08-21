@@ -37,6 +37,7 @@ it is given no argument.
 | `arena.rb` | `arena(N)` as a form: nested blocks as release points, `arena` without a size, methods that allocate without being handed a region, growing arrays (`Arena::Array`, `[]`, `[]=` past the end, `<<`), `::Array` for the fixed-capacity one, a region left by an exception, and the three ways of running one out — all caught and carried on from |
 | `string.rb` | Variable-length strings in a region: `Arena::String.new`, the empty literal `""` as sugar for it, grown, aliased, joined, compared, duplicated, and one built from an interpolation measured while running |
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |
+| `sleep_interrupt.rb` | A wait is where a notification handler runs: `asleep_ms` delivers what arrived, and `interrupt: false` holds it back without losing a byte |
 | `tenji.rb` | A PicoRuby product ported over: three ADC channels driving three PWM LEDs |
 | `tenji_int.rb` | The same program with `Fixed` replaced by integer arithmetic |
 | `avs.rb` | The same purpose met properly: 40 kHz sampling, a 30 ms window of frames, a swing per channel. Its detectors set their bounds through a helper `initialize` calls. Its heartbeat is `OnboardLED`, so it says it is alive on any board rather than only on one whose LED is a pin |
