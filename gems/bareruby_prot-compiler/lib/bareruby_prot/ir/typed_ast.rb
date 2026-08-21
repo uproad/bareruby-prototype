@@ -34,8 +34,6 @@ module BareRubyProt
 
     def create_arena_string_type = { kind: :arena_string }
 
-    def create_string_view_type = { kind: :string_view }
-
     def create_nilable_type(inner) = { kind: :nilable, inner: }
 
     def create_identity(owner, name, parameter_types, return_type)
@@ -324,7 +322,6 @@ module BareRubyProt
       return "array(#{inspect_type(type[:element])}, #{type[:capacity]})" if type[:kind] == :array
       return "arena_array(#{inspect_type(type[:element])})" if type[:kind] == :arena_array
       return "arena_string" if type[:kind] == :arena_string
-      return "string_view" if type[:kind] == :string_view
       return "#{inspect_type(type[:inner])}?" if type[:kind] == :nilable
 
       "instance(#{type[:class_name]})"

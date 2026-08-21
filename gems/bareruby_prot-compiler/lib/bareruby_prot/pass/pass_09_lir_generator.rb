@@ -122,6 +122,9 @@ module BareRubyProt
           lir_parameters = parameters.map do |parameter|
             binding, type = @tast.children_of(parameter)
             @function_scope.declare(binding[:name])
+            # A handler is handed a shared value by address, as every other call passes
+            # one: the peripheral it is about is the binding's, not a copy of it.
+            @function_scope.declare_pointer(binding[:name]) if @value_layout.shared?(type)
             { name: binding[:name], type: @binding_storage.type_of(binding, type) }
           end
           statements = predeclare_nilable_locals(body) + body.flat_map { |statement| lower_statement(statement) }

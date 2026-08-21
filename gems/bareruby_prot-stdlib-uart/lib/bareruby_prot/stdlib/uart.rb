@@ -14,7 +14,10 @@ module BareRubyProt
   Peripheral.register(
     :UART,
 struct: :bareruby_uart_t,
-      constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4 },
+      # RX_RECEIVE is which event a handler is registered for. There is one of them, and
+      # it is still named rather than assumed: a registration that says nothing would have
+      # to change shape the day a second event exists.
+      constants: { NONE: 0, EVEN: 1, ODD: 2, RTSCTS: 4, RX_RECEIVE: 1 },
       constructor: {
         function: :bareruby_uart_init,
         parameter_types: %i[Int32],
@@ -61,12 +64,15 @@ struct: :bareruby_uart_t,
         clear_tx_buffer: {
           function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
         },
-        # The receive interrupt. Enabling it is what buys the 256-byte ring the binding
-        # keeps filled from its ISR; the block runs later, in thread mode while sleep_ms
-        # waits, handed each completed line as a borrowed view of the binding's buffer.
-        on_line: {
-          function: :bareruby_uart_on_line, parameter_types: [], return_type: :Nil,
-          block: :realtime_handler, block_parameter_types: %i[StringView]
+        # **The receive notification says which port and which event, and stops there.**
+        # Registering is what arms the interrupt and so what buys the queue; the block runs
+        # later, in thread mode while a wait waits. It is handed the peripheral it was
+        # registered on — so that it need not have been kept in a name the handler cannot
+        # see — and the event that fired. What arrived, and whether it amounts to a line,
+        # it reads for itself.
+        irq: {
+          function: :bareruby_uart_irq, parameter_types: %i[Int32], return_type: :Nil,
+          block: :realtime_handler, block_parameter_types: %i[self Int32]
         }
       },
     # Where the expansion's variable arguments begin. It is a fact about this function's
@@ -107,8 +113,9 @@ struct: :bareruby_uart_t,
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
 
-      typedef void (*bareruby_uart_line_handler_t)(bareruby_string_view_t *line);
-      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler);
+      typedef void (*bareruby_uart_irq_handler_t)(bareruby_uart_t *self, int32_t event);
+      void bareruby_uart_irq(
+          bareruby_uart_t *self, int32_t events, bareruby_uart_irq_handler_t handler);
     CPP
     units: {
       uart: %i[bareruby_uart_init bareruby_uart_write bareruby_uart_puts
@@ -118,8 +125,8 @@ struct: :bareruby_uart_t,
       # **One queue, and everyone reads it.** Whatever touches the receive side brings it,
       # a registration included — the handler is a consumer of the same queue as `gets`,
       # taking bytes with the same call, and whichever asks first gets the byte.
-      uart_receive: %i[bareruby_uart_read_byte bareruby_uart_peek bareruby_uart_on_line],
-      uart_interrupt: %i[bareruby_uart_on_line]
+      uart_receive: %i[bareruby_uart_read_byte bareruby_uart_peek bareruby_uart_irq],
+      uart_interrupt: %i[bareruby_uart_irq]
     }
   )
 end
