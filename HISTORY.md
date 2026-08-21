@@ -298,6 +298,29 @@ README lists.
   ring keeps one slot free); asking for 1024, 300 offered and 300 taken, 1000 offered and
   1000 taken. Verified on host; built for pico1h and f446, and `samples/uart_rx_buffer.rb`
   has no mega2560 build by design. No board was flashed.
+- **The receive notification says which port and which event** (`samples/uart_rx_receive.rb`):
+  `on_line` handed a handler a finished line, which meant the binding had to know what a
+  line is — and four of them knew it in four identical copies, LF/CRLF framing, the
+  255-byte cap and the discarding of an overlong line included. It is now
+  `irq(UART::RX_RECEIVE) { |port, event| … }`: the handler is told the peripheral it was
+  registered on and the event that fired, and **reads the queue itself** with the same
+  call a program would. The port is a parameter because a handler starts with its
+  parameters and nothing else — it cannot see the name the program kept. The event is a
+  parameter although there is only one of them, because a registration that says nothing
+  would have to change shape the day there is a second; one event exists, so what was
+  registered for and what fired are still the same value, and the binding is where the two
+  will have to be told apart. **`on_line` and the borrowed-string view went with it** —
+  the view existed to hand a handler bytes a binding owned, and nothing hands one now, so
+  its type, its comparison and the typedef in the header are gone. What that is worth on
+  pico1h: 6,952 B of bss against 7,212 B for the `on_line` sample it replaces, **260 bytes
+  of line buffer that no longer exists**; text is 45,276 B against 45,076 B, though the two
+  are different programs — the old one compared a view against strings in C, the new one
+  compares bytes in Ruby. On the F4 the sample is 13,512 B of text and 2,256 B of bss, and
+  it is 11.6 KB of hex on the Mega. What was lost with it, and is worth saying: **a handler
+  cannot assemble a line that arrives in two pieces**, because it keeps nothing between
+  calls. Lines are still reached the other way — `gets` from the program's own loop, which
+  is where the queue's Ruby lives. Verified on host with bytes piped in; built for pico1h,
+  mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
