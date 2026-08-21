@@ -179,10 +179,6 @@ module BareRubyProt
                       bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return bareruby_uart_port(self)->available() > 0;
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           bareruby_uart_port(self)->flush();
       }

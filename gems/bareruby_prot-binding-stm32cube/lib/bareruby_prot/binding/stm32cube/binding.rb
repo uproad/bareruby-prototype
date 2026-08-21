@@ -122,10 +122,6 @@ module BareRubyProt
           } while ((int32_t)(deadline - HAL_GetTick()) > 0);
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          return bareruby_uart_bytes_available(self) != 0;
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           UART_HandleTypeDef *port = bareruby_board_uart(self->id);
           while (__HAL_UART_GET_FLAG(port, UART_FLAG_TC) == RESET) {
