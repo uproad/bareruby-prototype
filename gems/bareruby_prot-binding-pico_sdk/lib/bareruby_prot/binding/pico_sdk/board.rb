@@ -113,6 +113,24 @@ module BareRubyProt
       found.one? ? found.first : by_hand(chip, found)
     end
 
+    # Every board that could take a name under an entry: this machine's chip, in BOOTSEL,
+    # and not already answering to a name the record holds.
+    #
+    # **What is offered is what the button left in reach.** A board is written through its
+    # bootloader the first time, because an unnamed board has nothing running that could be
+    # asked to write itself — so a board that is not in BOOTSEL is not a candidate, however
+    # plainly it is plugged in.
+    #
+    # **The record is what says a board is spoken for, and it can only say so much.** An
+    # RP2040 reports the bootrom's id in BOOTSEL and the flash id once it is running, so a
+    # board already named is not recognisable as one while its button is held. An RP2350
+    # gives one number for both and is.
+    def self.free(target, taken)
+      PicoSdkFlash.attached.select do |board|
+        board.bootsel? && board.chip == target.machine.chip && !taken.include?(board.serial)
+      end
+    end
+
     # **The button is the question, so this asks for it rather than choosing.** None and
     # several are the same answer from here: nothing on the bus says which board was meant.
     def self.by_hand(chip, waiting)

@@ -31,6 +31,13 @@ module BareRubyProt
 
     Board = Struct.new(:serial, :chip, :state, :node, :port) do
       def bootsel? = state == "bootsel"
+
+      # What this board is called on a screen where one of several is being pointed at.
+      # **The serial is not enough on its own.** A board in its bootloader answers with an
+      # id it shares with every board of its model — three on this desk gave the same one —
+      # so the device and the port are said beside it. They are what tells one from the next
+      # until it has been given a name, which is what it is being pointed at for.
+      def label = "#{serial}   #{node}   #{port}"
     end
 
     def self.attached

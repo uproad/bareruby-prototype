@@ -11,6 +11,7 @@ require_relative "deployment"
 require_relative "catalog"
 require_relative "jobs"
 require_relative "progress"
+require_relative "roster"
 require_relative "scaffold"
 require_relative "toolchain"
 require_relative "tools"
@@ -46,11 +47,12 @@ module BareRubyProt
         deploy  SOURCE.rb   build, then flash.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
-        target attach --target=NAME
-                            Hold BOOTSEL on one board and run this once per board: it
+        target attach       Hold BOOTSEL on one board and run this once per board: it
                             writes NAME_01, NAME_02, ... into them and records every name
-                            under the entry. No program of yours is involved; deploy and
-                            flash are what carry those, to all of the boards at once.
+                            under the entry. Without --target it asks which board goes
+                            under which entry. No
+                            program of yours is involved; deploy and flash are what carry
+                            those, to all of the boards at once.
         target list         Every machine that can be targeted, by family.
         tools install       Fetch what the recorded targets build with, pinned by version
                             and hash. build and flash do this first; silent once it is done.
@@ -60,7 +62,9 @@ module BareRubyProt
       Options:
         --target=NAME       Work on NAME, repeatable. NAME is an entry's name in
                             target.yml, in every command that takes this. Without it, every
-                            entry recorded there is worked on.
+                            entry recorded there is worked on — except target attach, which
+                            names one board; without it, which board and which entry are
+                            asked on screen.
         -d, --debug         Build the debug firmware, whatever target.yml says.
         --no-exceptions     Reject begin/rescue and leave the unwinder out.
         --jobs=N            How many targets to build at once, each in a process of its
@@ -118,7 +122,7 @@ module BareRubyProt
       end
     end
 
-    # `bareruby target attach --target=pico`. An entry says which machine this is;
+    # `bareruby target attach`. An entry says which machine this is;
     # attaching puts one board behind it, by writing the entry's name into the first and a
     # numbered name into each one after that. Where in a board's flash a name goes, and how
     # it gets there, is entirely the binding's, so this is dispatch as `init` is — and a
@@ -127,6 +131,13 @@ module BareRubyProt
     # **One entry, because one board is being named.** Every other command works on every
     # entry the record holds when none is named; this one cannot, because the name it would
     # write is the thing being chosen.
+    #
+    # **So with nothing named, it asks rather than taking them all.** Which board and which
+    # entry are two halves of one answer, and neither has ever been visible: the entry was a
+    # name read out of a file and typed back in, and the board was a button held down, which
+    # says nothing on screen and says nothing at all when two of them are held. On screen
+    # they are one question with two columns, and the run ends with a confirmation rather
+    # than with a write nobody was shown.
     #
     # **No program is named here, because none is written here.** What goes onto the board
     # beside its name is the binding's own resident firmware, which is the same for every
@@ -138,9 +149,28 @@ module BareRubyProt
     # is any use if the button was not held, so that is answered while it can still be
     # answered for nothing.
     def attach
+      return chosen if @target_options.empty?
       return attach_usage unless entries.one?
 
-      entry = entries.first
+      named(entries.first)
+    end
+
+    # Both halves off the screen. The record is the whole of what could have been meant on
+    # one side and the bus is the whole of it on the other, so there is nothing here to
+    # look up — and nothing is written until it is confirmed, which is what discarding at
+    # the end means.
+    def chosen
+      return attach_usage if entries.empty?
+
+      entry, board = Roster.chosen(entries)
+      return 0 unless entry
+
+      written(entry, entry.target.binding, board, Deployment.next_board_name(entry.name))
+    end
+
+    # The entry named on the command line, and the board the button says. It is the same
+    # write either way; what differs is only how the two were arrived at.
+    def named(entry)
       offered = entry.target.binding
       unless offered.respond_to?(:board)
         puts "bareruby: #{offered.key} boards carry no name of their own — nothing to attach."
@@ -193,7 +223,7 @@ module BareRubyProt
     # hardware before it is run — a button held on one particular board — and a command
     # whose precondition is physical cannot be guessed at from a line in a list.
     ATTACH_USAGE = <<~USAGE
-      Usage: bareruby target attach --target=NAME
+      Usage: bareruby target attach [--target=NAME]
 
         Hold BOOTSEL on the board being named, plug it in, and run this.
 
@@ -203,7 +233,8 @@ module BareRubyProt
         one of those names, so nothing has to be edited afterwards.
 
         NAME is an entry's name in config/target.yml, and exactly one is named, because
-        one board is being named.
+        one board is being named. Left out, the entries recorded there and the boards
+        waiting in BOOTSEL go on screen side by side, and one of each is pointed at.
 
         No program of yours is involved. What goes onto the board beside its name is a
         small resident firmware, the same one for every board of that machine, which
@@ -216,8 +247,9 @@ module BareRubyProt
         be deployed in parallel without touching the buttons again.
     USAGE
 
-    # Named or not, the way out is the same list, so it is printed either way rather than
-    # made into a second sentence about how many were named.
+    # More than one entry named, or a record with nothing in it to name. Either way the way
+    # out is the same list, so it is printed rather than made into a second sentence about
+    # which of the two happened.
     def attach_usage
       warn ATTACH_USAGE
       warn "#{Deployment::FILE} records #{Deployment.entries.map(&:name).join(', ')}."
