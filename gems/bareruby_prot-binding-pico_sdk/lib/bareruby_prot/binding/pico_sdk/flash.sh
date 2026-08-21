@@ -28,14 +28,24 @@
 # system's answer rather than this script's**, and the two systems differ by more than a
 # flag: Linux publishes a block device and leaves the mounting to whoever wants it,
 # while macOS has mounted it before anything here runs. So they are two files rather
-# than branches through one, and each answers the same six questions:
+# than branches through one, and each answers the same eight questions:
 #
 #     attached_boards            one line per board: SERIAL CHIP STATE NODE PORT
+#     location_of PORT           where that board is, as this desk's own tools name it
+#     firmware_of NODE PORT      what the firmware there declares itself to be
 #     listing_advice LINES       what --list should add here, given those lines
 #     reset_into_bootsel NODE    reboot a running --debug firmware into the bootloader
 #     reset_advice               what a reset that produced no board might mean here
 #     open_volume NODE SER CHIP  set VOLUME to a directory the image can be copied into
 #     close_volume               give VOLUME back, if it had to be taken
+#
+# **PORT is the machinery's and LOCATION is the reader's**, and they are the same string
+# on a desk whose boards are on its own bus. Everything here follows a board across a
+# reset by its port, which is the kernel's and must not move; what somebody reads off a
+# screen is whatever their own tools call the place — under WSL a board is not on a bus
+# at all but a Windows device handed over by usbipd, named `7-1` there and in the command
+# that hands it over, and telling them the kernel's number instead is telling them a
+# number that appears nowhere they can act on.
 #
 # What is left in this file is what neither system gets a say in: which board the image
 # is for, that the volume really is a bootloader, and the copy.
@@ -78,8 +88,20 @@ done
 # **once**, and only then is anything written — because a board looked for while others
 # are re-enumerating is looked for at the worst possible moment, and on a transport that
 # hands out its ports in arrival order it may not even be findable.
+# What a board is, said in full: the five answers the machinery works from, and after them
+# the two a person reads. They are asked for separately because they cost differently —
+# a location may be a second file to open and a firmware name a second command to run —
+# and nothing that merely writes a board should pay for either.
+described() {
+    local serial chip state node port
+    while read -r serial chip state node port; do
+        echo "$serial $chip $state $node $(location_of "$port")" \
+             "$(firmware_of "$node" "$port")"
+    done
+}
+
 if [ -n "$ATTACHED" ]; then
-    attached_boards 2>/dev/null || true
+    attached_boards 2>/dev/null | described || true
     exit 0
 fi
 
@@ -96,9 +118,10 @@ if [ -n "$LIST" ]; then
         echo "       hold BOOTSEL while plugging it in to see it here."
         exit 0
     fi
-    printf '%-18s %-8s %-8s %-14s %s\n' SERIAL CHIP STATE DEVICE PORT
-    echo "$boards" | while read -r serial chip state node port; do
-        printf '%-18s %-8s %-8s %-14s %s\n' "$serial" "$chip" "$state" "$node" "$port"
+    printf '%-18s %-8s %-8s %-14s %-10s %s\n' SERIAL CHIP STATE DEVICE LOCATION FIRMWARE
+    echo "$boards" | described | while read -r serial chip state node location firmware; do
+        printf '%-18s %-8s %-8s %-14s %-10s %s\n' \
+            "$serial" "$chip" "$state" "$node" "$location" "$firmware"
     done
     listing_advice "$boards"
     exit 0
@@ -158,7 +181,7 @@ fi
 
 if [ "$count" -gt 1 ]; then
     echo "flash: $count boards carry $CHIP, so the image does not say which one to use." >&2
-    echo "$candidates" | while read -r serial _ state node; do
+    echo "$candidates" | while read -r serial _ state node _; do
         echo "         $serial   ($state, $node)" >&2
     done
     echo "       Give each board the name of the entry it belongs to. That is one command a" >&2

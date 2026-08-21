@@ -125,7 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
-./bareruby target attach --target=pico       # once per board: BOOTSEL held, add and name it
+./bareruby target attach                     # once per board: BOOTSEL held, pick board and entry
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -141,7 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. No program of yours; hold BOOTSEL first | writes it |
+| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. Without `--target` it asks which board goes under which entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -622,6 +622,78 @@ Hold BOOTSEL on each board being named, plug it in, and run its entry's command:
 ./bareruby target attach --target=pico1b
 ./bareruby target attach --target=pico2
 ```
+
+**`--target=` is a name typed back**, out of the very file this command is about to write
+into — and it says nothing about the other half. Which board was being named was answered
+by holding a button, which cannot be seen, cannot be taken back, and says nothing at all
+when two boards are held at once. Left out, both halves go on screen:
+
+```
+    entry: pico1h
+    board: 7-2   RP2 Boot   E0C9125B0D9B   /dev/sdf1
+    name:  pico1h_02
+
+  [✓] entry  [›] board  [ ] confirm
+
+  Which board is it?
+  Where it is plugged in, what its firmware calls it, what it answers to, its device.
+  In BOOTSEL the id is the chip's own and boards share it; the place is each board's.
+
+      entry                 board
+
+      host                  7-1   RP2 Boot   E0C9125B0D9B   /dev/sde1
+      pico1h              › 7-2   RP2 Boot   E0C9125B0D9B   /dev/sdf1
+      pico2w
+      arduino_mega_2560
+
+  ↑↓ move   ←  entries   enter choose   esc back   ^C cancel
+```
+
+It is laid out the way `target add` lays its families and machines out. The entry is chosen
+first, on the left; `→` steps into the boards on the right, which are always the ones
+*that* entry could take — its chip, in BOOTSEL, and not already answering to a name the
+record holds. Then a confirmation, and only then is anything written. The three lines at
+the top are what the run is about to do: the entry, the board on the desk, and the name
+that goes into the board's flash and into the entry's `boards:`.
+
+**Two boards answering with the same serial is the case this exists for.** With both of
+them in BOOTSEL, `--target=pico1h` is refused — nothing on the bus says which one was
+meant. Here they are two rows, told apart by where each one is plugged in.
+
+The four parts of a board row are **where it is, what its firmware calls itself, what it
+answers to, and the device it is written through.** Where it is leads, because it is the
+only one of the four that belongs to that board alone: the two above both answer
+`E0C9125B0D9B`, which is the RP2040 bootrom's id rather than a name anybody chose. What
+the firmware says is the board's own claim rather than the desk's bookkeeping — `RP2 Boot`
+is a board that has not been through here, `BareRuby Debug Firm RP Pico1` is one that has.
+
+**Where a board is depends on what is looking.** Off a bus it is the kernel's port path,
+`1-1`. Under WSL the board is not on a bus at all: it is a Windows device handed over by
+usbipd, called `7-1` in `usbipd list` and in the `usbipd attach --busid 7-1` that put it
+here, and the kernel's own number for it appears nowhere anybody can act on. So that is
+what is shown, read back out of the vhci hub's status table rather than by running a
+Windows program once per listing and matching on a serial three boards of one model share.
+`flash.sh --list` says the same thing in a column of its own:
+
+```
+SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
+E0C9125B0D9B       rp2040   bootsel  /dev/sde1      7-1        RP2 Boot
+```
+
+On macOS it is the location id, which is what `ioreg` and `system_profiler` both print.
+**That one is unverified** — no Apple hardware was in reach.
+
+**Four boards were in BOOTSEL at once when this was measured**, all four answering
+`E0C9125B0D9B`, on two different Windows buses. The one at `7-1` was named through this
+screen and came back as `BareRuby Debug Firm RP Pico1 (pico1h_02)`; the entry wrote
+`boards: [pico1h, pico1h_02]` itself. A named board re-enumerates as a device usbipd has
+never seen, so it returns `Not shared` and is out of WSL's reach until it is bound and
+attached once more — after which `--list` reads its name in both the serial and the
+firmware column. [`HISTORY.md`](HISTORY.md) has the run.
+
+**A Pico and a Pico W are both rp2040**, so both are offered under a `pico` entry. Nothing
+on the bus tells them apart, and holding the button never did either — what this changes
+is that they are on screen, where somebody who knows which is which can point at one.
 
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every

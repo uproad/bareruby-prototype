@@ -853,6 +853,63 @@ the same Windows bus ids and appeared in WSL as four distinct `ttyACM` devices. 
 needs one Administrator PowerShell run after newly named devices are bound; it is recorded
 in the README rather than hidden as a firmware result.
 
+### Four boards with one id, told apart by where they are
+
+`target attach` had one way of being told which board was being named: the BOOTSEL
+button. That answer is invisible, cannot be taken back, and stops being an answer the
+moment two boards are held at once — which the flasher refuses rather than guesses at.
+Four Pico 1 boards were put in BOOTSEL together to see what there was to tell them apart
+with:
+
+```
+SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
+E0C9125B0D9B       rp2040   bootsel  /dev/sde1      7-1        RP2 Boot
+E0C9125B0D9B       rp2040   bootsel  /dev/sdf1      7-3        RP2 Boot
+E0C9125B0D9B       rp2040   bootsel  /dev/sdg1      8-4        RP2 Boot
+E0C9125B0D9B       rp2040   bootsel  /dev/sdh1      7-4        RP2 Boot
+```
+
+**One serial across all four** — the bootrom's own id, not a name anybody chose. Four
+block devices, whose names are the order they happened to be scanned in. And four places,
+each of which belongs to one board. So the place is what a person is offered, and
+`target attach` asks instead of reading a button: the entries down the left, the boards
+that entry could take down the right, and a confirmation before anything is written.
+
+**Where a board is is not one number.** These arrive over usbipd, so the kernel's own port
+path names a virtual controller and appears nowhere on the Windows side, where the board
+is `7-1` in `usbipd list` and in the `usbipd attach --busid 7-1` that handed it over. The
+vhci hub's status table carries the far side's device id — `00070001`, a bus number over a
+device number — so `7-1` is read back out of the kernel rather than by running a Windows
+program once per listing and matching on a serial all four boards share. Boards on two
+different Windows buses (`7-1`, `7-3`, `7-4` and `8-4`) were resolved in the same pass.
+
+The board at `7-1` was then named through that screen. It took 17.6s, nearly all of it
+building the agent for the entry, and the board came back as `2e8a:000a`, filed by Windows
+under `USB\VID_2E8A&PID_000A\PICO1H_02` and reporting `BareRuby Debug Firm RP Pico1
+(pico1h_02)` as its bus-reported description. `config/target.yml` went from
+`boards: [pico1h]` to `boards: [pico1h, pico1h_02]` on its own, and the next run of the
+screen offered `pico1h_03` to the three boards still sitting in their bootloaders.
+
+**And it reads back as itself — after being handed over a second time.** A freshly named
+board re-enumerates as a device usbipd has never seen, so it returns `Not shared` and is
+out of WSL's reach entirely; the listing does not show it wrongly, it does not show it at
+all. Bound and attached again, it reads
+
+```
+SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
+pico1h_02          rp2040   running  /dev/ttyACM0   7-1        BareRuby Debug Firm RP Pico1 (pico1h_02)
+```
+
+The serial is the name, and the firmware column carries the name as well — the string
+sysfs publishes is the agent's own product string, parenthesis included, rather than
+anything the Windows side composed. The screen no longer offers this board: it is running
+rather than sitting in a bootloader, and the record holds its name.
+
+**What the chip cannot say, this cannot say either.** A Pico and a Pico W are both rp2040,
+so all four are offered under a `pico` entry, the Pico W among them. The button never told
+them apart either; what has changed is that the four are on screen, where somebody who
+knows which is which can point at one.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

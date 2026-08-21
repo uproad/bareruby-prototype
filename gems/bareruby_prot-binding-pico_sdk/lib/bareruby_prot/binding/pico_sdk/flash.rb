@@ -29,14 +29,24 @@ module BareRubyProt
     SETTLE_SECONDS = 100
     TICK = 0.5
 
-    Board = Struct.new(:serial, :chip, :state, :node, :port) do
+    # **Where it is comes before what it answers to.** A board in its bootloader answers
+    # with an id it shares with every board of its model — three on this desk gave the same
+    # one — so a serial read first is a serial that has to be read again once it turns out
+    # to say nothing. Where the board is plugged in never says nothing, and what its
+    # firmware calls itself says whether it has been named before.
+    Board = Struct.new(:serial, :chip, :state, :node, :location, :firmware) do
       def bootsel? = state == "bootsel"
+
+      def cells = [location, firmware, serial, node]
     end
 
+    # **The firmware's own words are last, because they are the one field with a space in
+    # them.** `BareRuby Debug Firm RP Pico1` is what a board this side has named says it
+    # is, and a name written to be read cannot also be one word.
     def self.attached
       IO.popen([SCRIPT, "--attached"], &:read).lines(chomp: true).filter_map do |line|
-        fields = line.split
-        Board.new(*fields) if fields.length == 5
+        fields = line.split(" ", 6)
+        Board.new(*fields) if fields.length == 6
       end
     end
 
