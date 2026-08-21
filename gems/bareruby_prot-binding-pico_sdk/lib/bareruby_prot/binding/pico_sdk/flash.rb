@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "libusb"
+
 require "bareruby_prot/toolchain"
 
 module BareRubyProt
@@ -242,21 +244,56 @@ module BareRubyProt
 
     STREAM_MARK = "BRLOAD"
     STREAM_DONE = "BRDONE"
-    STREAM_BAUD = "115200"
+    STREAM_ASK = "?"
     STREAM_SECONDS = 60
     REBOOT_TICK = 0.05
 
+    # **The board's own function, not the serial port it also has.** The interface carries
+    # nothing but this, so what arrives here arrived from a host that meant it — a program
+    # printing `BRDONE` used to be able to say a transfer had finished, because it was
+    # printing into the same stream the answer came back on.
+    VENDOR = 0x2e8a
+    BRDF_INTERFACE = 2
+    BRDF_OUT = 0x03
+    BRDF_IN = 0x83
+    BRDF_SECONDS = 60_000
+
     def self.streamed(board, image)
       bytes = flat(image)
-      warn "flash: #{board.serial} takes #{bytes.bytesize} bytes over #{board.node}"
-      system("stty", "-F", board.node, "raw", "-echo", STREAM_BAUD, %i[out err] => File::NULL)
-      File.open(board.node, "r+b") do |port|
-        port.write(format("%s%08x", STREAM_MARK, bytes.bytesize))
-        port.write(bytes)
-        port.flush
-        return false unless said(port, board)
+      warn "flash: #{board.serial} takes #{bytes.bytesize} bytes over BRDF at #{board.location}"
+      taken = opened(board) do |handle|
+        handle.bulk_transfer(endpoint: BRDF_OUT, timeout: BRDF_SECONDS,
+                             dataOut: format("%s%08x", STREAM_MARK, bytes.bytesize) + bytes)
+        said(handle, board)
       end
-      back(board)
+      taken && back(board)
+    end
+
+    # **Found by the name it answers to**, which is the same name the record holds and the
+    # same one every other part of this reaches it by. Nothing here needs a device node:
+    # the serial port has one because the kernel gave it one, and this function has none
+    # because no kernel driver claims it.
+    def self.opened(board)
+      found = LIBUSB::Context.new.devices(idVendor: VENDOR).find do |one|
+        (one.serial_number rescue nil) == board.serial
+      end
+      return refused(board) unless found
+
+      found.open do |handle|
+        handle.claim_interface(BRDF_INTERFACE) { yield handle }
+      end
+    end
+
+    # **Raw access to a board is a permission, and it is the desk's to give.** A serial
+    # port arrives owned by a group anybody can be put in; a function no driver claims
+    # arrives owned by root. One udev rule settles it, which is the same rule the chip's
+    # own tools ship.
+    def self.refused(board)
+      warn "flash: #{board.serial} is attached but its BRDF interface cannot be opened."
+      warn "       Raw USB needs a rule: put this in /etc/udev/rules.d/99-bareruby-pico.rules"
+      warn "         SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2e8a\", MODE=\"0660\", GROUP=\"plugdev\""
+      warn "       then 'sudo udevadm control --reload-rules && sudo udevadm trigger'."
+      false
     end
 
     # **The board says it has the whole program before it moves it into place**, and that
@@ -264,17 +301,23 @@ module BareRubyProt
     # nothing on its own: it was answering to it beforehand too, so a run that sent
     # nothing at all would look exactly like one that worked. What is waited for is the
     # board's own word, said among whatever the program running on it is also saying.
-    def self.said(port, board)
+    # **The board is asked rather than listened to.** It cannot write into this pipe
+    # whenever it likes — the only core allowed to touch USB there is the one running the
+    # host's own traffic — so a knock is what gives it the chance to answer.
+    def self.said(handle, board)
       deadline = Time.now + STREAM_SECONDS
-      held = +""
       while Time.now < deadline
-        next unless IO.select([port], nil, nil, TICK)
-
-        held << port.readpartial(BUFFER)
-        return true if held.include?(STREAM_DONE)
+        handle.bulk_transfer(endpoint: BRDF_OUT, dataOut: STREAM_ASK)
+        return true if answered(handle).include?(STREAM_DONE)
       end
       warn "flash: #{board.serial} did not say it had the program."
       false
+    end
+
+    def self.answered(handle)
+      handle.bulk_transfer(endpoint: BRDF_IN, dataIn: BUFFER, timeout: 200)
+    rescue LIBUSB::ERROR_TIMEOUT
+      ""
     end
 
     BUFFER = 4096

@@ -853,6 +853,8 @@ module BareRubyProt
       #include "pico/multicore.h"
       #include "pico/stdio_usb.h"
       #include "pico/stdlib.h"
+      #include "pico/util/queue.h"
+      #include "tusb.h"
 
       extern "C" void bareruby_persist_attached_name(void);
 
@@ -887,6 +889,73 @@ module BareRubyProt
 
       static uint32_t bareruby_taking;
       static uint8_t bareruby_page[FLASH_PAGE_SIZE];
+
+      /* ---- The pipe this arrives on -------------------------------------------------
+         **A program cannot write here, which is the whole reason for it.** This used to
+         ride the serial stream the program prints on, marked out by a word: the board
+         read everything its own program said looking for `BRLOAD`, and the host read
+         everything the board said looking for `BRDONE`. A program that printed either was
+         answering for the board. These are simply not the same wire now.
+
+         **TinyUSB is touched only from the task that services it.** Its endpoint state
+         and its fifos belong to `tud_task()`, which pico-sdk runs on core 0 behind a lock
+         of its own; reading them from core 1 would be a second hand on the same state. So
+         core 0 takes what arrives and puts it down, and core 1 picks it up — which is
+         where the flash work has to happen anyway, because core 0 is running the user's
+         program and never comes back. */
+      #define BARERUBY_PARCELS 8
+      #define BARERUBY_QUIET (-1)
+      #define BARERUBY_DONE "BRDONE"
+      #define BARERUBY_DONE_LENGTH 6
+
+      typedef struct {
+          uint16_t length;
+          uint8_t bytes[CFG_TUD_VENDOR_RX_BUFSIZE];
+      } bareruby_parcel_t;
+
+      static queue_t bareruby_inbox;
+      static bareruby_parcel_t bareruby_held;
+      static uint16_t bareruby_taken;
+      static volatile bool bareruby_answering;
+
+      /* Core 0, inside tud_task. **A full queue is the flow control**: what is not taken
+         stays in TinyUSB's fifo and the host is held off by the endpoint, rather than by
+         anything this side has to say about it. */
+      extern "C" void tud_vendor_rx_cb(uint8_t itf, uint8_t const *buffer, uint16_t bufsize) {
+          (void)itf;
+          (void)buffer;
+          (void)bufsize;
+          bareruby_parcel_t parcel;
+          while (tud_vendor_available() && !queue_is_full(&bareruby_inbox)) {
+              parcel.length = (uint16_t)tud_vendor_read(parcel.bytes, sizeof(parcel.bytes));
+              if (parcel.length == 0) {
+                  break;
+              }
+              queue_try_add(&bareruby_inbox, &parcel);
+          }
+          if (bareruby_answering) {
+              tud_vendor_write(BARERUBY_DONE, BARERUBY_DONE_LENGTH);
+              tud_vendor_write_flush();
+              bareruby_answering = false;
+          }
+      }
+
+      /* One byte off the queue, or nothing after this long. */
+      static int bareruby_next(uint32_t microseconds) {
+          uint32_t waited = 0;
+          while (bareruby_taken >= bareruby_held.length) {
+              if (queue_try_remove(&bareruby_inbox, &bareruby_held)) {
+                  bareruby_taken = 0;
+                  break;
+              }
+              if (waited >= microseconds) {
+                  return BARERUBY_QUIET;
+              }
+              sleep_us(1000);
+              waited += 1000;
+          }
+          return bareruby_held.bytes[bareruby_taken++];
+      }
 
       static void bareruby_program_page(void *offset) {
           flash_range_program(*(uint32_t *)offset, bareruby_page, FLASH_PAGE_SIZE);
@@ -957,8 +1026,8 @@ module BareRubyProt
               flash_safe_execute(bareruby_erase_sector, &at, UINT32_MAX);
           }
           while (offset < length) {
-              one = getchar_timeout_us(5000000);
-              if (one == PICO_ERROR_TIMEOUT) {
+              one = bareruby_next(5000000);
+              if (one == BARERUBY_QUIET) {
                   return;
               }
               bareruby_page[filled++] = (uint8_t)one;
@@ -972,8 +1041,14 @@ module BareRubyProt
                   filled = 0;
               }
           }
-          /* Said before the move, because after it this program is gone. */
-          printf("BRDONE\\n");
+          /* Said before the move, because after it this program is gone. **The host has to
+             ask for it.** Nothing on this core may write to the pipe, and the core that
+             may only runs when something arrives — so the answer is left where that task
+             will find it, and the host knocks until it comes back. */
+          bareruby_answering = true;
+          for (uint32_t waited = 0; bareruby_answering && waited < 5000; waited += 10) {
+              sleep_ms(10);
+          }
           sleep_ms(200);
           /* **Parking the other core comes first, and interrupts go down after it.** The
              parking is a conversation between the cores and it is carried by interrupts,
@@ -986,8 +1061,9 @@ module BareRubyProt
           bareruby_move_and_reboot(length);
       }
 
-      /* `BRLOAD` and eight hex digits of length. Anything else on this channel is a
-         program's own output and is left alone. */
+      /* `BRLOAD` and eight hex digits of length. Nothing else is on this channel — what a
+         program prints goes out the serial port, which is a different function of this
+         board and has nothing to do with this one. */
       static void bareruby_watch(void) {
           /* Core 0 was registered as the flash lockout victim before this core started.
              Persisting here therefore takes the same proven path as resident deploy:
@@ -1000,8 +1076,8 @@ module BareRubyProt
           uint32_t held = 0;
           int one;
           for (;;) {
-              one = getchar_timeout_us(500000);
-              if (one == PICO_ERROR_TIMEOUT) {
+              one = bareruby_next(500000);
+              if (one == BARERUBY_QUIET) {
                   continue;
               }
               asked[held++] = (char)one;
@@ -1023,6 +1099,7 @@ module BareRubyProt
       }
 
       extern "C" void bareruby_agent_start(void) {
+          queue_init(&bareruby_inbox, sizeof(bareruby_parcel_t), BARERUBY_PARCELS);
           flash_safe_execute_core_init();
           multicore_launch_core1(bareruby_watch);
       }

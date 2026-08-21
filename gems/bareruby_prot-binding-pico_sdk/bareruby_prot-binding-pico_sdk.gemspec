@@ -26,5 +26,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency "bareruby_prot"
   spec.add_dependency "bareruby_prot-compiler"
 
+  # **Reaching BRDF is reaching a function no kernel driver claims**, which is a bulk
+  # transfer rather than a file to open. This is the one thing here that a desk has to be
+  # given rather than already having.
+  spec.add_dependency "libusb"
+
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end
