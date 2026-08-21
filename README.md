@@ -665,7 +665,7 @@ answers to, and the device it is written through.** Where it is leads, because i
 only one of the four that belongs to that board alone: the two above both answer
 `E0C9125B0D9B`, which is the RP2040 bootrom's id rather than a name anybody chose. What
 the firmware says is the board's own claim rather than the desk's bookkeeping — `RP2 Boot`
-is a board that has not been through here, `BareRuby Debug Firm RP Pico1` is one that has.
+is a board that has not been through here, `BRDF pico1h_02` is one that has.
 
 **Where a board is depends on what is looking.** Off a bus it is the kernel's port path,
 `1-1`. Under WSL the board is not on a bus at all: it is a Windows device handed over by
@@ -685,7 +685,7 @@ On macOS it is the location id, which is what `ioreg` and `system_profiler` both
 
 **Four boards were in BOOTSEL at once when this was measured**, all four answering
 `E0C9125B0D9B`, on two different Windows buses. The one at `7-1` was named through this
-screen and came back as `BareRuby Debug Firm RP Pico1 (pico1h_02)`; the entry wrote
+screen and came back as `BRDF pico1h_02`; the entry wrote
 `boards: [pico1h, pico1h_02]` itself. A named board re-enumerates as a device usbipd has
 never seen, so it returns `Not shared` and is out of WSL's reach until it is bound and
 attached once more — after which `--list` reads its name in both the serial and the
@@ -756,32 +756,46 @@ That list is the complete answer when `flash` chooses devices, so all three take
 running serial path; resetting them together into RP2040 BOOTSEL would discard the names
 and make their identical boot-ROM serials collide.
 
-While that firmware is running, its USB product string names both the BareRuby firmware
-and the board: `BareRuby Debug Firm RP Pico1 (pico1_01)` on a Pico, and
-`BareRuby Debug Firm RP Pico1W (pico1w_01)` on a Pico W. The attached name remains the USB
-serial as well, because that is the stable key deployment uses.
+While that firmware is running, its USB product string is the protocol and the board:
+`BRDF pico1_01`. The attached name remains the USB serial as well, because that is the
+stable key deployment uses.
 
-`usbipd-win` stores the Windows description when a device is bound and displays that copy
-rather than the product string of a CDC composite device. After binding newly named boards,
-run this once in an Administrator PowerShell to copy their reported products into that
-record:
+**A board with one function is described by whatever driver claimed it.** Linux reads a
+device's own product string and prints it — `lsusb` says `2e8a:000a Raspberry Pi BRDF
+pico1_09` — but Windows names a device after the driver that took it, and every CDC device
+on a desk is then `USB シリアル デバイス (COMxx)`. `usbipd list` shows that copy, so four
+named boards read alike and none of them says which it is.
 
-```powershell
-$root = "HKLM:\SOFTWARE\usbipd-win\Devices"
-Get-ChildItem $root | ForEach-Object {
-  $item = Get-ItemProperty $_.PSPath
-  if ($item.InstanceId -like "USB\VID_2E8A&PID_000A\*") {
-    $reported = (Get-PnpDeviceProperty -InstanceId $item.InstanceId `
-      -KeyName "DEVPKEY_Device_BusReportedDeviceDesc" -ErrorAction SilentlyContinue).Data
-    if ($reported -like "BareRuby Debug Firm RP Pico*") {
-      Set-ItemProperty $_.PSPath -Name Description -Value $reported
-    }
-  }
-}
+The way out is the one the chip's own bootloader takes. A bootloader is two functions —
+mass storage and PICOBOOT — and Windows names the composite's children after their
+drivers; the PICOBOOT interface has no driver, so it is described by the device's own
+product string instead, which is why the list reads `USB 大容量記憶装置, RP2 Boot`. The
+firmware carries a second interface for the same reason:
+
+```
+bDeviceClass = ef/02/01                       composite
+  IAD (itf 0, 2 interfaces)
+    iface 0  02/02/00  CDC Control            ┐ the serial port     → /dev/ttyACM0
+    iface 1  0a/00/00  CDC Data               ┘                       COMxx on Windows
+  iface 2  ff/00/00  vendor, iInterface = 0     no driver anywhere  → the name
 ```
 
-This changes only usbipd's saved display text. The CDC interfaces, attachment and board
-serials stay as they were.
+**Nothing is sent or received on the second interface**, and it is given no name of its
+own, so a host with nothing to call it falls back to the board's. `usbipd list` then reads
+
+```
+8-4  2e8a:000a  USB シリアル デバイス (COM37), BRDF pico1_09   Attached
+```
+
+with no privileged step anywhere: usbipd picks the description up when it binds the board,
+like any other. On Linux nothing changes at all — the interface has no driver, so no device
+node is made for it, and the serial port is still the `dialout`-owned `/dev/ttyACM0` it
+always was.
+
+**BRDF still travels on the serial port**, in the same stream a program's output travels
+on, marked out by a word. A program printing that word can answer for the board. That is
+taken knowingly: this is the debug build, on a desk, being written to by the person who
+wrote the program.
 
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
