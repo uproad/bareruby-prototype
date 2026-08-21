@@ -220,29 +220,62 @@ README lists.
   unverifiable by running them, which is the only way anything here is verified. No sample
   demonstrates it: a program that must be refused cannot sit among the ones that must
   compile.
-- **A block and its sender need not agree on how many** (`samples/block_parameters.rb`):
-  the same slip broke differently in every place it could happen — `3.times do … end` was
-  a backtrace out of the block inliner, `3.times do |i, extra|` passed in silence until
-  `extra` was used and then failed as C++, `uart.on_line do … end` failed as a function
-  pointer of the wrong type, and `gpio.on_interrupt do |x|` as a void parameter. **The
-  rule is now one rule, and it is Ruby's**: a value nobody named is dropped, and a name
-  nothing was handed to is nil. What is emitted is one parameter per *value*, because the
-  shape of the thing that runs the block belongs to the sender — a handler is called
-  through a pointer whose type the binding wrote, so a block naming none of them still
-  gets `bareruby_interrupt_handler_0(bareruby_string_view_t *bareruby_unnamed_0)`, and a
-  counted loop gets its counter whether or not anybody asked for one. A name beyond the
-  values is bound and never emitted: **it can only ever be nil, so it is nil while
-  compiling** — `spare.nil?` folds to `true` and `"#{spare}"` leaves neither a conversion
-  in the format nor a value beside it, which is exactly what Ruby prints. Two of the seven
-  cases the fault was reported with turned out not to be about arity at all: `values.each`
-  is a method a fixed-capacity array does not have, and asking for one used to be treated
-  as an index and crash below, where it now says what the array does answer. `each`, `map`
-  and `select` are not in this language yet; the rule will hold for them when they are. On
-  pico1h the sample builds to 46,672 B of text and 7,228 B of bss (83.5 KB UF2), and on the
-  F4 to 15,980 B of text and 2,520 B of bss. Verified on host; built for pico1h, mega2560
-  and f446, and no board was flashed. A local written `x = nil` outside a block is still
-  not representable — it is declared void and the C++ refuses it — which is the same gap
-  seen from the other side and is not fixed here.
+- **A peripheral class carries Ruby of its own** (`samples/peripheral_ruby.rb`): a
+  peripheral was a mapping onto C functions and nothing else, so anything above them had
+  nowhere to live but C — and a sentence that is not about hardware got written once per
+  board. `can_read_line` was four C functions in four bindings, three of which asked the
+  same question and the fourth of which answered `false` and nothing else. It is now nine
+  lines of Ruby in the gem that declares UART, spliced into the program being compiled
+  where a require would have put it, and it lowers to `static bool
+  UART_can_read_line(bareruby_uart_t *self)` beside the program's own functions — the
+  binding's struct, not one named after the class, because the C functions all take that
+  one. A call inside it with no receiver reaches the mapping (`bytes_available`) or the
+  class (`can_read_line` from the method the sample adds), asked in that order.
+  **A class opened twice is now one class**, as it is in Ruby: the bodies join in written
+  order and a later definition replaces an earlier one, which is what lets the gem bring
+  a body and the program still add to it. It cost nothing to install: `samples/blink.rb`,
+  which names no UART, is 43,940 B of text and 6,672 B of bss on pico1h both before and
+  after, to the byte — the class arrives in every program and pays only where something
+  calls it, once the empty `initialize` every class is given stopped being emitted for a
+  peripheral (the binding's constructor is the real one). Where it is called it cost 112 B:
+  a program looping on `can_read_line` over `read_byte` is 45,208 B of text against 45,096
+  B with the C version, because one call became two — and on that board it also changed
+  which queue the answer is about, from the hardware flag to the ring `read_byte` reads,
+  which is the coherent one. The sample is 45,448 B of text and 7,208 B of bss on pico1h
+  (81.0 KB UF2) and 14,556 B of text and 2,512 B of bss on the F4. An instance variable in
+  such a body is not implemented — the storage belongs to the binding's struct — and a
+  name the mapping already has still wins over one written in Ruby. Verified on host with
+  bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
+- **One receive queue, and everyone reads it** (`samples/uart_one_queue.rb`): the receive
+  side had two — an interrupt-fed ring, and the hardware that `read` and `gets` polled
+  directly — and which one a byte landed in decided who could see it. On the host, asking
+  `peek` once moved everything waiting into the ring and left `gets` reading an empty
+  stdin, where it appended EOF until the region ran out and the program aborted; asked the
+  other way round, `gets` took its line and the rest of the input was simply gone, with no
+  exception. On a board the same collision wore a different face: the ISR reads the data
+  register, which clears the flag a polling `gets` is waiting for, so `gets` waits for
+  ever. **There is now one queue**, and `gets`, `read`, a registered handler and
+  `bytes_available` all reach it through `read_byte` — the handler included, which is what
+  makes first-come-first-served true rather than a hope: the line assembler takes bytes
+  with the same call a program would, and what it did not take is nobody's loss but the
+  one who did not ask. What the hardware answers for shrank to taking the next byte,
+  looking at it, and saying how deep the queue is, with the interrupt filling it; **a line
+  is not something a wire has**, so where one ends is decided in UART's own Ruby, once,
+  rather than in every binding. `gets` and `read` moved there with it, which needed `<<`
+  to take a character code as Ruby's does — the runtime had the call and nothing written
+  in Ruby could reach it. `clear_rx_buffer` empties the queue again, which it had stopped
+  doing when the ring arrived. On the Arduino side there is still exactly one queue and it
+  is the core's own, so that binding buys no second ring and overrides no clearing. What
+  it cost, on pico1h: `samples/uart_receive.rb`, which only calls `gets` and `read`, went
+  from 97,364 B of text and 7,044 B of bss to 97,756 B and 7,308 B — the 256-byte queue it
+  never used to buy, plus the difference between a C loop over the hardware and a Ruby one
+  over the queue. `samples/uart_on_line.rb` went from 44,876 B to 45,028 B of text with
+  bss unmoved. The new sample is 97,892 B of text and 7,308 B of bss there (183.5 KB UF2),
+  and 20,836 B of text and 2,532 B of bss on the F4. Not done here: the queue is still 256
+  bytes with no way to ask for another size, `can_read_line` still answers whether *any*
+  byte waits rather than a whole line, and a program waiting on a wire that has gone quiet
+  now waits rather than aborting — on the host a closed stdin is such a wire. Verified on
+  host with bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under

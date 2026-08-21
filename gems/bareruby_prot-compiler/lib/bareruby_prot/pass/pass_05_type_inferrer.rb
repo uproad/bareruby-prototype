@@ -728,10 +728,10 @@ module BareRubyProt
       end
 
       def infer_string_operator_call(name, receiver_tast, source, type_environment:, span:)
-        function = ArenaString.operator_function(name)
+        value = text_of(source, type_environment:)
+        function = ArenaString.operator_function(name, @tast.value_type(value))
         comparison = COMPARISON_OPERATORS.include?(name)
-        arguments = [receiver_tast, text_of(source, type_environment:)]
-        call = string_call(name, function, arguments, comparison ? :Bool : ArenaString.type(@tast), span)
+        call = string_call(name, function, [receiver_tast, value], comparison ? :Bool : ArenaString.type(@tast), span)
         name == :!= ? negate(call, span) : call
       end
 

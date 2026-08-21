@@ -128,7 +128,9 @@ module BareRubyProt
           }
       }
 
-      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+      /* Weak for the same reason as bytes_available: once the receive queue exists it is
+         what the receive buffer is, and the uart_receive unit empties that instead. */
+      __attribute__((weak)) void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
           UART_HandleTypeDef *port = bareruby_board_uart(self->id);
           while (__HAL_UART_GET_FLAG(port, UART_FLAG_RXNE) != RESET) {
               __HAL_UART_FLUSH_DRREGISTER(port);
@@ -395,70 +397,31 @@ module BareRubyProt
 
       #include "bareruby_board.h"
 
-      bareruby_string_t *bareruby_uart_read(
-          bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length) {
-          bareruby_string_t *result = bareruby_string_new(arena, "");
-          for (int32_t index = 0; index < length; ++index) {
-              uint8_t byte;
-              if (HAL_UART_Receive(
-                      bareruby_board_uart(self->id), &byte, 1, HAL_MAX_DELAY) != HAL_OK) {
-                  bareruby_board_fault();
-              }
-              bareruby_string_append_byte(result, byte);
-          }
-          return result;
-      }
-
-      bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena) {
-          bareruby_string_t *result = bareruby_string_new(arena, "");
-          uint8_t byte;
-          do {
-              if (HAL_UART_Receive(
-                      bareruby_board_uart(self->id), &byte, 1, HAL_MAX_DELAY) != HAL_OK) {
-                  bareruby_board_fault();
-              }
-              bareruby_string_append_byte(result, byte);
-          } while (byte != '\\n');
-          return result;
-      }
-    CPP
-
-    # The receive interrupt. The ISR does one thing — push the received byte into a
-    # 256-byte ring — and every policy (LF/CRLF framing, the 255-byte cap, the overlong
-    # discard, the handler itself) runs in thread mode when sleep drains the ring. One
-    # producer, one consumer, single-byte indices that wrap by uint8_t overflow: no
-    # critical section is needed on a Cortex-M4. HAL's own IRQ machinery serves
-    # HAL_UART_Receive_IT, which this unit does not use, so the vectors read SR and DR
-    # directly — on an F4 that one sequence also clears RXNE and ORE.
-    UART_INTERRUPT = <<~CPP
-      #include "bareruby_binding.h"
-
-      #include "bareruby_board.h"
-
+      /* **The one queue the receive side has.** The interrupt fills it from the line, and
+         whoever asks first takes what is in it: a registered handler and a program calling
+         read_byte are the same kind of consumer, reaching the queue through the same call.
+         Reading the data register clears the hardware flag, so there is nowhere else a
+         byte could still be waiting — which is why there can only be one of these. */
       typedef struct {
-          volatile uint8_t data[256];   /* the 256 bytes on_line costs; ISR writes, drain reads */
-          volatile uint8_t head;        /* ISR-owned */
-          volatile uint8_t tail;        /* drain-owned */
-          char line[256];               /* the view a handler is handed points here */
-          int32_t line_length;
-          bool discarding;              /* an overlong line, thrown away to the next LF */
-          bareruby_uart_line_handler_t handler;
+          volatile uint8_t data[256];   /* the 256 bytes the receive side costs */
+          volatile uint8_t head;        /* interrupt-owned */
+          volatile uint8_t tail;        /* consumer-owned */
           UART_HandleTypeDef *port;
-      } bareruby_uart_interrupt_t;
+      } bareruby_uart_receive_t;
 
-      static bareruby_uart_interrupt_t bareruby_uart_interrupt;
+      static bareruby_uart_receive_t bareruby_uart_receive;
 
-      static void bareruby_uart_interrupt_push(uint8_t byte) {
-          uint8_t next = (uint8_t)(bareruby_uart_interrupt.head + 1u);
-          if (next == bareruby_uart_interrupt.tail) {
-              return;   /* a full ring drops the byte */
+      static void bareruby_uart_receive_push(uint8_t byte) {
+          uint8_t next = (uint8_t)(bareruby_uart_receive.head + 1u);
+          if (next == bareruby_uart_receive.tail) {
+              return;   /* a full queue drops the byte, and says nothing */
           }
-          bareruby_uart_interrupt.data[bareruby_uart_interrupt.head] = byte;
-          bareruby_uart_interrupt.head = next;
+          bareruby_uart_receive.data[bareruby_uart_receive.head] = byte;
+          bareruby_uart_receive.head = next;
       }
 
-      static void bareruby_uart_interrupt_service(void) {
-          UART_HandleTypeDef *port = bareruby_uart_interrupt.port;
+      static void bareruby_uart_receive_service(void) {
+          UART_HandleTypeDef *port = bareruby_uart_receive.port;
           if (port == NULL) {
               return;
           }
@@ -467,7 +430,7 @@ module BareRubyProt
               uint8_t byte = (uint8_t)(port->Instance->DR & 0xFFu);
               /* A byte whose parity failed is discarded, as Arduino's core does. */
               if ((status & USART_SR_PE) == 0u) {
-                  bareruby_uart_interrupt_push(byte);
+                  bareruby_uart_receive_push(byte);
               }
           }
       }
@@ -476,22 +439,22 @@ module BareRubyProt
          GPIO unit makes for the seven EXTI vectors. Only the registered port raises its
          IRQ, so they may all share one service. Which instances exist is the device
          header's answer; an F401 has no USART3, UART4 or UART5. */
-      extern "C" void USART1_IRQHandler(void) { bareruby_uart_interrupt_service(); }
-      extern "C" void USART2_IRQHandler(void) { bareruby_uart_interrupt_service(); }
+      extern "C" void USART1_IRQHandler(void) { bareruby_uart_receive_service(); }
+      extern "C" void USART2_IRQHandler(void) { bareruby_uart_receive_service(); }
       #if defined(USART3)
-      extern "C" void USART3_IRQHandler(void) { bareruby_uart_interrupt_service(); }
+      extern "C" void USART3_IRQHandler(void) { bareruby_uart_receive_service(); }
       #endif
       #if defined(UART4)
-      extern "C" void UART4_IRQHandler(void) { bareruby_uart_interrupt_service(); }
+      extern "C" void UART4_IRQHandler(void) { bareruby_uart_receive_service(); }
       #endif
       #if defined(UART5)
-      extern "C" void UART5_IRQHandler(void) { bareruby_uart_interrupt_service(); }
+      extern "C" void UART5_IRQHandler(void) { bareruby_uart_receive_service(); }
       #endif
       #if defined(USART6)
-      extern "C" void USART6_IRQHandler(void) { bareruby_uart_interrupt_service(); }
+      extern "C" void USART6_IRQHandler(void) { bareruby_uart_receive_service(); }
       #endif
 
-      static IRQn_Type bareruby_uart_interrupt_irq(USART_TypeDef *instance) {
+      static IRQn_Type bareruby_uart_receive_irq(USART_TypeDef *instance) {
           if (instance == USART1) return USART1_IRQn;
       #if defined(USART3)
           if (instance == USART3) return USART3_IRQn;
@@ -508,58 +471,15 @@ module BareRubyProt
           return USART2_IRQn;
       }
 
-      static void bareruby_uart_interrupt_line_byte(uint8_t byte) {
-          if (byte == '\\n') {
-              if (bareruby_uart_interrupt.discarding) {
-                  bareruby_uart_interrupt.discarding = false;
-                  bareruby_uart_interrupt.line_length = 0;
-                  return;
-              }
-              int32_t length = bareruby_uart_interrupt.line_length;
-              if (length > 0 && bareruby_uart_interrupt.line[length - 1] == '\\r') {
-                  length -= 1;
-              }
-              bareruby_uart_interrupt.line[length] = '\\0';
-              bareruby_uart_interrupt.line_length = 0;
-              if (bareruby_uart_interrupt.handler != NULL) {
-                  bareruby_string_view_t view = {bareruby_uart_interrupt.line, length};
-                  bareruby_uart_interrupt.handler(&view);
-              }
-              return;
-          }
-          if (bareruby_uart_interrupt.discarding) {
-              return;
-          }
-          if (bareruby_uart_interrupt.line_length == 255) {   /* a line is at most 255 bytes */
-              bareruby_uart_interrupt.discarding = true;
-              bareruby_uart_interrupt.line_length = 0;
-              return;
-          }
-          bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
-      }
-
-      /* The ring has one consumer. A registered handler is it, and the drain assembles
-         lines; without one the bytes wait for the read family below. */
-      extern "C" void bareruby_uart_interrupt_drain(void) {
-          if (bareruby_uart_interrupt.handler == NULL) {
-              return;
-          }
-          while (bareruby_uart_interrupt.tail != bareruby_uart_interrupt.head) {
-              uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
-              bareruby_uart_interrupt.tail = (uint8_t)(bareruby_uart_interrupt.tail + 1u);
-              bareruby_uart_interrupt_line_byte(byte);
-          }
-      }
-
-      /* The first touch of the receive side — a registration or a buffered read — is
-         what arms the interrupt and so what buys the ring. */
-      static void bareruby_uart_interrupt_attach(bareruby_uart_t *self) {
-          if (bareruby_uart_interrupt.port != NULL) {
+      /* The first touch of the receive side — a registration or a read — is what arms the
+         interrupt and so what buys the queue. */
+      static void bareruby_uart_receive_attach(bareruby_uart_t *self) {
+          if (bareruby_uart_receive.port != NULL) {
               return;
           }
           UART_HandleTypeDef *port = bareruby_board_uart(self->id);
-          bareruby_uart_interrupt.port = port;   /* published before the IRQ can fire */
-          IRQn_Type interrupt = bareruby_uart_interrupt_irq(port->Instance);
+          bareruby_uart_receive.port = port;   /* published before the IRQ can fire */
+          IRQn_Type interrupt = bareruby_uart_receive_irq(port->Instance);
 
           /* A byte left over from before the arming is not received data. Priority 2
              matches the GPIO EXTI precedent. */
@@ -570,33 +490,111 @@ module BareRubyProt
           HAL_NVIC_EnableIRQ(interrupt);
       }
 
-      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
-          bareruby_uart_interrupt.handler = handler;
-          bareruby_uart_interrupt_attach(self);
-      }
-
       int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
-          bareruby_uart_interrupt_attach(self);
-          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+          bareruby_uart_receive_attach(self);
+          if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
               return -1;
           }
-          uint8_t byte = bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
-          bareruby_uart_interrupt.tail = (uint8_t)(bareruby_uart_interrupt.tail + 1u);
+          uint8_t byte = bareruby_uart_receive.data[bareruby_uart_receive.tail];
+          bareruby_uart_receive.tail = (uint8_t)(bareruby_uart_receive.tail + 1u);
           return (int32_t)byte;
       }
 
       int32_t bareruby_uart_peek(bareruby_uart_t *self) {
-          bareruby_uart_interrupt_attach(self);
-          if (bareruby_uart_interrupt.tail == bareruby_uart_interrupt.head) {
+          bareruby_uart_receive_attach(self);
+          if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
               return -1;
           }
-          return (int32_t)bareruby_uart_interrupt.data[bareruby_uart_interrupt.tail];
+          return (int32_t)bareruby_uart_receive.data[bareruby_uart_receive.tail];
       }
 
-      /* The strong definition; the polling one in the uart unit is weak. */
+      /* The strong definitions; the polling ones in the uart unit are weak. Once the queue
+         exists it is what the receive side is, so emptying the buffer empties it. */
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          bareruby_uart_interrupt_attach(self);
-          return (int32_t)(uint8_t)(bareruby_uart_interrupt.head - bareruby_uart_interrupt.tail);
+          bareruby_uart_receive_attach(self);
+          return (int32_t)(uint8_t)(bareruby_uart_receive.head - bareruby_uart_receive.tail);
+      }
+
+      void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self) {
+          bareruby_uart_receive_attach(self);
+          bareruby_uart_receive_service();   /* whatever the line has already sent */
+          bareruby_uart_receive.tail = bareruby_uart_receive.head;
+      }
+    CPP
+
+    # The receive interrupt. The ISR does one thing — push the received byte into a
+    # 256-byte ring — and every policy (LF/CRLF framing, the 255-byte cap, the overlong
+    # discard, the handler itself) runs in thread mode when sleep drains the ring. One
+    # producer, one consumer, single-byte indices that wrap by uint8_t overflow: no
+    # critical section is needed on a Cortex-M4. HAL's own IRQ machinery serves
+    # HAL_UART_Receive_IT, which this unit does not use, so the vectors read SR and DR
+    # directly — on an F4 that one sequence also clears RXNE and ORE.
+    UART_INTERRUPT = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <stddef.h>
+
+      /* **A line is not something a wire has.** This is one more consumer of the receive
+         queue, taking bytes with the call a program would use and deciding where a line
+         ends; it holds no queue of its own and races nobody. Whichever asks first gets the
+         byte, and the one that did not ask is the one that lost it. */
+      typedef struct {
+          char line[256];               /* the view a handler is handed points here */
+          int32_t line_length;
+          bool discarding;              /* an overlong line, thrown away to the next LF */
+          bareruby_uart_line_handler_t handler;
+          bareruby_uart_t *port;
+      } bareruby_uart_line_t;
+
+      static bareruby_uart_line_t bareruby_uart_line;
+
+      static void bareruby_uart_line_byte(uint8_t byte) {
+          if (byte == '\\n') {
+              if (bareruby_uart_line.discarding) {
+                  bareruby_uart_line.discarding = false;
+                  bareruby_uart_line.line_length = 0;
+                  return;
+              }
+              int32_t length = bareruby_uart_line.line_length;
+              if (length > 0 && bareruby_uart_line.line[length - 1] == '\\r') {
+                  length -= 1;
+              }
+              bareruby_uart_line.line[length] = '\\0';
+              bareruby_uart_line.line_length = 0;
+              if (bareruby_uart_line.handler != NULL) {
+                  bareruby_string_view_t view = {bareruby_uart_line.line, length};
+                  bareruby_uart_line.handler(&view);
+              }
+              return;
+          }
+          if (bareruby_uart_line.discarding) {
+              return;
+          }
+          if (bareruby_uart_line.line_length == 255) {   /* a line is at most 255 bytes */
+              bareruby_uart_line.discarding = true;
+              bareruby_uart_line.line_length = 0;
+              return;
+          }
+          bareruby_uart_line.line[bareruby_uart_line.line_length++] = (char)byte;
+      }
+
+      extern "C" void bareruby_uart_interrupt_drain(void) {
+          if (bareruby_uart_line.port == NULL) {
+              return;
+          }
+          for (;;) {
+              int32_t byte = bareruby_uart_read_byte(bareruby_uart_line.port);
+              if (byte < 0) {
+                  break;
+              }
+              bareruby_uart_line_byte((uint8_t)byte);
+          }
+      }
+
+      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
+          bareruby_uart_line.handler = handler;
+          bareruby_uart_line.port = self;
+          bareruby_uart_bytes_available(self);   /* the touch that arms the receive side */
       }
     CPP
 

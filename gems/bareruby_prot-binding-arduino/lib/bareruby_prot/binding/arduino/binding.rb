@@ -372,7 +372,13 @@ module BareRubyProt
 
       #include <Arduino.h>
 
-      static HardwareSerial *bareruby_uart_receive_port(const bareruby_uart_t *self) {
+      /* **The one queue the receive side has, and here it is the core's own.**
+         HardwareSerial already fills a ring from its interrupt, so this binding buys no
+         second one: whoever asks first takes what is in that. A handler and a program
+         calling read_byte are the same kind of consumer, reaching it through the same
+         call. Emptying it is the uart unit's clear_rx_buffer, which is already the same
+         buffer — so there is nothing to override here. */
+      static HardwareSerial *bareruby_uart_receive_port(bareruby_uart_t *self) {
           switch (self->id) {
           case 1: return &Serial1;
           case 2: return &Serial2;
@@ -381,31 +387,17 @@ module BareRubyProt
           }
       }
 
-      static int bareruby_uart_receive_byte(HardwareSerial *port) {
-          while (port->available() <= 0) {
-          }
-          return port->read();
+      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_receive_port(self)->read();
       }
 
-      bareruby_string_t *bareruby_uart_read(
-          bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length) {
-          HardwareSerial *port = bareruby_uart_receive_port(self);
-          bareruby_string_t *result = bareruby_string_new(arena, "");
-          for (int32_t index = 0; index < length; ++index) {
-              bareruby_string_append_byte(result, bareruby_uart_receive_byte(port));
-          }
-          return result;
+      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_receive_port(self)->peek();
       }
 
-      bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena) {
-          HardwareSerial *port = bareruby_uart_receive_port(self);
-          bareruby_string_t *result = bareruby_string_new(arena, "");
-          int byte;
-          do {
-              byte = bareruby_uart_receive_byte(port);
-              bareruby_string_append_byte(result, byte);
-          } while (byte != '\\n');
-          return result;
+      /* The strong definition; the polling one in the uart unit is weak. */
+      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
+          return (int32_t)bareruby_uart_receive_port(self)->available();
       }
     CPP
 
@@ -418,88 +410,68 @@ module BareRubyProt
     UART_INTERRUPT = <<~CPP
       #include "bareruby_binding.h"
 
-      #include <Arduino.h>
+      #include <stddef.h>
 
+      /* **A line is not something a wire has.** This is one more consumer of the receive
+         queue, taking bytes with the call a program would use and deciding where a line
+         ends; it holds no queue of its own and races nobody. Whichever asks first gets the
+         byte, and the one that did not ask is the one that lost it. */
       typedef struct {
-          char line[256];               /* the 256 bytes on_line costs; the view points here */
+          char line[256];               /* the view a handler is handed points here */
           int32_t line_length;
           bool discarding;              /* an overlong line, thrown away to the next LF */
           bareruby_uart_line_handler_t handler;
-          HardwareSerial *port;
-      } bareruby_uart_interrupt_t;
+          bareruby_uart_t *port;
+      } bareruby_uart_line_t;
 
-      static bareruby_uart_interrupt_t bareruby_uart_interrupt;
+      static bareruby_uart_line_t bareruby_uart_line;
 
-      static void bareruby_uart_interrupt_line_byte(uint8_t byte) {
+      static void bareruby_uart_line_byte(uint8_t byte) {
           if (byte == '\\n') {
-              if (bareruby_uart_interrupt.discarding) {
-                  bareruby_uart_interrupt.discarding = false;
-                  bareruby_uart_interrupt.line_length = 0;
+              if (bareruby_uart_line.discarding) {
+                  bareruby_uart_line.discarding = false;
+                  bareruby_uart_line.line_length = 0;
                   return;
               }
-              int32_t length = bareruby_uart_interrupt.line_length;
-              if (length > 0 && bareruby_uart_interrupt.line[length - 1] == '\\r') {
+              int32_t length = bareruby_uart_line.line_length;
+              if (length > 0 && bareruby_uart_line.line[length - 1] == '\\r') {
                   length -= 1;
               }
-              bareruby_uart_interrupt.line[length] = '\\0';
-              bareruby_uart_interrupt.line_length = 0;
-              if (bareruby_uart_interrupt.handler != NULL) {
-                  bareruby_string_view_t view = {bareruby_uart_interrupt.line, length};
-                  bareruby_uart_interrupt.handler(&view);
+              bareruby_uart_line.line[length] = '\\0';
+              bareruby_uart_line.line_length = 0;
+              if (bareruby_uart_line.handler != NULL) {
+                  bareruby_string_view_t view = {bareruby_uart_line.line, length};
+                  bareruby_uart_line.handler(&view);
               }
               return;
           }
-          if (bareruby_uart_interrupt.discarding) {
+          if (bareruby_uart_line.discarding) {
               return;
           }
-          if (bareruby_uart_interrupt.line_length == 255) {   /* a line is at most 255 bytes */
-              bareruby_uart_interrupt.discarding = true;
-              bareruby_uart_interrupt.line_length = 0;
+          if (bareruby_uart_line.line_length == 255) {   /* a line is at most 255 bytes */
+              bareruby_uart_line.discarding = true;
+              bareruby_uart_line.line_length = 0;
               return;
           }
-          bareruby_uart_interrupt.line[bareruby_uart_interrupt.line_length++] = (char)byte;
+          bareruby_uart_line.line[bareruby_uart_line.line_length++] = (char)byte;
       }
 
-      /* The core's buffer has one consumer. A registered handler is it, and the drain
-         assembles lines; without one the bytes wait for the read family below. */
       extern "C" void bareruby_uart_interrupt_drain(void) {
-          HardwareSerial *port = bareruby_uart_interrupt.port;
-          if (port == NULL || bareruby_uart_interrupt.handler == NULL) {
+          if (bareruby_uart_line.port == NULL) {
               return;
           }
-          while (port->available() > 0) {
-              bareruby_uart_interrupt_line_byte((uint8_t)port->read());
-          }
-      }
-
-      static HardwareSerial *bareruby_uart_interrupt_attach(bareruby_uart_t *self) {
-          if (bareruby_uart_interrupt.port == NULL) {
-              switch (self->id) {
-              case 1: bareruby_uart_interrupt.port = &Serial1; break;
-              case 2: bareruby_uart_interrupt.port = &Serial2; break;
-              case 3: bareruby_uart_interrupt.port = &Serial3; break;
-              default: bareruby_uart_interrupt.port = &Serial; break;
+          for (;;) {
+              int32_t byte = bareruby_uart_read_byte(bareruby_uart_line.port);
+              if (byte < 0) {
+                  break;
               }
+              bareruby_uart_line_byte((uint8_t)byte);
           }
-          return bareruby_uart_interrupt.port;
       }
 
       void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
-          bareruby_uart_interrupt.handler = handler;
-          bareruby_uart_interrupt_attach(self);
-      }
-
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
-          return (int32_t)bareruby_uart_interrupt_attach(self)->read();
-      }
-
-      int32_t bareruby_uart_peek(bareruby_uart_t *self) {
-          return (int32_t)bareruby_uart_interrupt_attach(self)->peek();
-      }
-
-      /* The strong definition; the polling one in the uart unit is weak. */
-      int32_t bareruby_uart_bytes_available(bareruby_uart_t *self) {
-          return (int32_t)bareruby_uart_interrupt_attach(self)->available();
+          bareruby_uart_line.handler = handler;
+          bareruby_uart_line.port = self;
       }
     CPP
 
