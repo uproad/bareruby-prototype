@@ -910,6 +910,87 @@ so all four are offered under a `pico` entry, the Pico W among them. The button 
 them apart either; what has changed is that the four are on screen, where somebody who
 knows which is which can point at one.
 
+### Two functions, because one of them is only there to be named
+
+The firmware was a single CDC ACM function wearing a composite's clothes: TinyUSB's CDC
+template opens with an Interface Association Descriptor, and pico-sdk's device descriptor
+says `ef/02/01` to match, which is what a device says when it is a container of
+associated functions. It was not one. Nothing had decided that — it was the toolkit's
+default, copied along with the descriptor set when this side took the descriptors over to
+put the board's name in them.
+
+**What that cost was the name on Windows.** Linux reads a device's own product string:
+`lsusb` prints `2e8a:000a Raspberry Pi BRDF pico1_09` and has always done so. Windows
+names a device after the driver that claimed it, and for a composite it names each child
+after that child's driver — so a CDC board reads `USB シリアル デバイス (COMxx)`, the same
+sentence for every one of them, and `usbipd list` shows that copy. Four named boards on a
+desk were indistinguishable in the one place a person looks before handing one to WSL.
+
+Declaring the truth was measured first: `bDeviceClass = 02/00/00` with the association
+dropped. Windows stopped loading `usbccgp` (`Service: usbser`, `USB\COMPOSITE` gone from
+the compatible ids, no children), Linux bound `cdc_acm` to both interfaces exactly as
+before, and `/dev/ttyACM*`, resident deploy and program output were all unaffected. **It
+did not fix the name**: with no children, Windows named the device itself after `usbser`,
+which is the same sentence one level up.
+
+**The chip's own bootloader shows the way out.** It is two functions — mass storage and
+PICOBOOT — and the second has no Windows driver, so Windows has nothing of its own to
+call it and falls back to the device's product string. That is the whole of why
+`usbipd list` reads `USB 大容量記憶装置, RP2 Boot` and not `USB 大容量記憶装置` alone. The
+firmware now carries a second interface for the same reason: vendor class, `iInterface`
+0, endpoints declared so TinyUSB can claim it, and **nothing sent or received on it
+ever**.
+
+```
+8-4  2e8a:000a  USB シリアル デバイス (COM37), BRDF pico1_09   Attached
+```
+
+Measured beside boards still carrying the older firmware, in the same table:
+
+```
+PICO1_05  |  USB シリアル デバイス (COM33)
+PICO1_08  |  USB シリアル デバイス (COM36)
+PICO1_09  |  USB シリアル デバイス (COM37), BRDF pico1_09
+```
+
+No privileged step is involved: usbipd takes the description when it binds the board, the
+way it does for anything else. The Administrator PowerShell that used to copy each board's
+reported product into usbipd's saved record is gone with it.
+
+On Linux nothing changed. The interface has no driver, so no device node is made for it,
+and the serial port is the `dialout`-owned `/dev/ttyACM0` it always was — no udev rule, no
+raw USB, no new dependency.
+
+**The product string was cut down to fit.** `BareRuby Debug Firm RP Pico1 (pico1b_02)` is
+40 characters, and Windows prepends 27 of its own before it; the DEVICE column is 60 and
+the name — the only part worth reading — was what fell off the end. `BRDF <name>` is 14.
+"Debug Firm" was saying nothing, because a board with no USB interface at all is what the
+other build is, and the model was already in the name a desk gave the board. The
+per-machine product strings went with it.
+
+**What was tried and taken out.** Carrying BRDF itself on that second interface was
+implemented and reverted. It closes a real hole — a program printing `BRDONE` can answer
+for the board, because the transfer shares the serial stream with the program's own
+output — but reaching an interface no kernel driver claims means raw USB, and raw USB on
+Linux means a udev rule on every desk, forever. `picotool` ships one for exactly these
+four product ids, so it is the ordinary price of that road rather than anything unusual.
+
+**And what ruled it out is not arithmetic.** These commands exist to take work off the
+person using them, and that is the whole of what they are for: `target add` asks rather
+than sending somebody to look a triple up, `attach` names a board so that nobody reads a
+serial again, `build` fetches its own toolchain, `deploy` reaches a board without the
+button. A feature that hands a privileged step back — one every desk performs, before
+anything works, forever — is not a cost to be set against a benefit. **It works against
+the reason the commands exist.** That it buys something real does not save it; a
+correctness that is paid for in `sudo` on somebody else's machine is not this ecosystem's
+to spend.
+
+The hole stays open knowingly: this is the debug build, on a desk, being written to by the
+person who wrote the program.
+
+Cost: `2.5 KB` of `.uf2` for the second interface (76.0 → 78.5 KB on a Pico 1). Carrying
+the transfer on it as well had cost 9 KB more, and that is gone with it.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

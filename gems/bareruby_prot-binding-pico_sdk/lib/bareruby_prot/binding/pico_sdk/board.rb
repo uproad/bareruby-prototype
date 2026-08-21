@@ -160,6 +160,7 @@ module BareRubyProt
       { PROGRAM_FILE => program,
         IDENTITY_FILE => PicoSdkBinding::IDENTITY,
         RESIDENT_UPDATE_FILE => PicoSdkBinding::RESIDENT_UPDATE,
+        PicoSdkBinding::TUSB_CONFIG_FILE => PicoSdkBinding::TUSB_CONFIG,
         "manifest.txt" => manifest(target, name), "CMakeLists.txt" => cmake_lists(target) }
     end
 
@@ -351,6 +352,7 @@ module BareRubyProt
         pico_sdk_init()
 
         add_executable(#{AGENT} #{PROGRAM_FILE} #{IDENTITY_FILE} #{RESIDENT_UPDATE_FILE})
+        target_include_directories(#{AGENT} BEFORE PRIVATE ${CMAKE_CURRENT_LIST_DIR})
         target_compile_options(#{AGENT} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti -fno-exceptions>)
         target_link_libraries(#{AGENT}
             pico_stdlib
@@ -369,7 +371,6 @@ module BareRubyProt
         # for that path, and omitting its endpoints lets several agents coexist behind a
         # resource-constrained USB host controller.
         target_compile_definitions(#{AGENT} PRIVATE
-            BARERUBY_USB_PRODUCT="#{machine.usb_product}"
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
             PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0

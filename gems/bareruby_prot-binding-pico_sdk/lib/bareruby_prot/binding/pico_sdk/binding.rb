@@ -561,6 +561,33 @@ module BareRubyProt
     # a program and includes the declarations that program generated. This one is about the
     # board rather than about any program, which is what lets the agent `target attach`
     # writes carry it with no program anywhere near it.
+    # **TinyUSB is configured by a header it finds, and pico-sdk ships one that answers
+    # for it.** That answer turns the vendor class off — pico-sdk reaches its own vendor
+    # interface with a driver of its own and needs no more — so a board that wants BRDF's
+    # pipe has to answer first. Written beside the CMakeLists that names it, on an include
+    # path put ahead of the SDK's; `#include_next` then reaches the SDK's own answer and
+    # only the one line that has to differ is changed.
+    #
+    # It has to be found by TinyUSB's own sources as well as by this side's, which is why
+    # it is an include directory on the target rather than a define: pico-sdk links
+    # TinyUSB as an interface library, so its units are compiled into this target and see
+    # this target's include path.
+    TUSB_CONFIG_FILE = "tusb_config.h"
+
+    TUSB_CONFIG = <<~CPP
+      #ifndef BARERUBY_TUSB_CONFIG_H
+      #define BARERUBY_TUSB_CONFIG_H
+
+      #include_next <tusb_config.h>
+
+      #undef CFG_TUD_VENDOR
+      #define CFG_TUD_VENDOR (1)
+      #define CFG_TUD_VENDOR_RX_BUFSIZE (64)
+      #define CFG_TUD_VENDOR_TX_BUFSIZE (64)
+
+      #endif
+    CPP
+
     IDENTITY = <<~CPP
       #if LIB_PICO_STDIO_USB
 
@@ -655,16 +682,30 @@ module BareRubyProt
       #endif
 
       #define USBD_MANUFACTURER "Raspberry Pi"
-      #define USBD_PRODUCT BARERUBY_USB_PRODUCT
 
-      #if !PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
-      #define USBD_ITF_MAX (2)
-      #else
-      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_RPI_RESET_DESC_LEN)
-      #define USBD_ITF_RPI_RESET (2)
+      /* **What the board says it is, in four letters and its own name.** The mark is the
+         protocol rather than the model: a host that has this board in a list wants to
+         know which of its boards this is, and the model is already in the name a desk
+         gave it. It used to say `BareRuby Debug Firm RP Pico1` as well, which is a true
+         sentence that pushed the name out of every column it was printed in — and
+         "debug" said nothing, because a board with no USB at all is the other build. */
+      #define USBD_PRODUCT "BRDF"
+
+      /* **A second interface that carries nothing, and is here to be described.** A host
+         with no driver for an interface has nothing of its own to call it, so it falls
+         back to the device's product string — which is this board's name. That is the
+         only reason this one exists: on a Windows desk the board is otherwise called
+         after the serial driver that claimed it, and every board of every kind reads the
+         same. It is what the chip's own bootloader does, where an unclaimed PICOBOOT
+         interface is why `RP2 Boot` appears beside the mass storage.
+
+         **BRDF itself is not here.** It goes over the serial port, in the stream a
+         program's output also goes over, marked out by a word. A program printing that
+         word can answer for the board — which is a real hole, taken knowingly: the
+         firmware this happens in is the debug build, on a desk, being written to by the
+         person who wrote the program. */
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN)
       #define USBD_ITF_MAX (3)
-      #endif
 
       #define USBD_ITF_CDC (0)
       #define USBD_CDC_EP_CMD (0x81)
@@ -673,12 +714,19 @@ module BareRubyProt
       #define USBD_CDC_CMD_MAX_SIZE (8)
       #define USBD_CDC_IN_OUT_MAX_SIZE (64)
 
+      /* The pipes of the interface above. Nothing is sent or received on them; TinyUSB has
+         to be able to claim the interface for the configuration to be set at all, and a
+         vendor interface is claimed by having endpoints. */
+      #define USBD_ITF_BRDF (2)
+      #define USBD_BRDF_EP_OUT (0x03)
+      #define USBD_BRDF_EP_IN (0x83)
+      #define USBD_BRDF_EP_SIZE (64)
+
       #define USBD_STR_LANGUAGE (0x00)
       #define USBD_STR_MANUF (0x01)
       #define USBD_STR_PRODUCT (0x02)
       #define USBD_STR_SERIAL (0x03)
       #define USBD_STR_CDC (0x04)
-      #define USBD_STR_RPI_RESET (0x05)
 
       /* Long enough for the visible product wrapped around the longest persisted name. */
       #define USBD_DESC_STR_MAX (64)
@@ -686,11 +734,11 @@ module BareRubyProt
       static const tusb_desc_device_t usbd_desc_device = {
           .bLength = sizeof(tusb_desc_device_t),
           .bDescriptorType = TUSB_DESC_DEVICE,
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE && PICO_USB_RESET_SUPPORT_MS_OS_20_DESCRIPTOR
-          .bcdUSB = 0x0210,
-      #else
           .bcdUSB = 0x0200,
-      #endif
+          /* **A container, and this time it is one.** The three together are how a device
+             says "what I am is written in my interfaces, and the associations tell you
+             which of them go together" — which is exactly true of a board carrying a
+             serial port and BRDF side by side. */
           .bDeviceClass = TUSB_CLASS_MISC,
           .bDeviceSubClass = MISC_SUBCLASS_COMMON,
           .bDeviceProtocol = MISC_PROTOCOL_IAD,
@@ -704,15 +752,19 @@ module BareRubyProt
           .bNumConfigurations = 1,
       };
 
+      /* **BRDF's interface is given no name of its own, on purpose.** A host that has no
+         driver for it falls back to the device's product string to describe it — which is
+         this board's name, the one thing worth reading there. An interface string would
+         stand in front of that and say something less useful. It is how the chip's own
+         bootloader reads on a Windows desk, for the same reason. */
       static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
           TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_LANGUAGE, USBD_DESC_LEN, 0, 250),
 
           TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
               USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
 
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-          TUD_RPI_RESET_DESCRIPTOR(USBD_ITF_RPI_RESET, USBD_STR_RPI_RESET),
-      #endif
+          TUD_VENDOR_DESCRIPTOR(USBD_ITF_BRDF, 0, USBD_BRDF_EP_OUT, USBD_BRDF_EP_IN,
+              USBD_BRDF_EP_SIZE),
       };
 
       /* In the order the indices above name them. The language, product, serial and CDC
@@ -724,9 +776,6 @@ module BareRubyProt
           NULL,
           NULL,
           NULL,
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-          "Reset",
-      #endif
       };
 
       static char usbd_serial_str[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
@@ -756,7 +805,7 @@ module BareRubyProt
       }
 
       static const char *bareruby_product_string(void) {
-          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s (%s)",
+          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s %s",
                    USBD_PRODUCT, bareruby_serial_string());
           return usbd_product_str;
       }
