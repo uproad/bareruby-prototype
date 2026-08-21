@@ -18,8 +18,11 @@ module BareRubyProt
     TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s }.freeze
 
     def initialize(parts, typed_ast)
-      @parts = parts
       @tast = typed_ast
+      # nil renders as nothing, as it does in Ruby, and which parts are nil is settled
+      # while compiling — so one leaves neither a conversion in the format nor a value
+      # beside it.
+      @parts = parts.reject { |part| typed_ast.node_type(part) == :nil }
     end
 
     def text
