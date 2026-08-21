@@ -45,6 +45,7 @@ it is given no argument.
 | `require.rb` | require expansion, with `require_lib.rb` and `require_helper.rb` requiring each other |
 | `object.rb` | An object passed to a method, aliased, held by another object and handed back. Matches real Ruby |
 | `implicit_return.rb` | Methods ending on a call, a `puts`, an `if` and a `while`, and one whose last expression is its value. Matches real Ruby |
+| `block_parameters.rb` | A block and its sender disagreeing on how many: a value nobody named is dropped, a name nothing was handed to is nil — in a counted loop and in a realtime handler alike |
 | `gpio_pico_loop.rb` | How much a peripheral call costs, read off a pin. Every GPIO a Pico 1 brings out to its header, pulsed one after another with nothing between the writes, so the period of GP0 is one whole sweep and nothing but the writes is on the path |
 
 ## A product ported over
