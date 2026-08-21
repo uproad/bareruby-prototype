@@ -630,19 +630,19 @@ when two boards are held at once. Left out, both halves go on screen:
 
 ```
     entry: pico1h
-    board: E0C9125B0D9B   /dev/sdb   1-2
+    board: 7-2   RP2 Boot   E0C9125B0D9B   /dev/sdf1
     name:  pico1h_02
 
   [✓] entry  [›] board  [ ] confirm
 
   Which board is it?
-  In BOOTSEL a board answers with its chip's own id, which several of them share.
-  What tells them apart is the device and the port.
+  Where it is plugged in, what its firmware calls it, what it answers to, its device.
+  In BOOTSEL the id is the chip's own and boards share it; the place is each board's.
 
       entry                 board
 
-      host                  E0C9125B0D9B   /dev/sda   1-1
-      pico1h              › E0C9125B0D9B   /dev/sdb   1-2
+      host                  7-1   RP2 Boot   E0C9125B0D9B   /dev/sde1
+      pico1h              › 7-2   RP2 Boot   E0C9125B0D9B   /dev/sdf1
       pico2w
       arduino_mega_2560
 
@@ -658,7 +658,30 @@ that goes into the board's flash and into the entry's `boards:`.
 
 **Two boards answering with the same serial is the case this exists for.** With both of
 them in BOOTSEL, `--target=pico1h` is refused — nothing on the bus says which one was
-meant. Here they are two rows, told apart by the device and the port.
+meant. Here they are two rows, told apart by where each one is plugged in.
+
+The four parts of a board row are **where it is, what its firmware calls itself, what it
+answers to, and the device it is written through.** Where it is leads, because it is the
+only one of the four that belongs to that board alone: the two above both answer
+`E0C9125B0D9B`, which is the RP2040 bootrom's id rather than a name anybody chose. What
+the firmware says is the board's own claim rather than the desk's bookkeeping — `RP2 Boot`
+is a board that has not been through here, `BareRuby Debug Firm RP Pico1` is one that has.
+
+**Where a board is depends on what is looking.** Off a bus it is the kernel's port path,
+`1-1`. Under WSL the board is not on a bus at all: it is a Windows device handed over by
+usbipd, called `7-1` in `usbipd list` and in the `usbipd attach --busid 7-1` that put it
+here, and the kernel's own number for it appears nowhere anybody can act on. So that is
+what is shown, read back out of the vhci hub's status table rather than by running a
+Windows program once per listing and matching on a serial three boards of one model share.
+`flash.sh --list` says the same thing in a column of its own:
+
+```
+SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
+E0C9125B0D9B       rp2040   bootsel  /dev/sde1      7-1        RP2 Boot
+```
+
+On macOS it is the location id, which is what `ioreg` and `system_profiler` both print.
+**That one is unverified** — no Apple hardware was in reach.
 
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every
