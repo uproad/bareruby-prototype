@@ -683,6 +683,15 @@ E0C9125B0D9B       rp2040   bootsel  /dev/sde1      7-1        RP2 Boot
 On macOS it is the location id, which is what `ioreg` and `system_profiler` both print.
 **That one is unverified** — no Apple hardware was in reach.
 
+**Four boards were in BOOTSEL at once when this was measured**, all four answering
+`E0C9125B0D9B`, on two different Windows buses. The one at `7-1` was named through this
+screen and came back as `BareRuby Debug Firm RP Pico1 (pico1h_02)`; the entry wrote
+`boards: [pico1h, pico1h_02]` itself. [`HISTORY.md`](HISTORY.md) has the run.
+
+**A Pico and a Pico W are both rp2040**, so both are offered under a `pico` entry. Nothing
+on the bus tells them apart, and holding the button never did either — what this changes
+is that they are on screen, where somebody who knows which is which can point at one.
+
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every
 board of a machine, which brings USB up, says the name and waits for the next program on
