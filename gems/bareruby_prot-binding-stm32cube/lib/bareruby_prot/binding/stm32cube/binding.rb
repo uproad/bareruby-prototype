@@ -331,8 +331,11 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          uint32_t deadline = HAL_GetTick() + (uint32_t)(milliseconds > 0 ? milliseconds : 0);
+      /* The wait is counted unsigned, as the asleep mark below is, so that the seconds
+         form can turn its argument into milliseconds without overflowing a signed
+         multiplication. */
+      static void bareruby_sleep_for(uint32_t milliseconds) {
+          uint32_t deadline = HAL_GetTick() + milliseconds;
           for (;;) {
               bareruby_uart_interrupt_drain();
               if ((int32_t)(deadline - HAL_GetTick()) <= 0) {
@@ -342,8 +345,12 @@ module BareRubyProt
           }
       }
 
+      void bareruby_sleep_ms(int32_t milliseconds) {
+          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      }
+
       void bareruby_sleep(int32_t seconds) {
-          bareruby_sleep_ms(seconds > 0 ? seconds * 1000 : 0);
+          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
       }
 
       static uint32_t bareruby_asleep_mark;

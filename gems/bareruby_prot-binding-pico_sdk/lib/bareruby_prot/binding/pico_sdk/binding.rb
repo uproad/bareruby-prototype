@@ -269,8 +269,11 @@ module BareRubyProt
           sleep_us((uint64_t)microseconds);
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          absolute_time_t deadline = make_timeout_time_ms((uint32_t)(milliseconds > 0 ? milliseconds : 0));
+      /* The wait is counted unsigned, as the asleep mark below is, so that the seconds
+         form can turn its argument into milliseconds without overflowing a signed
+         multiplication. */
+      static void bareruby_sleep_for(uint32_t milliseconds) {
+          absolute_time_t deadline = make_timeout_time_ms(milliseconds);
           for (;;) {
               bareruby_uart_interrupt_drain();
               if (time_reached(deadline)) {
@@ -280,8 +283,12 @@ module BareRubyProt
           }
       }
 
+      void bareruby_sleep_ms(int32_t milliseconds) {
+          bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u);
+      }
+
       void bareruby_sleep(int32_t seconds) {
-          bareruby_sleep_ms(seconds > 0 ? seconds * 1000 : 0);
+          bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u);
       }
 
       // One mark serves all three units, and it counts microseconds since boot in 64
