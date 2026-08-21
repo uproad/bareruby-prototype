@@ -218,26 +218,47 @@ module BareRubyProt
           fprintf(stderr, "machine_delay_us(microseconds=%d)\\n", (int)microseconds);
       }
 
-      void bareruby_sleep(int32_t seconds) {
-          fprintf(stderr, "sleep(seconds=%d)\\n", (int)seconds);
-          bareruby_uart_interrupt_drain();
+      /* No time passes here, so what a wait is worth watching for is whether it
+         delivered: the flag it was given is in the trace beside the interval, and the
+         drain either runs under it or does not. */
+      static const char *bareruby_wait_interrupt(bool interrupt) {
+          return interrupt ? "true" : "false";
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds) {
-          fprintf(stderr, "sleep_ms(milliseconds=%d)\\n", (int)milliseconds);
-          bareruby_uart_interrupt_drain();
+      static void bareruby_wait_deliver(bool interrupt) {
+          if (interrupt) {
+              bareruby_uart_interrupt_drain();
+          }
       }
 
-      void bareruby_asleep(int32_t seconds) {
-          fprintf(stderr, "asleep(seconds=%d)\\n", (int)seconds);
+      void bareruby_sleep(int32_t seconds, bool interrupt) {
+          fprintf(stderr, "sleep(seconds=%d, interrupt=%s)\\n", (int)seconds,
+                  bareruby_wait_interrupt(interrupt));
+          bareruby_wait_deliver(interrupt);
       }
 
-      void bareruby_asleep_ms(int32_t milliseconds) {
-          fprintf(stderr, "asleep_ms(milliseconds=%d)\\n", (int)milliseconds);
+      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+          fprintf(stderr, "sleep_ms(milliseconds=%d, interrupt=%s)\\n", (int)milliseconds,
+                  bareruby_wait_interrupt(interrupt));
+          bareruby_wait_deliver(interrupt);
       }
 
-      void bareruby_asleep_us(int32_t microseconds) {
-          fprintf(stderr, "asleep_us(microseconds=%d)\\n", (int)microseconds);
+      void bareruby_asleep(int32_t seconds, bool interrupt) {
+          fprintf(stderr, "asleep(seconds=%d, interrupt=%s)\\n", (int)seconds,
+                  bareruby_wait_interrupt(interrupt));
+          bareruby_wait_deliver(interrupt);
+      }
+
+      void bareruby_asleep_ms(int32_t milliseconds, bool interrupt) {
+          fprintf(stderr, "asleep_ms(milliseconds=%d, interrupt=%s)\\n", (int)milliseconds,
+                  bareruby_wait_interrupt(interrupt));
+          bareruby_wait_deliver(interrupt);
+      }
+
+      void bareruby_asleep_us(int32_t microseconds, bool interrupt) {
+          fprintf(stderr, "asleep_us(microseconds=%d, interrupt=%s)\\n", (int)microseconds,
+                  bareruby_wait_interrupt(interrupt));
+          bareruby_wait_deliver(interrupt);
       }
     CPP
 

@@ -894,9 +894,17 @@ module BareRubyProt
         tasts = positional.map { |argument| infer_node(argument, type_environment:) }
         keywords.each do |name, default|
           value = supplied[name]
-          tasts << (value ? infer_node(value, type_environment:) : @tast.create_integer(default, TypeUnion.literal(default), span))
+          tasts << (value ? infer_node(value, type_environment:) : default_written(default, span))
         end
         tasts
+      end
+
+      # What a keyword left out stands for. A default is written in the declaration in the
+      # type the call takes, so the literal the program did not write is built in that type.
+      def default_written(default, span)
+        return @tast.create_boolean(default, :Bool, span) if [true, false].include?(default)
+
+        @tast.create_integer(default, TypeUnion.literal(default), span)
       end
 
       def refuse_unknown_keywords(supplied, keywords, subject)
@@ -992,19 +1000,25 @@ module BareRubyProt
 
       def infer_module_function_call(module_name, name, arguments, type_environment:, span:)
         signature = BindingFunction.of_module(module_name, name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
-        callee = @tast.create_callee(
-          :binding_function, module_name, name, signature[:function],
-          signature[:parameter_types], signature[:return_type]
-        )
-        @tast.create_call(nil, callee, argument_tasts, nil, signature[:return_type], span)
+        infer_binding_signature_call(signature, module_name, name, "#{module_name}.#{name}",
+                                     arguments, type_environment:, span:)
       end
 
       def infer_binding_function_call(name, arguments, type_environment:, span:)
-        signature = BindingFunction.bare(name)
-        argument_tasts = arguments.map { |argument| infer_node(argument, type_environment:) }
+        infer_binding_signature_call(BindingFunction.bare(name), nil, name, name.to_s,
+                                     arguments, type_environment:, span:)
+      end
+
+      # **A function reached without a receiver takes its keywords the way a peripheral
+      # does** — declared, defaulted, and turned into trailing positionals in declaration
+      # order. There is one rule for what a keyword is in this language, and the waits are
+      # not an exception to it just because no object owns them.
+      def infer_binding_signature_call(signature, owner, name, subject, arguments, type_environment:, span:)
+        argument_tasts = resolve_keywords(
+          arguments, signature[:keywords] || {}, subject, type_environment:, span:
+        )
         callee = @tast.create_callee(
-          :binding_function, nil, name, signature[:function],
+          :binding_function, owner, name, signature[:function],
           signature[:parameter_types], signature[:return_type]
         )
         @tast.create_call(nil, callee, argument_tasts, nil, signature[:return_type], span)

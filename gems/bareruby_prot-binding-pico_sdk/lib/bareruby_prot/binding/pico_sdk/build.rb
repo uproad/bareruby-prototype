@@ -14,9 +14,10 @@ module BareRubyProt
                        hardware_sync pico_flash pico_multicore].freeze
 
     # A board starts the SDK before the program and has nowhere to return to, so it
-    # idles rather than ending.
+    # idles rather than ending. The idling still delivers: a handler a program registered
+    # outlives the program, and this is the only wait left to run it in.
     ENTRY = "int main(void) {\n    bareruby_startup();\n    bareruby_main();\n    for (;;) {\n" \
-            "        bareruby_sleep_ms(1000);\n    }\n}\n"
+            "        bareruby_sleep_ms(1000, true);\n    }\n}\n"
 
     def initialize(target, sources:, units:, debug:, exceptions:)
       @target = target
