@@ -973,9 +973,20 @@ implemented and reverted. It closes a real hole — a program printing `BRDONE` 
 for the board, because the transfer shares the serial stream with the program's own
 output — but reaching an interface no kernel driver claims means raw USB, and raw USB on
 Linux means a udev rule on every desk, forever. `picotool` ships one for exactly these
-four product ids, so it is the ordinary price of that road rather than anything unusual;
-it was judged too much for what it buys here. The hole stays open knowingly: this is the
-debug build, on a desk, being written to by the person who wrote the program.
+four product ids, so it is the ordinary price of that road rather than anything unusual.
+
+**And what ruled it out is not arithmetic.** These commands exist to take work off the
+person using them, and that is the whole of what they are for: `target add` asks rather
+than sending somebody to look a triple up, `attach` names a board so that nobody reads a
+serial again, `build` fetches its own toolchain, `deploy` reaches a board without the
+button. A feature that hands a privileged step back — one every desk performs, before
+anything works, forever — is not a cost to be set against a benefit. **It works against
+the reason the commands exist.** That it buys something real does not save it; a
+correctness that is paid for in `sudo` on somebody else's machine is not this ecosystem's
+to spend.
+
+The hole stays open knowingly: this is the debug build, on a desk, being written to by the
+person who wrote the program.
 
 Cost: `2.5 KB` of `.uf2` for the second interface (76.0 → 78.5 KB on a Pico 1). Carrying
 the transfer on it as well had cost 9 KB more, and that is gone with it.
