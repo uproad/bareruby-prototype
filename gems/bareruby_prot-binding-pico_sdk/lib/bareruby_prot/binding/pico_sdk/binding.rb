@@ -682,7 +682,14 @@ module BareRubyProt
       #endif
 
       #define USBD_MANUFACTURER "Raspberry Pi"
-      #define USBD_PRODUCT BARERUBY_USB_PRODUCT
+
+      /* **What the board says it is, in four letters and its own name.** The mark is the
+         protocol rather than the model: a host that has this board in a list wants to
+         know which of its boards this is, and the model is already in the name a desk
+         gave it. It used to say `BareRuby Debug Firm RP Pico1` as well, which is a true
+         sentence that pushed the name out of every column it was printed in — and
+         "debug" said nothing, because a board with no USB at all is the other build. */
+      #define USBD_PRODUCT "BRDF"
 
       /* **Two functions, and the association is what says which interfaces make each.**
          The serial port is a function anybody's terminal can open and read a program's
@@ -791,7 +798,7 @@ module BareRubyProt
       }
 
       static const char *bareruby_product_string(void) {
-          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s (%s)",
+          snprintf(usbd_product_str, sizeof(usbd_product_str), "%s %s",
                    USBD_PRODUCT, bareruby_serial_string());
           return usbd_product_str;
       }

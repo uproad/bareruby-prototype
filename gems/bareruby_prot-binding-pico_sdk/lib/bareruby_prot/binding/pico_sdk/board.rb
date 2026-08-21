@@ -371,7 +371,6 @@ module BareRubyProt
         # for that path, and omitting its endpoints lets several agents coexist behind a
         # resource-constrained USB host controller.
         target_compile_definitions(#{AGENT} PRIVATE
-            BARERUBY_USB_PRODUCT="#{machine.usb_product}"
             PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE=1
             PICO_STDIO_USB_RESET_MAGIC_BAUD_RATE=1200
             PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE=0
