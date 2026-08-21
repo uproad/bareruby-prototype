@@ -44,7 +44,7 @@ module BareRubyProt
       def read_prism_ast(node)
         case node
         when Prism::ProgramNode
-          @result.replace_program(read_statements(node.statements), span_of(node))
+          @result.replace_program(library_statements + read_statements(node.statements), span_of(node))
         when Prism::IntegerNode
           @result.create_integer(node.value, span_of(node))
         when Prism::NilNode
@@ -177,6 +177,25 @@ module BareRubyProt
         end
       end
 
+      # **What every installed peripheral wrote in Ruby, ahead of the program.** A class
+      # that is a mapping onto C functions and nothing else can hold nothing above them,
+      # and the thing above is the same on every board — so it is written once, in the gem
+      # that declares the class, and spliced in here where a require would have put it.
+      #
+      # It is spliced whether or not the program names the class, because which classes a
+      # program names is not known yet. That costs nothing: a method is inferred only when
+      # something calls it, and only an inferred one is emitted.
+      def library_statements
+        Peripheral.libraries.flat_map { |path| statements_of(path) }
+      end
+
+      def statements_of(path)
+        @files.push(path)
+        statements = read_statements(Prism.parse_file(path).value.statements)
+        @files.pop
+        statements
+      end
+
       def require_target(node)
         return unless node.is_a?(Prism::CallNode) && REQUIRE_NAMES.include?(node.name)
 
@@ -198,10 +217,7 @@ module BareRubyProt
         return [read_prism_ast(node)] unless File.exist?(path)
 
         @loaded << path
-        @files.push(path)
-        statements = read_statements(Prism.parse_file(path).value.statements)
-        @files.pop
-        statements
+        statements_of(path)
       end
 
       def read_parameters(node)

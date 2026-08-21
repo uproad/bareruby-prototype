@@ -117,11 +117,6 @@ module BareRubyProt
           return 0;
       }
 
-      bool bareruby_uart_can_read_line(bareruby_uart_t *self) {
-          fprintf(stderr, "uart_can_read_line(id=%d) -> false\\n", (int)self->id);
-          return false;
-      }
-
       void bareruby_uart_flush(bareruby_uart_t *self) {
           fprintf(stderr, "uart_flush(id=%d)\\n", (int)self->id);
       }

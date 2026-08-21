@@ -220,6 +220,32 @@ README lists.
   unverifiable by running them, which is the only way anything here is verified. No sample
   demonstrates it: a program that must be refused cannot sit among the ones that must
   compile.
+- **A peripheral class carries Ruby of its own** (`samples/peripheral_ruby.rb`): a
+  peripheral was a mapping onto C functions and nothing else, so anything above them had
+  nowhere to live but C — and a sentence that is not about hardware got written once per
+  board. `can_read_line` was four C functions in four bindings, three of which asked the
+  same question and the fourth of which answered `false` and nothing else. It is now nine
+  lines of Ruby in the gem that declares UART, spliced into the program being compiled
+  where a require would have put it, and it lowers to `static bool
+  UART_can_read_line(bareruby_uart_t *self)` beside the program's own functions — the
+  binding's struct, not one named after the class, because the C functions all take that
+  one. A call inside it with no receiver reaches the mapping (`bytes_available`) or the
+  class (`can_read_line` from the method the sample adds), asked in that order.
+  **A class opened twice is now one class**, as it is in Ruby: the bodies join in written
+  order and a later definition replaces an earlier one, which is what lets the gem bring
+  a body and the program still add to it. It cost nothing to install: `samples/blink.rb`,
+  which names no UART, is 43,940 B of text and 6,672 B of bss on pico1h both before and
+  after, to the byte — the class arrives in every program and pays only where something
+  calls it, once the empty `initialize` every class is given stopped being emitted for a
+  peripheral (the binding's constructor is the real one). Where it is called it cost 112 B:
+  a program looping on `can_read_line` over `read_byte` is 45,208 B of text against 45,096
+  B with the C version, because one call became two — and on that board it also changed
+  which queue the answer is about, from the hardware flag to the ring `read_byte` reads,
+  which is the coherent one. The sample is 45,448 B of text and 7,208 B of bss on pico1h
+  (81.0 KB UF2) and 14,556 B of text and 2,512 B of bss on the F4. An instance variable in
+  such a body is not implemented — the storage belongs to the binding's struct — and a
+  name the mapping already has still wins over one written in Ruby. Verified on host with
+  bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
