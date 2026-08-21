@@ -656,44 +656,25 @@ record holds. Then a confirmation, and only then is anything written. The three 
 the top are what the run is about to do: the entry, the board on the desk, and the name
 that goes into the board's flash and into the entry's `boards:`.
 
-**Two boards answering with the same serial is the case this exists for.** With both of
-them in BOOTSEL, `--target=pico1h` is refused — nothing on the bus says which one was
-meant. Here they are two rows, told apart by where each one is plugged in.
+A board row is **where it is, what its firmware calls itself, what it answers to, and the
+device it is written through.** Where it is leads, because it is the only one of the four
+that belongs to that board alone: the two above both answer `E0C9125B0D9B`, which is the
+RP2040 bootrom's id rather than a name anybody chose. `RP2 Boot` is a board that has not
+been through here; `BRDF pico1h_02` is one that has.
 
-The four parts of a board row are **where it is, what its firmware calls itself, what it
-answers to, and the device it is written through.** Where it is leads, because it is the
-only one of the four that belongs to that board alone: the two above both answer
-`E0C9125B0D9B`, which is the RP2040 bootrom's id rather than a name anybody chose. What
-the firmware says is the board's own claim rather than the desk's bookkeeping — `RP2 Boot`
-is a board that has not been through here, `BRDF pico1h_02` is one that has.
-
-**Where a board is depends on what is looking.** Off a bus it is the kernel's port path,
-`1-1`. Under WSL the board is not on a bus at all: it is a Windows device handed over by
-usbipd, called `7-1` in `usbipd list` and in the `usbipd attach --busid 7-1` that put it
-here, and the kernel's own number for it appears nowhere anybody can act on. So that is
-what is shown, read back out of the vhci hub's status table rather than by running a
-Windows program once per listing and matching on a serial three boards of one model share.
-`flash.sh --list` says the same thing in a column of its own:
-
-```
-SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
-E0C9125B0D9B       rp2040   bootsel  /dev/sde1      7-1        RP2 Boot
-```
-
-On macOS it is the location id, which is what `ioreg` and `system_profiler` both print.
-**That one is unverified** — no Apple hardware was in reach.
-
-**Four boards were in BOOTSEL at once when this was measured**, all four answering
-`E0C9125B0D9B`, on two different Windows buses. The one at `7-1` was named through this
-screen and came back as `BRDF pico1h_02`; the entry wrote
-`boards: [pico1h, pico1h_02]` itself. A named board re-enumerates as a device usbipd has
-never seen, so it returns `Not shared` and is out of WSL's reach until it is bound and
-attached once more — after which `--list` reads its name in both the serial and the
-firmware column. [`HISTORY.md`](HISTORY.md) has the run.
+**Where a board is is whatever the desk's own tools call the place.** Off a bus that is the
+kernel's port path, `1-1`; under WSL it is the busid `usbipd list` uses, `7-1`, because the
+board is a Windows device handed over rather than a device on a bus. `flash.sh --list` says
+the same in a column of its own. On macOS it is the location id `ioreg` prints, which is
+**unverified** — no Apple hardware was in reach.
 
 **A Pico and a Pico W are both rp2040**, so both are offered under a `pico` entry. Nothing
 on the bus tells them apart, and holding the button never did either — what this changes
 is that they are on screen, where somebody who knows which is which can point at one.
+
+**A newly named board is a device usbipd has never seen**, so it comes back `Not shared`
+and has to be bound and attached once more before WSL can reach it. That is paid once per
+board.
 
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every
@@ -760,42 +741,20 @@ While that firmware is running, its USB product string is the protocol and the b
 `BRDF pico1_01`. The attached name remains the USB serial as well, because that is the
 stable key deployment uses.
 
-**A board with one function is described by whatever driver claimed it.** Linux reads a
-device's own product string and prints it — `lsusb` says `2e8a:000a Raspberry Pi BRDF
-pico1_09` — but Windows names a device after the driver that took it, and every CDC device
-on a desk is then `USB シリアル デバイス (COMxx)`. `usbipd list` shows that copy, so four
-named boards read alike and none of them says which it is.
-
-The way out is the one the chip's own bootloader takes. A bootloader is two functions —
-mass storage and PICOBOOT — and Windows names the composite's children after their
-drivers; the PICOBOOT interface has no driver, so it is described by the device's own
-product string instead, which is why the list reads `USB 大容量記憶装置, RP2 Boot`. The
-firmware carries a second interface for the same reason:
-
-```
-bDeviceClass = ef/02/01                       composite
-  IAD (itf 0, 2 interfaces)
-    iface 0  02/02/00  CDC Control            ┐ the serial port     → /dev/ttyACM0
-    iface 1  0a/00/00  CDC Data               ┘                       COMxx on Windows
-  iface 2  ff/00/00  vendor, iInterface = 0     no driver anywhere  → the name
-```
-
-**Nothing is sent or received on the second interface**, and it is given no name of its
-own, so a host with nothing to call it falls back to the board's. `usbipd list` then reads
+The board says so wherever it is listed. `lsusb` reads it off the device, and `usbipd list`
+on a Windows host reads it too, with no privileged step:
 
 ```
 8-4  2e8a:000a  USB シリアル デバイス (COM37), BRDF pico1_09   Attached
 ```
 
-with no privileged step anywhere: usbipd picks the description up when it binds the board,
-like any other. On Linux nothing changes at all — the interface has no driver, so no device
-node is made for it, and the serial port is still the `dialout`-owned `/dev/ttyACM0` it
-always was.
-
-**BRDF still travels on the serial port**, in the same stream a program's output travels
-on, marked out by a word. A program printing that word can answer for the board. That is
-taken knowingly: this is the debug build, on a desk, being written to by the person who
-wrote the program.
+**The second half of that line is a USB interface that does nothing.** The firmware carries
+one beside the serial port, with no driver on any host and no name of its own, so that a
+host with nothing to call it describes the board by the board's own name instead — which is
+the same reason the chip's bootloader reads `USB 大容量記憶装置, RP2 Boot`. Nothing is sent
+or received on it. On Linux it makes no device node at all, and the serial port is the
+`dialout`-owned `/dev/ttyACM0` it always was. [`HISTORY.md`](HISTORY.md) has why it took
+that shape.
 
 **The name is data rather than code.** It sits in the last sector of flash, which no image
 comes near — the largest measured here is 553 KB against a 2 MB board — so every program
