@@ -205,6 +205,21 @@ README lists.
   UF2), on the Mega a 16,148 B hex. Verified on host; built for pico1h, pico2w and
   mega2560. **The refusal path is not exercised** — no STM32 target on this desk — and
   no board was flashed.
+- **A keyword the declaration does not have is refused** — which keywords a peripheral
+  takes is stated in its declaration, and pass 5 turned each declared one into a trailing
+  positional argument and let every other one fall on the floor. `UART.new(0, data_bits: 7,
+  parity: UART::EVEN)` therefore read as a 7E1 program while the wire carried 8N1, and
+  `flow_control:` — whose constant `UART::RTSCTS` the class publishes — was accepted and
+  did nothing. The pass now compares what the program wrote against what the declaration
+  holds and stops at the difference: `UART.new takes baud:, data_bits:, stop_bits:,
+  parity:, not flow_control:`. All three places a peripheral is handed keywords are
+  covered — the constructor, a registration that takes a block, and a plain method, which
+  declares none and now says so rather than failing several steps later with a nil. This is
+  a diagnostic, which this prototype does not otherwise write; it belongs here because a
+  keyword that is dropped in silence makes the claims of every other entry above
+  unverifiable by running them, which is the only way anything here is verified. No sample
+  demonstrates it: a program that must be refused cannot sit among the ones that must
+  compile.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
