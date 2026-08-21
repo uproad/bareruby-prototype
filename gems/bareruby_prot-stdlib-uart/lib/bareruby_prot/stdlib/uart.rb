@@ -33,12 +33,14 @@ struct: :bareruby_uart_t,
           function: :bareruby_uart_puts, printf_function: :bareruby_uart_printf,
           parameter_types: %i[String], return_type: :Nil
         },
-        read: { function: :bareruby_uart_read, parameter_types: %i[Int32], return_type: :arena_string },
-        gets: { function: :bareruby_uart_gets, parameter_types: [], return_type: :arena_string },
-        # The Arduino HardwareSerial shape: non-blocking byte access over the
-        # interrupt-fed ring, -1 when nothing waits. Touching either arms the receive
-        # interrupt, which is what buys the 256-byte ring; bytes_available answers the
-        # ring's depth once that unit is linked, and the hardware flag (0 or 1) before.
+        # **The whole of what the hardware answers for receiving**: take the next byte off
+        # the queue, look at it without taking it, and say how deep the queue is. Filling
+        # it from the line is the fourth, and it is the interrupt's rather than a name a
+        # program says. Everything above them — a line, a count of bytes, whether a read
+        # would find anything — is the class's own Ruby, because none of it is about
+        # hardware. Touching any of these arms the receive interrupt, which is what buys
+        # the 256-byte queue; bytes_available answers its depth once that unit is linked,
+        # and the hardware flag (0 or 1) before.
         read_byte: { function: :bareruby_uart_read_byte, parameter_types: [], return_type: :Int32 },
         peek: { function: :bareruby_uart_peek, parameter_types: [], return_type: :Int32 },
         bytes_available: {
@@ -89,9 +91,6 @@ struct: :bareruby_uart_t,
       int32_t bareruby_uart_write(bareruby_uart_t *self, const char *value);
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
-      bareruby_string_t *bareruby_uart_read(
-          bareruby_uart_t *self, bareruby_arena_t *arena, int32_t length);
-      bareruby_string_t *bareruby_uart_gets(bareruby_uart_t *self, bareruby_arena_t *arena);
       int32_t bareruby_uart_read_byte(bareruby_uart_t *self);
       int32_t bareruby_uart_peek(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
@@ -109,8 +108,11 @@ struct: :bareruby_uart_t,
                bareruby_uart_printf bareruby_uart_bytes_available
                bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer
                bareruby_uart_bytes_to_write bareruby_uart_send_break],
-      uart_receive: %i[bareruby_uart_read bareruby_uart_gets],
-      uart_interrupt: %i[bareruby_uart_on_line bareruby_uart_read_byte bareruby_uart_peek]
+      # **One queue, and everyone reads it.** Whatever touches the receive side brings it,
+      # a registration included — the handler is a consumer of the same queue as `gets`,
+      # taking bytes with the same call, and whichever asks first gets the byte.
+      uart_receive: %i[bareruby_uart_read_byte bareruby_uart_peek bareruby_uart_on_line],
+      uart_interrupt: %i[bareruby_uart_on_line]
     }
   )
 end

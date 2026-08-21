@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "type_union"
+
 module BareRubyProt
   # The string a program can grow, and the one value whose length is settled while running
   # rather than while compiling. A region hands one out; after that it answers for itself,
@@ -15,6 +17,7 @@ module BareRubyProt
     LENGTH_FUNCTION = :bareruby_string_length
     DUP_FUNCTION = :bareruby_string_dup
     BYTES_FUNCTION = :bareruby_string_bytes
+    APPEND_BYTE_FUNCTION = :bareruby_string_append_byte
 
     OPERATOR_FUNCTIONS = {
       :<< => :bareruby_string_append,
@@ -38,7 +41,12 @@ module BareRubyProt
       typed_ast.create_call(nil, callee, [node], nil, :String, typed_ast.span_of(node))
     end
 
-    def self.operator_function(name)
+    # **`<<` takes a character code as well as a string**, as it does in Ruby, and appends
+    # the one byte it names. The runtime has always had the call — it is how the receive
+    # side built a string byte by byte — and nothing written in Ruby could reach it.
+    def self.operator_function(name, source_type)
+      return APPEND_BYTE_FUNCTION if name == :<< && TypeUnion::WIDTHS.include?(source_type)
+
       OPERATOR_FUNCTIONS.fetch(name) do
         raise "a variable-length string answers <<, +, ==, size, dup and to_s, not #{name}"
       end
