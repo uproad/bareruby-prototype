@@ -657,14 +657,14 @@ module BareRubyProt
       #define USBD_MANUFACTURER "Raspberry Pi"
       #define USBD_PRODUCT BARERUBY_USB_PRODUCT
 
-      #if !PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+      /* **One function, so there is no association to describe.** TinyUSB's CDC template
+         opens with an Interface Association Descriptor, which is how a device says "these
+         two interfaces are one of my functions" — a sentence that only means anything
+         where there are others. This board is a serial port and nothing else, so the
+         association goes, and the eight bytes with it. */
+      #define BARERUBY_IAD_LEN (8)
+      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN - BARERUBY_IAD_LEN)
       #define USBD_ITF_MAX (2)
-      #else
-      #define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_RPI_RESET_DESC_LEN)
-      #define USBD_ITF_RPI_RESET (2)
-      #define USBD_ITF_MAX (3)
-      #endif
 
       #define USBD_ITF_CDC (0)
       #define USBD_CDC_EP_CMD (0x81)
@@ -678,7 +678,6 @@ module BareRubyProt
       #define USBD_STR_PRODUCT (0x02)
       #define USBD_STR_SERIAL (0x03)
       #define USBD_STR_CDC (0x04)
-      #define USBD_STR_RPI_RESET (0x05)
 
       /* Long enough for the visible product wrapped around the longest persisted name. */
       #define USBD_DESC_STR_MAX (64)
@@ -686,14 +685,15 @@ module BareRubyProt
       static const tusb_desc_device_t usbd_desc_device = {
           .bLength = sizeof(tusb_desc_device_t),
           .bDescriptorType = TUSB_DESC_DEVICE,
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE && PICO_USB_RESET_SUPPORT_MS_OS_20_DESCRIPTOR
-          .bcdUSB = 0x0210,
-      #else
           .bcdUSB = 0x0200,
-      #endif
-          .bDeviceClass = TUSB_CLASS_MISC,
-          .bDeviceSubClass = MISC_SUBCLASS_COMMON,
-          .bDeviceProtocol = MISC_PROTOCOL_IAD,
+          /* **The device says what it is, because it is one thing.** A serial port, named
+             at the device rather than left for a host to work out of the interfaces.
+             TUSB_CLASS_MISC is the opposite claim — "I am a container, look inside" — and
+             a host that believes it takes this board apart and calls it after whichever
+             part a driver happened to claim. */
+          .bDeviceClass = TUSB_CLASS_CDC,
+          .bDeviceSubClass = 0,
+          .bDeviceProtocol = 0,
           .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
           .idVendor = USBD_VID,
           .idProduct = USBD_PID,
@@ -704,15 +704,37 @@ module BareRubyProt
           .bNumConfigurations = 1,
       };
 
+      /* TinyUSB's TUD_CDC_DESCRIPTOR, written out without the association it opens with.
+         Everything after that is the template byte for byte — including the Union
+         functional descriptor, which is what actually says that the data interface belongs
+         to the control one. That is how a CDC host pairs them; the association was the
+         same fact again for hosts that do not read CDC, and there is no second function
+         here for such a host to be confused about. */
       static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
           TUD_CONFIG_DESCRIPTOR(1, USBD_ITF_MAX, USBD_STR_LANGUAGE, USBD_DESC_LEN, 0, 250),
 
-          TUD_CDC_DESCRIPTOR(USBD_ITF_CDC, USBD_STR_CDC, USBD_CDC_EP_CMD,
-              USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
-
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-          TUD_RPI_RESET_DESCRIPTOR(USBD_ITF_RPI_RESET, USBD_STR_RPI_RESET),
-      #endif
+          /* CDC Control Interface */
+          9, TUSB_DESC_INTERFACE, USBD_ITF_CDC, 0, 1, TUSB_CLASS_CDC,
+          CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_NONE, USBD_STR_CDC,
+          /* CDC Header */
+          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_HEADER, U16_TO_U8S_LE(0x0120),
+          /* CDC Call */
+          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_CALL_MANAGEMENT, 0, (uint8_t)(USBD_ITF_CDC + 1),
+          /* CDC ACM: support line request + send break */
+          4, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_ABSTRACT_CONTROL_MANAGEMENT, 6,
+          /* CDC Union */
+          5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_UNION, USBD_ITF_CDC, (uint8_t)(USBD_ITF_CDC + 1),
+          /* Endpoint Notification */
+          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_CMD, TUSB_XFER_INTERRUPT,
+          U16_TO_U8S_LE(USBD_CDC_CMD_MAX_SIZE), 16,
+          /* CDC Data Interface */
+          9, TUSB_DESC_INTERFACE, (uint8_t)(USBD_ITF_CDC + 1), 0, 2, TUSB_CLASS_CDC_DATA, 0, 0, 0,
+          /* Endpoint Out */
+          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_OUT, TUSB_XFER_BULK,
+          U16_TO_U8S_LE(USBD_CDC_IN_OUT_MAX_SIZE), 0,
+          /* Endpoint In */
+          7, TUSB_DESC_ENDPOINT, USBD_CDC_EP_IN, TUSB_XFER_BULK,
+          U16_TO_U8S_LE(USBD_CDC_IN_OUT_MAX_SIZE), 0,
       };
 
       /* In the order the indices above name them. The language, product, serial and CDC
@@ -724,9 +746,6 @@ module BareRubyProt
           NULL,
           NULL,
           NULL,
-      #if PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE
-          "Reset",
-      #endif
       };
 
       static char usbd_serial_str[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
