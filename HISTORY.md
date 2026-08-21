@@ -246,6 +246,36 @@ README lists.
   such a body is not implemented — the storage belongs to the binding's struct — and a
   name the mapping already has still wins over one written in Ruby. Verified on host with
   bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
+- **One receive queue, and everyone reads it** (`samples/uart_one_queue.rb`): the receive
+  side had two — an interrupt-fed ring, and the hardware that `read` and `gets` polled
+  directly — and which one a byte landed in decided who could see it. On the host, asking
+  `peek` once moved everything waiting into the ring and left `gets` reading an empty
+  stdin, where it appended EOF until the region ran out and the program aborted; asked the
+  other way round, `gets` took its line and the rest of the input was simply gone, with no
+  exception. On a board the same collision wore a different face: the ISR reads the data
+  register, which clears the flag a polling `gets` is waiting for, so `gets` waits for
+  ever. **There is now one queue**, and `gets`, `read`, a registered handler and
+  `bytes_available` all reach it through `read_byte` — the handler included, which is what
+  makes first-come-first-served true rather than a hope: the line assembler takes bytes
+  with the same call a program would, and what it did not take is nobody's loss but the
+  one who did not ask. What the hardware answers for shrank to taking the next byte,
+  looking at it, and saying how deep the queue is, with the interrupt filling it; **a line
+  is not something a wire has**, so where one ends is decided in UART's own Ruby, once,
+  rather than in every binding. `gets` and `read` moved there with it, which needed `<<`
+  to take a character code as Ruby's does — the runtime had the call and nothing written
+  in Ruby could reach it. `clear_rx_buffer` empties the queue again, which it had stopped
+  doing when the ring arrived. On the Arduino side there is still exactly one queue and it
+  is the core's own, so that binding buys no second ring and overrides no clearing. What
+  it cost, on pico1h: `samples/uart_receive.rb`, which only calls `gets` and `read`, went
+  from 97,364 B of text and 7,044 B of bss to 97,756 B and 7,308 B — the 256-byte queue it
+  never used to buy, plus the difference between a C loop over the hardware and a Ruby one
+  over the queue. `samples/uart_on_line.rb` went from 44,876 B to 45,028 B of text with
+  bss unmoved. The new sample is 97,892 B of text and 7,308 B of bss there (183.5 KB UF2),
+  and 20,836 B of text and 2,532 B of bss on the F4. Not done here: the queue is still 256
+  bytes with no way to ask for another size, `can_read_line` still answers whether *any*
+  byte waits rather than a whole line, and a program waiting on a wire that has gone quiet
+  now waits rather than aborting — on the host a closed stdin is such a wire. Verified on
+  host with bytes piped in; built for pico1h, mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
