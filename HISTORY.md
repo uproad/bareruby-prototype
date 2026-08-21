@@ -347,6 +347,29 @@ README lists.
   table of names per board that nothing else here would use yet. Verified on host; built
   for pico1h, mega2560 and f446, and no board was flashed — **the refusals on those two
   boards are compiled but not run**.
+- **The mode and the line ending are the program's** (`samples/uart_line_ending.rb`): the
+  last two deviations from the standard the class follows. `setmode` changes what the line
+  was opened with and **says nothing about the parts it does not name** — every keyword is
+  optional in the documented signature, and this language has no keyword that can be left
+  out, so **-1 is how a thing says it is not being changed**, the same spelling a pin
+  already used for "nothing was asked". Folding those into the struct is not a question any
+  board answers differently, so the header does it once and each binding applies what it
+  finds; the constructor and `setmode` end in the same per-binding `apply`, which is what
+  makes them agree by construction. `line_ending=` reaches **both** sides of a line: what
+  `puts` puts after the text, and what `gets` reads up to. It lives in the struct because
+  no hardware knows what a line is, and `gets` — which is Ruby now — asks for the byte it
+  ends with, because **a static string in this language answers nothing**: no size, no
+  index, no `ord`, so the ending it was handed is not something Ruby can look inside. That
+  reader is an addition this prototype needed rather than something the standard names.
+  **A defect fell out of it**: an interpolation is expanded into a printf, and both `write`
+  and `puts` reached the same one, which the compiler had already ended with a newline — so
+  `uart.write("value=#{n}")` quietly sent a line where `uart.write("plain")` sent none. The
+  ending is the peripheral's now, so there are two printfs, the compiler ends no line it is
+  not the one writing, and an interpolated `write` sends exactly what it was given. On
+  pico1h `samples/logger.rb` went from 44,796 B to 44,892 B of text with `bss` unmoved; the
+  sample is 98,112 B of text and 7,308 B of bss there, and 22,028 B of text and 2,532 B of
+  bss on the F4. Verified on host, where the trace now carries the ending beside the text;
+  built for pico1h, mega2560 and f446, and no board was flashed.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under

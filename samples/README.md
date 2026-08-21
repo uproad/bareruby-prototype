@@ -28,6 +28,7 @@ it is given no argument.
 | `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
 | `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `send_break`. A frame a device cannot produce is refused, never replaced |
 | `uart_flow_control.rb` | The spelling the guideline and PicoRuby use: `unit:`, `baudrate:` and its reader, `txd_pin:`/`rxd_pin:`, and `flow_control:` with `rts_pin:`/`cts_pin:` |
+| `uart_line_ending.rb` | `setmode` changing what the line was opened with and leaving what it does not name, and `line_ending=` reaching both what `puts` puts and what `gets` reads up to |
 | `peripheral_ruby.rb` | A peripheral class carrying Ruby: `can_read_line` written once in the gem that declares UART, and a method the program adds to the same class |
 | `i2c.rb` | I2C mixed-output write and repeated-start read returning a variable-length string |
 | `nilable.rb` | `nil`, inferred `T?`, tagged values, `nil?`, local `&.`, `if`/`while` narrowing, `||`, missing `else`, and assignment on one path |
