@@ -11,7 +11,7 @@ module BareRubyProt
   # `register`. What a program may say to hardware is settled by what is installed, and
   # this is the only door.
   class Peripheral
-    attr_reader :name, :struct, :declaration, :required_name
+    attr_reader :name, :struct, :declaration, :library, :required_name
 
     def initialize(name, entry)
       @name = name
@@ -20,6 +20,7 @@ module BareRubyProt
       @constructor = entry[:constructor]
       @methods = entry[:methods]
       @declaration = entry[:declaration]
+      @library = entry[:library]
       @required_name = entry[:required_name]
       @units = entry[:units] || {}
       @variadic = entry[:variadic] || {}
@@ -38,6 +39,12 @@ module BareRubyProt
     def constructor_keywords = @constructor[:keywords] || {}
 
     def method_signature(name) = @methods.fetch(name)
+
+    # **Whether this name is one of the C functions.** A peripheral is not only a mapping
+    # onto them: the C is the smallest vocabulary that touches the hardware, and what sits
+    # on top of it the class carries in Ruby. A name the mapping does not have is looked
+    # for there, the same way it is for any other class.
+    def mapped?(name) = @methods.key?(name)
 
     # **What a method does with a block, if it takes one.** The declaration form carries
     # one kind — `:realtime_handler`, whose block becomes an independent function running
@@ -69,6 +76,11 @@ module BareRubyProt
     def self.all = ALL.values
 
     def self.declarations = all.filter_map(&:declaration)
+
+    # **The Ruby a peripheral brings for the program.** It is a file the gem ships rather
+    # than text written here, because it is Ruby a person edits and a program is compiled
+    # from, not a string this side hands to the C++ compiler.
+    def self.libraries = all.filter_map(&:library)
 
     def self.required_names = all.filter_map(&:required_name)
 

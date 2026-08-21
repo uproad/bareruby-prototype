@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "bareruby_prot/peripheral"
+
 require_relative "../ir/lir"
 require_relative "pass_09_lir_generator/value_layout"
 require_relative "pass_09_lir_generator/bytes_sent"
@@ -34,10 +36,16 @@ module BareRubyProt
 
           name, ivars, methods = @tast.children_of(statement)
           @binding_storage = BindingStorage.new(@lir, @tast, @value_layout, methods)
-          fields = ivars.map do |ivar|
-            @lir.create_field(@value_layout.field_name(ivar[:name]), @binding_storage.ivar_type(ivar))
+          # **A peripheral's storage is the binding's, so nothing is declared for it
+          # here.** Its struct arrives with the declaration the peripheral brought, and a
+          # second one under the class's own name would be a different type from the one
+          # every C function takes.
+          unless Peripheral.known?(name)
+            fields = ivars.map do |ivar|
+              @lir.create_field(@value_layout.field_name(ivar[:name]), @binding_storage.ivar_type(ivar))
+            end
+            structs << @lir.create_struct(name, fields)
           end
-          structs << @lir.create_struct(name, fields)
           methods.each { |method| functions << lower_method(method) }
         end
 
@@ -50,6 +58,12 @@ module BareRubyProt
       end
 
       def class_definition?(node) = @tast.node_type(node) == :class_definition
+
+      # Which struct a method's self is a pointer to. For a peripheral it is the one the
+      # binding declares, not one named after the class.
+      def struct_named(class_name)
+        Peripheral.known?(class_name) ? Peripheral[class_name].struct : class_name
+      end
 
       def lower_method(node)
         identity, parameters, body = @tast.children_of(node)
@@ -83,7 +97,7 @@ module BareRubyProt
       def with_function(self_class, return_type)
         previous = @function_scope
         @function_scope = FunctionScope.new(
-          self_type: self_class && @lir.pointer_type(@lir.struct_type(self_class)),
+          self_type: self_class && @lir.pointer_type(@lir.struct_type(struct_named(self_class))),
           return_type:, void_return: @value_layout.type_of(return_type) == :void
         )
         @binding_storage.scope = @function_scope
