@@ -890,6 +890,21 @@ under `USB\VID_2E8A&PID_000A\PICO1H_02` and reporting `BareRuby Debug Firm RP Pi
 `boards: [pico1h]` to `boards: [pico1h, pico1h_02]` on its own, and the next run of the
 screen offered `pico1h_03` to the three boards still sitting in their bootloaders.
 
+**And it reads back as itself — after being handed over a second time.** A freshly named
+board re-enumerates as a device usbipd has never seen, so it returns `Not shared` and is
+out of WSL's reach entirely; the listing does not show it wrongly, it does not show it at
+all. Bound and attached again, it reads
+
+```
+SERIAL             CHIP     STATE    DEVICE         LOCATION   FIRMWARE
+pico1h_02          rp2040   running  /dev/ttyACM0   7-1        BareRuby Debug Firm RP Pico1 (pico1h_02)
+```
+
+The serial is the name, and the firmware column carries the name as well — the string
+sysfs publishes is the agent's own product string, parenthesis included, rather than
+anything the Windows side composed. The screen no longer offers this board: it is running
+rather than sitting in a bootloader, and the record holds its name.
+
 **What the chip cannot say, this cannot say either.** A Pico and a Pico W are both rp2040,
 so all four are offered under a `pico` entry, the Pico W among them. The button never told
 them apart either; what has changed is that the four are on screen, where somebody who
