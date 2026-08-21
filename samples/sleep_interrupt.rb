@@ -2,11 +2,11 @@
 # not. Send "ON" and "OFF", each followed by Enter.
 uart = UART.new(0, baud: 115200, parity: UART::NONE)
 
-uart.on_line do |line|
-  if line == "ON"
-    puts "handler saw ON"
-  elsif line == "OFF"
-    puts "handler saw OFF"
+uart.irq(UART::RX_RECEIVE) do |port, event|
+  byte = port.read_byte
+  while byte >= 0
+    puts "handler took #{byte}"
+    byte = port.read_byte
   end
 end
 

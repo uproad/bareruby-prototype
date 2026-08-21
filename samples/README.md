@@ -24,7 +24,7 @@ it is given no argument.
 | `uart_receive.rb` | UART `read` and `gets` returning variable-length strings from the current arena |
 | `uart_one_queue.rb` | One receive queue that everyone reads: `peek`, `gets` and `bytes_available` about the same bytes, what nobody took still there afterwards, and `clear_rx_buffer` emptying it |
 | `uart_rx_buffer.rb` | `rx_buffer_size:` — how deep the receive queue is, settled while compiling and landing in `bss` byte for byte. Refused on the Arduino core, whose queue is its own |
-| `uart_on_line.rb` | UART receive interrupt: `on_line` handing each completed line to a realtime handler as a `StringView`, drained while `sleep_ms` waits |
+| `uart_rx_receive.rb` | The receive notification: `irq(UART::RX_RECEIVE)` handing a realtime handler the port and the event, and the handler reading the queue itself |
 | `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
 | `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `send_break`. A frame a device cannot produce is refused, never replaced |
 | `peripheral_ruby.rb` | A peripheral class carrying Ruby: `can_read_line` written once in the gem that declares UART, and a method the program adds to the same class |

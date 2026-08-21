@@ -11,9 +11,9 @@ end
 
 uart = UART.new(0, baud: 115_200, parity: UART::NONE)
 
-# The binding hands this one a line. Not looking at it is allowed; the handler still has
-# the shape the binding calls it through.
-uart.on_line do
+# The binding hands this one the port it is about and the event that fired. Looking at
+# neither is allowed; the handler still has the shape the binding calls it through.
+uart.irq(UART::RX_RECEIVE) do
   led = OnboardLED.new
   led.on
 end

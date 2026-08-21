@@ -10,7 +10,6 @@ require_relative "pass_05_type_inferrer/fixed"
 require_relative "pass_05_type_inferrer/printf_format"
 require_relative "pass_05_type_inferrer/arena"
 require_relative "pass_05_type_inferrer/arena_string"
-require_relative "pass_05_type_inferrer/string_view"
 require_relative "pass_05_type_inferrer/arena_array"
 
 module BareRubyProt
@@ -605,8 +604,6 @@ module BareRubyProt
             infer_arena_array_method_call(name, receiver_tast, receiver_type, arguments, type_environment:, span:)
           elsif ArenaString.type?(receiver_type)
             infer_arena_string_method_call(name, receiver_tast, arguments, type_environment:, span:)
-          elsif StringView.type?(receiver_type)
-            infer_string_view_method_call(name, receiver_tast, arguments, type_environment:, span:)
           elsif Fixed.conversion?(name)
             infer_conversion_call(name, receiver_tast, receiver_type, span)
           elsif operator?(name)
@@ -736,15 +733,6 @@ module BareRubyProt
         name == :!= ? negate(call, span) : call
       end
 
-      # A view compares against a static string through a helper the header carries,
-      # deliberately outside the string runtime: the bytes are a binding's, not a region's.
-      def infer_string_view_method_call(name, receiver_tast, arguments, type_environment:, span:)
-        raise "a string view answers == and !=, not #{name}" unless %i[== !=].include?(name)
-
-        call = string_call(name, StringView::EQUAL_FUNCTION,
-                           [receiver_tast, text_of(arguments.first, type_environment:)], :Bool, span)
-        name == :!= ? negate(call, span) : call
-      end
 
       def format_arguments(receiver_tast, source, type_environment:, span:)
         format = format_of(source, type_environment:)
@@ -1051,13 +1039,22 @@ module BareRubyProt
           arguments, signature[:keywords] || {}, "#{receiver_type[:class_name]}##{name}", type_environment:, span:
         )
         parameters, body = @bareruby_ast.children_of(block)
+        peripheral = Peripheral[receiver_type[:class_name]]
         parameter_types = (signature[:block_parameter_types] || [])
-                          .map { |declared| StringView.block_parameter_type(@tast, declared) }
+                          .map { |declared| block_parameter_type(peripheral, declared) }
         handler_environment = type_environment.without_locals
         typed_parameters = block_parameters(parameters, parameter_types, handler_environment, span_of(block))
         typed_body = infer_body(body, type_environment: handler_environment)
         typed_block = @tast.create_block(typed_parameters, typed_body, :Nil, span_of(block))
         @tast.create_interrupt(receiver_tast, registration, typed_block, signature[:function], :Nil, span)
+      end
+
+      # **What a declaration writes for a handler's parameter, in the language's terms.**
+      # `self` is the peripheral the handler was registered on: a handler starts with its
+      # parameters and nothing else, so the thing it is about has to be one of them or it
+      # has no way to reach it. Anything else is already a type the inferrer knows.
+      def block_parameter_type(peripheral, declared)
+        declared == :self ? peripheral.instance_type(@tast) : declared
       end
 
       def infer_module_function_call(module_name, name, arguments, type_environment:, span:)

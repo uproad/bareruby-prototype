@@ -16,27 +16,6 @@ module BareRubyProt
 
       typedef void (*bareruby_interrupt_handler_t)(void);
 
-      /* The borrowed string a handler is handed: a pointer and a length into bytes the
-         binding owns, valid for the handler and no longer. The comparison lives here,
-         outside the bareruby_string_ runtime family, so that comparing a view never
-         links the string runtime or the arena. */
-      typedef struct {
-          const char *bytes;
-          int32_t length;
-      } bareruby_string_view_t;
-
-      static inline bool bareruby_text_view_equal(
-          const bareruby_string_view_t *self, const char *value) {
-          int32_t index = 0;
-          while (index < self->length && value[index] != '\\0') {
-              if (self->bytes[index] != value[index]) {
-                  return false;
-              }
-              ++index;
-          }
-          return index == self->length && value[index] == '\\0';
-      }
-
       void bareruby_startup(void);
 
       void bareruby_machine_delay_us(int32_t microseconds);

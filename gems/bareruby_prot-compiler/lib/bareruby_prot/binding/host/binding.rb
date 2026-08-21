@@ -192,7 +192,7 @@ module BareRubyProt
       #include <string.h>
       #include <time.h>
 
-      /* The uart_interrupt unit overrides this when a program says on_line; otherwise
+      /* The uart_interrupt unit overrides this when a program registers an irq;
          sleep drains nothing and pays one empty call. */
       extern "C" __attribute__((weak)) void bareruby_uart_interrupt_drain(void) {}
 
@@ -375,81 +375,34 @@ module BareRubyProt
 
       #include <stdio.h>
 
-      /* **A line is not something a wire has.** This is one more consumer of the receive
-         queue, taking bytes with the call a program would use and deciding where a line
-         ends; it holds no queue of its own and races nobody. Whichever asks first gets the
-         byte, and the one that did not ask is the one that lost it. */
-      typedef struct {
-          char line[256];               /* the view a handler is handed points here */
-          int32_t line_length;
-          bool discarding;              /* an overlong line, thrown away to the next LF */
-          bareruby_uart_line_handler_t handler;
-          bareruby_uart_t *port;
-      } bareruby_uart_line_t;
+      /* **The notification says which port and which event, and stops there.** What
+         arrived is in the queue, and the handler takes it with the same call a program
+         would; nothing here knows what a line is. The registration is remembered rather
+         than handed to the interrupt, because the handler runs in thread mode — a wait is
+         where it gets to run, and a wait is where the drain below is called from. */
+      static bareruby_uart_irq_handler_t bareruby_uart_irq_handler;
+      static bareruby_uart_t *bareruby_uart_irq_port;
+      static int32_t bareruby_uart_irq_events;
 
-      static bareruby_uart_line_t bareruby_uart_line;
-
-      static void bareruby_uart_line_trace(const char *bytes, int32_t length) {
-          fputs("uart_line(line=\\"", stderr);
-          for (int32_t index = 0; index < length; ++index) {
-              unsigned char byte = (unsigned char)bytes[index];
-              if (byte < 32 || byte > 126) {
-                  fprintf(stderr, "\\\\x%02x", (unsigned int)byte);
-              } else {
-                  fputc((int)byte, stderr);
-              }
-          }
-          fputs("\\")\\n", stderr);
+      void bareruby_uart_irq(
+          bareruby_uart_t *self, int32_t events, bareruby_uart_irq_handler_t handler) {
+          bareruby_uart_irq_handler = handler;
+          bareruby_uart_irq_port = self;
+          bareruby_uart_irq_events = events;
+          fprintf(stderr, "uart_irq(id=%d, events=%d)\\n", (int)self->id, (int)events);
+          bareruby_uart_bytes_available(self);   /* the touch that arms the receive side */
       }
 
-      static void bareruby_uart_line_byte(uint8_t byte) {
-          if (byte == '\\n') {
-              if (bareruby_uart_line.discarding) {
-                  bareruby_uart_line.discarding = false;
-                  bareruby_uart_line.line_length = 0;
-                  return;
-              }
-              int32_t length = bareruby_uart_line.line_length;
-              if (length > 0 && bareruby_uart_line.line[length - 1] == '\\r') {
-                  length -= 1;
-              }
-              bareruby_uart_line.line[length] = '\\0';
-              bareruby_uart_line.line_length = 0;
-              bareruby_uart_line_trace(bareruby_uart_line.line, length);
-              if (bareruby_uart_line.handler != NULL) {
-                  bareruby_string_view_t view = {bareruby_uart_line.line, length};
-                  bareruby_uart_line.handler(&view);
-              }
-              return;
-          }
-          if (bareruby_uart_line.discarding) {
-              return;
-          }
-          if (bareruby_uart_line.line_length == 255) {   /* a line is at most 255 bytes */
-              bareruby_uart_line.discarding = true;
-              bareruby_uart_line.line_length = 0;
-              return;
-          }
-          bareruby_uart_line.line[bareruby_uart_line.line_length++] = (char)byte;
-      }
-
+      /* One event exists, so what was registered for and what fired are the same value.
+         The day there is a second, this is where the two have to be told apart. */
       extern "C" void bareruby_uart_interrupt_drain(void) {
-          if (bareruby_uart_line.port == NULL) {
+          if (bareruby_uart_irq_port == NULL) {
               return;
           }
-          for (;;) {
-              int32_t byte = bareruby_uart_read_byte(bareruby_uart_line.port);
-              if (byte < 0) {
-                  break;
-              }
-              bareruby_uart_line_byte((uint8_t)byte);
+          if (bareruby_uart_bytes_available(bareruby_uart_irq_port) == 0) {
+              return;
           }
-      }
-
-      void bareruby_uart_on_line(bareruby_uart_t *self, bareruby_uart_line_handler_t handler) {
-          bareruby_uart_line.handler = handler;
-          bareruby_uart_line.port = self;
-          fprintf(stderr, "uart_on_line(id=%d)\\n", (int)self->id);
+          bareruby_uart_irq_handler(bareruby_uart_irq_port, bareruby_uart_irq_events);
       }
     CPP
 
