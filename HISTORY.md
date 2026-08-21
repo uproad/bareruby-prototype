@@ -220,6 +220,29 @@ README lists.
   unverifiable by running them, which is the only way anything here is verified. No sample
   demonstrates it: a program that must be refused cannot sit among the ones that must
   compile.
+- **A block and its sender need not agree on how many** (`samples/block_parameters.rb`):
+  the same slip broke differently in every place it could happen — `3.times do … end` was
+  a backtrace out of the block inliner, `3.times do |i, extra|` passed in silence until
+  `extra` was used and then failed as C++, `uart.on_line do … end` failed as a function
+  pointer of the wrong type, and `gpio.on_interrupt do |x|` as a void parameter. **The
+  rule is now one rule, and it is Ruby's**: a value nobody named is dropped, and a name
+  nothing was handed to is nil. What is emitted is one parameter per *value*, because the
+  shape of the thing that runs the block belongs to the sender — a handler is called
+  through a pointer whose type the binding wrote, so a block naming none of them still
+  gets `bareruby_interrupt_handler_0(bareruby_string_view_t *bareruby_unnamed_0)`, and a
+  counted loop gets its counter whether or not anybody asked for one. A name beyond the
+  values is bound and never emitted: **it can only ever be nil, so it is nil while
+  compiling** — `spare.nil?` folds to `true` and `"#{spare}"` leaves neither a conversion
+  in the format nor a value beside it, which is exactly what Ruby prints. Two of the seven
+  cases the fault was reported with turned out not to be about arity at all: `values.each`
+  is a method a fixed-capacity array does not have, and asking for one used to be treated
+  as an index and crash below, where it now says what the array does answer. `each`, `map`
+  and `select` are not in this language yet; the rule will hold for them when they are. On
+  pico1h the sample builds to 46,672 B of text and 7,228 B of bss (83.5 KB UF2), and on the
+  F4 to 15,980 B of text and 2,520 B of bss. Verified on host; built for pico1h, mega2560
+  and f446, and no board was flashed. A local written `x = nil` outside a block is still
+  not representable — it is declared void and the C++ refuses it — which is the same gap
+  seen from the other side and is not fixed here.
 ### Bindings, boards and targets
 
 - **The STM32Cube binding** — a user-owned NUCLEO-F446RE CubeMX project, kept under
