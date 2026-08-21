@@ -125,7 +125,7 @@ first, so each does its own work and then the next one's.
 ./bareruby new hello                         # a project that builds without being edited
 ./bareruby tools install                     # fetch what the recorded boards build with
 ./bareruby target add                        # once per board: answer a few questions
-./bareruby target attach --target=pico       # once per board: BOOTSEL held, add and name it
+./bareruby target attach                     # once per board: BOOTSEL held, pick board and entry
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
@@ -141,7 +141,7 @@ first, so each does its own work and then the next one's.
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
-| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. No program of yours; hold BOOTSEL first | writes it |
+| `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. Without `--target` it asks which board goes under which entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
 | `tools install` | fetch what the recorded targets build with, pinned by version and hash | yes |
 | `--version` | every gem an artifact was made from — the compiler, the bindings and the standard classes together decide the bytes on a board | no |
@@ -622,6 +622,43 @@ Hold BOOTSEL on each board being named, plug it in, and run its entry's command:
 ./bareruby target attach --target=pico1b
 ./bareruby target attach --target=pico2
 ```
+
+**`--target=` is a name typed back**, out of the very file this command is about to write
+into — and it says nothing about the other half. Which board was being named was answered
+by holding a button, which cannot be seen, cannot be taken back, and says nothing at all
+when two boards are held at once. Left out, both halves go on screen:
+
+```
+    entry: pico1h
+    board: E0C9125B0D9B   /dev/sdb   1-2
+    name:  pico1h_02
+
+  [✓] entry  [›] board  [ ] confirm
+
+  Which board is it?
+  In BOOTSEL a board answers with its chip's own id, which several of them share.
+  What tells them apart is the device and the port.
+
+      entry                 board
+
+      host                  E0C9125B0D9B   /dev/sda   1-1
+      pico1h              › E0C9125B0D9B   /dev/sdb   1-2
+      pico2w
+      arduino_mega_2560
+
+  ↑↓ move   ←  entries   enter choose   esc back   ^C cancel
+```
+
+It is laid out the way `target add` lays its families and machines out. The entry is chosen
+first, on the left; `→` steps into the boards on the right, which are always the ones
+*that* entry could take — its chip, in BOOTSEL, and not already answering to a name the
+record holds. Then a confirmation, and only then is anything written. The three lines at
+the top are what the run is about to do: the entry, the board on the desk, and the name
+that goes into the board's flash and into the entry's `boards:`.
+
+**Two boards answering with the same serial is the case this exists for.** With both of
+them in BOOTSEL, `--target=pico1h` is refused — nothing on the bus says which one was
+meant. Here they are two rows, told apart by the device and the port.
 
 **No program of yours is involved.** What goes onto the board beside its name is the
 *agent*: a small resident firmware belonging to the Pico binding, the same one for every
