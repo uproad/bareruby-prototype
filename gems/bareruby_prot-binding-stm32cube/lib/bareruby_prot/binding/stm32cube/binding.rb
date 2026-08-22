@@ -289,10 +289,11 @@ module BareRubyProt
           HAL_GPIO_Init(port, &config);
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           HAL_GPIO_WritePin(
               bareruby_gpio_port(self->pin), bareruby_gpio_pin(self->pin),
               value != 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -386,12 +387,14 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
+          return milliseconds;
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
+          return seconds;
       }
 
       static uint32_t bareruby_asleep_mark;

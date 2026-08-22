@@ -41,7 +41,7 @@ struct: :bareruby_uart_t,
         # optional, and **-1 is how one says it is not being changed** — this language has
         # no keyword that can be left out, so not changing a thing has to be sayable.
         setmode: {
-          function: :bareruby_uart_setmode, parameter_types: [], return_type: :Nil,
+          function: :bareruby_uart_setmode, parameter_types: [], return_type: :self,
           keywords: {
             baudrate: -1, data_bits: -1, stop_bits: -1, parity: -1, flow_control: -1,
             rts_pin: -1, cts_pin: -1
@@ -84,9 +84,9 @@ struct: :bareruby_uart_t,
         bytes_available: {
           function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
         },
-        flush: { function: :bareruby_uart_flush, parameter_types: [], return_type: :Nil },
+        flush: { function: :bareruby_uart_flush, parameter_types: [], return_type: :self },
         clear_rx_buffer: {
-          function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :Nil
+          function: :bareruby_uart_clear_rx_buffer, parameter_types: [], return_type: :self
         },
         # What the send side still owes the wire, and the break the standard guideline
         # defines. bytes_to_write is the counterpart of bytes_available.
@@ -94,10 +94,10 @@ struct: :bareruby_uart_t,
           function: :bareruby_uart_bytes_to_write, parameter_types: [], return_type: :Int32
         },
         break: {
-          function: :bareruby_uart_break, parameter_types: %i[Int32], return_type: :Nil
+          function: :bareruby_uart_break, parameter_types: %i[Int32], return_type: :self
         },
         clear_tx_buffer: {
-          function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
+          function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :self
         },
         # **The receive notification says which port and which event, and stops there.**
         # Registering is what arms the interrupt and so what buys the queue; the block runs

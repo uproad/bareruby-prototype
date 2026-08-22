@@ -726,10 +726,27 @@ module BareRubyProt
         receiver_statements, receiver_expression = receiver ? lower_expression(receiver) : [[], nil]
         self_argument = receiver_expression ? @lir.reference_to(receiver_expression) : @lir.create_self_pointer(@function_scope.self_type)
         argument_statements, argument_expressions = lower_arguments(arguments)
+        statements = receiver_statements + argument_statements
+        return lower_receiver_answer(statements, self_argument, callee, argument_expressions) if answers_receiver?(callee)
 
-        [receiver_statements + argument_statements,
+        [statements,
          @lir.create_call(callee[:function], [self_argument] + argument_expressions,
                           @value_layout.value_type_of(callee[:return_type]))]
+      end
+
+      # **A call that answers the thing it was sent to is answered here, not by a binding.**
+      # No board knows what `self` is, and the receiver is already in hand on this side —
+      # so the call is made for what it does and the receiver is what the call is worth.
+      # A binding that had to answer it would return a pointer it was just handed, four
+      # times over.
+      def lower_receiver_answer(statements, self_argument, callee, argument_expressions)
+        call = @lir.create_call(callee[:function], [self_argument] + argument_expressions, :Nil)
+        [statements + [@lir.create_expression(call)], self_argument]
+      end
+
+      def answers_receiver?(callee)
+        callee[:kind] == :binding_method && Peripheral.known?(callee[:owner]) &&
+          Peripheral[callee[:owner]].method_signature(callee[:name])[:return_type] == :self
       end
 
       # **A call that sends bytes sends one pointer and one length**, however many values

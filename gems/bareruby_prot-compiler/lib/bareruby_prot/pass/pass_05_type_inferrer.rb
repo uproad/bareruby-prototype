@@ -1005,7 +1005,7 @@ module BareRubyProt
             resolve_keywords(arguments, keywords, "#{class_name}##{name}", type_environment:, span:)
           end
         argument_tasts = [current_arena(span)] + argument_tasts if region_of(signature)
-        return_type = answers_string?(signature) ? ArenaString.type(@tast) : signature[:return_type]
+        return_type = answered_type(signature, class_name)
         callee = @tast.create_callee(
           signature[:payload_from] ? :binding_payload : :binding_method,
           class_name, name, signature[:function], argument_types(argument_tasts), return_type
@@ -1023,7 +1023,20 @@ module BareRubyProt
         end
       end
 
+      # **What a call answers, in the language's terms.** Two of the three are written in
+      # the declaration as they stand. The third is `self`: a call that answers the thing
+      # it was sent to, which is the receiver's type rather than anything the declaration
+      # could have named without repeating the class it is already inside.
+      def answered_type(signature, class_name)
+        return ArenaString.type(@tast) if answers_string?(signature)
+        return Peripheral[class_name].instance_type(@tast) if answers_receiver?(signature)
+
+        signature[:return_type]
+      end
+
       def answers_string?(signature) = signature[:return_type] == :arena_string
+
+      def answers_receiver?(signature) = signature[:return_type] == :self
 
       def region_of(signature) = answers_string?(signature) || !signature[:payload_from].nil?
 

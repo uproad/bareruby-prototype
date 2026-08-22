@@ -26,7 +26,7 @@ module BareRubyProt
     },
     constructor: { function: :bareruby_gpio_init, parameter_types: %i[Int32 Int32] },
     methods: {
-      write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Nil },
+      write: { function: :bareruby_gpio_write, parameter_types: %i[Int32], return_type: :Int32 },
       read: { function: :bareruby_gpio_read, parameter_types: [], return_type: :Int32 },
       high?: { function: :bareruby_gpio_high, parameter_types: [], return_type: :Bool },
       low?: { function: :bareruby_gpio_low, parameter_types: [], return_type: :Bool },
@@ -43,7 +43,7 @@ module BareRubyProt
       } bareruby_gpio_t;
 
       void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params);
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value);
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value);
       int32_t bareruby_gpio_read(bareruby_gpio_t *self);
       bool bareruby_gpio_high(bareruby_gpio_t *self);
       bool bareruby_gpio_low(bareruby_gpio_t *self);

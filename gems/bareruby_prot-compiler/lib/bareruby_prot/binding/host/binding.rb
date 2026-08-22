@@ -19,20 +19,20 @@ module BareRubyProt
           fprintf(stderr, "pwm_init(pin=%d, frequency=%d, duty=%d)\\n", (int)pin, (int)frequency, (int)duty);
       }
 
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
           self->frequency = frequency;
           fprintf(stderr, "pwm_frequency(pin=%d, frequency=%d)\\n", (int)self->pin, (int)frequency);
       }
 
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
           fprintf(stderr, "pwm_period_us(pin=%d, period_us=%d)\\n", (int)self->pin, (int)period_us);
       }
 
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
           fprintf(stderr, "pwm_duty(pin=%d, duty=%d)\\n", (int)self->pin, (int)duty);
       }
 
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
           fprintf(stderr, "pwm_pulse_width_us(pin=%d, pulse_width_us=%d)\\n", (int)self->pin, (int)pulse_width_us);
       }
     CPP
@@ -205,8 +205,9 @@ module BareRubyProt
           fprintf(stderr, "gpio_init(pin=%d, params=%d)\\n", (int)pin, (int)params);
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           fprintf(stderr, "gpio_write(pin=%d, value=%d)\\n", (int)self->pin, (int)value);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -276,16 +277,18 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           fprintf(stderr, "sleep(seconds=%d, interrupt=%s)\\n", (int)seconds,
                   bareruby_wait_interrupt(interrupt));
           bareruby_wait_deliver(interrupt);
+          return seconds;
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           fprintf(stderr, "sleep_ms(milliseconds=%d, interrupt=%s)\\n", (int)milliseconds,
                   bareruby_wait_interrupt(interrupt));
           bareruby_wait_deliver(interrupt);
+          return milliseconds;
       }
 
       void bareruby_asleep(int32_t seconds, bool interrupt) {

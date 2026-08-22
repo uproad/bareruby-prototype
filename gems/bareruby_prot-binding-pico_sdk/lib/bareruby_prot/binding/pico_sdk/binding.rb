@@ -21,11 +21,11 @@ module BareRubyProt
           self->pin = pin;
           self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
           gpio_set_function((uint)pin, GPIO_FUNC_PWM);
-          bareruby_pwm_frequency(self, frequency);
-          bareruby_pwm_duty(self, duty);
+          bareruby_pwm_apply_frequency(self, frequency);
+          bareruby_pwm_apply_duty(self, duty);
       }
 
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
           self->frequency = frequency;
           if (frequency <= 0) {
               pwm_set_enabled((uint)self->slice, false);
@@ -37,16 +37,16 @@ module BareRubyProt
           pwm_set_enabled((uint)self->slice, true);
       }
 
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          bareruby_pwm_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          bareruby_pwm_apply_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
       }
 
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
           uint16_t top = (uint16_t)pwm_hw->slice[self->slice].top;
           pwm_set_gpio_level((uint)self->pin, (uint16_t)((uint32_t)top * (uint32_t)duty / 100u));
       }
 
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
           pwm_set_gpio_level((uint)self->pin, (uint16_t)pulse_width_us);
       }
     CPP
@@ -257,8 +257,9 @@ module BareRubyProt
           }
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           gpio_put((uint)self->pin, value != 0);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -328,12 +329,14 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
+          return milliseconds;
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
+          return seconds;
       }
 
       // One mark serves all three units, and it counts microseconds since boot in 64

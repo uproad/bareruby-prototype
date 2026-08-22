@@ -20,12 +20,16 @@ module BareRubyProt
       parameter_types: %i[Int32],
       keywords: { frequency: 0, duty: 0 }
     },
+    # **Each of these answers the setting it just applied.** Two answer the frequency and
+    # two answer the duty, because that is what asking for a period or a pulse width comes
+    # to. They are `Fixed` where PicoRuby answers `Float`, for the reason every fraction
+    # here is.
     methods: {
-      frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Nil },
-      period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Nil },
-      duty: { function: :bareruby_pwm_duty, parameter_types: %i[Int32], return_type: :Nil },
+      frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Fixed },
+      period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Fixed },
+      duty: { function: :bareruby_pwm_duty, parameter_types: %i[Int32], return_type: :Fixed },
       pulse_width_us: {
-        function: :bareruby_pwm_pulse_width_us, parameter_types: %i[Int32], return_type: :Nil
+        function: :bareruby_pwm_pulse_width_us, parameter_types: %i[Int32], return_type: :Fixed
       }
     },
     required_name: "pwm",
@@ -37,10 +41,40 @@ module BareRubyProt
       } bareruby_pwm_t;
 
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty);
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency);
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us);
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty);
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us);
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency);
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us);
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty);
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us);
+
+      /* **What these calls answer is arithmetic, not hardware.** Each answers the setting
+         it just applied as a Q16.16 fraction — asking for a period is asking for a
+         frequency, and asking for a pulse width is asking for a duty — and none of that
+         is a question a board is in a position to answer differently. So it is worked out
+         here, once, and each binding is left with the applying. */
+      static inline int32_t bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          bareruby_pwm_apply_frequency(self, frequency);
+          self->frequency = frequency;
+          return (int32_t)((int64_t)frequency << 16);
+      }
+
+      static inline int32_t bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          bareruby_pwm_apply_period_us(self, period_us);
+          self->frequency = (int32_t)(1000000 / period_us);
+          return (int32_t)(((int64_t)1000000 << 16) / period_us);
+      }
+
+      static inline int32_t bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+          bareruby_pwm_apply_duty(self, duty);
+          return (int32_t)((int64_t)duty << 16);
+      }
+
+      /* A pulse width is a duty once the period is known, which is why this one reads the
+         frequency the struct is carrying. */
+      static inline int32_t bareruby_pwm_pulse_width_us(
+          bareruby_pwm_t *self, int32_t pulse_width_us) {
+          bareruby_pwm_apply_pulse_width_us(self, pulse_width_us);
+          return (int32_t)((((int64_t)pulse_width_us * self->frequency) << 16) / 10000);
+      }
     CPP
     units: {
       pwm: %i[bareruby_pwm_init bareruby_pwm_frequency bareruby_pwm_period_us

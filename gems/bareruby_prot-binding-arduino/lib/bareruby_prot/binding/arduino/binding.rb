@@ -23,22 +23,22 @@ module BareRubyProt
           self->slice = 0;
           self->frequency = frequency;
           pinMode((uint8_t)pin, OUTPUT);
-          bareruby_pwm_duty(self, duty);
+          bareruby_pwm_apply_duty(self, duty);
       }
 
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
           self->frequency = frequency;
       }
 
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
           self->frequency = period_us > 0 ? (int32_t)(1000000 / period_us) : 0;
       }
 
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
           analogWrite((uint8_t)self->pin, (int)(255 * duty / 100));
       }
 
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
           int32_t period_us = self->frequency > 0 ? (int32_t)(1000000 / self->frequency) : 0;
           analogWrite(
               (uint8_t)self->pin,
@@ -266,8 +266,9 @@ module BareRubyProt
           }
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           digitalWrite((uint8_t)self->pin, value != 0 ? HIGH : LOW);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -362,12 +363,14 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
+          return milliseconds;
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
+          return seconds;
       }
 
       /* One mark serves all three units, counted in microseconds since the core started
