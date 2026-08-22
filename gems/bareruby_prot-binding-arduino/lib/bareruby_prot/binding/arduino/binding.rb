@@ -209,7 +209,7 @@ module BareRubyProt
           }
       }
 
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
           HardwareSerial *port = bareruby_uart_port(self);
           uint8_t pin = bareruby_uart_transmit_pin(self);
           port->flush();
@@ -282,7 +282,7 @@ module BareRubyProt
           return bareruby_gpio_read(self) == 0;
       }
 
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
           bareruby_gpio_interrupt_handler = handler;
           attachInterrupt(
@@ -418,7 +418,7 @@ module BareRubyProt
       /* **The one queue the receive side has, and here it is the core's own.**
          HardwareSerial already fills a ring from its interrupt, so this binding buys no
          second one: whoever asks first takes what is in that. A handler and a program
-         calling read_byte are the same kind of consumer, reaching it through the same
+         calling getbyte are the same kind of consumer, reaching it through the same
          call. Emptying it is the uart unit's clear_rx_buffer, which is already the same
          buffer — so there is nothing to override here. */
       /* **The size of this queue is not this binding's to choose.** The core declared the
@@ -440,7 +440,7 @@ module BareRubyProt
           }
       }
 
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self) {
           return (int32_t)bareruby_uart_receive_port(self)->read();
       }
 
@@ -495,7 +495,7 @@ module BareRubyProt
       }
     CPP
 
-    # This board has one bus, so the id names nothing to choose between and Wire is it.
+    # This board has one bus, so the unit names nothing to choose between and Wire is it.
     # SDA is pin 20 and SCL pin 21, which the core knows and this side does not say.
     I2C = <<~CPP
       #include "bareruby_binding.h"
@@ -503,8 +503,8 @@ module BareRubyProt
       #include <Arduino.h>
       #include <Wire.h>
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
-          self->id = id;
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
+          self->unit = unit;
           self->frequency = frequency;
           Wire.begin();
           Wire.setClock((uint32_t)frequency);

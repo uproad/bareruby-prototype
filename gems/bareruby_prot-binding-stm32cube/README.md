@@ -42,8 +42,8 @@ file wins over the gem's, and the build manifest records which layer answered.
 
 ## GPIO interrupts
 
-`GPIO#on_interrupt` routes an STM32F4 EXTI line through HAL to BareRuby's realtime
-handler. The default edge is rising; `edge: GPIO::EDGE_FALL` selects falling. As on the
+`GPIO#irq` routes an STM32F4 EXTI line through HAL to BareRuby's realtime
+handler. `GPIO::EDGE_FALL` selects the falling edge. As on the
 Pico and Arduino bindings, this experimental API currently keeps one handler, with no
 unregister operation or debounce. STM32 also allows only one GPIO port to own a given
 EXTI line at a time, so pins such as PA5 and PB5 cannot both be interrupt sources.

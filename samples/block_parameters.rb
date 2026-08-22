@@ -21,7 +21,7 @@ end
 button = GPIO.new(14, GPIO::IN)
 
 # This one is handed nothing, so the name it asked for is nil.
-button.on_interrupt(edge: GPIO::EDGE_FALL) do |pin|
+button.irq(GPIO::EDGE_FALL) do |pin|
   other = OnboardLED.new
   other.off
 end

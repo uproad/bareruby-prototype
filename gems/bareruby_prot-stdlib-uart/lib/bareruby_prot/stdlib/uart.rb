@@ -79,7 +79,7 @@ struct: :bareruby_uart_t,
         # hardware. Touching any of these arms the receive interrupt, which is what buys
         # the 256-byte queue; bytes_available answers its depth once that unit is linked,
         # and the hardware flag (0 or 1) before.
-        read_byte: { function: :bareruby_uart_read_byte, parameter_types: [], return_type: :Int32 },
+        getbyte: { function: :bareruby_uart_getbyte, parameter_types: [], return_type: :Int32 },
         peek: { function: :bareruby_uart_peek, parameter_types: [], return_type: :Int32 },
         bytes_available: {
           function: :bareruby_uart_bytes_available, parameter_types: [], return_type: :Int32
@@ -93,8 +93,8 @@ struct: :bareruby_uart_t,
         bytes_to_write: {
           function: :bareruby_uart_bytes_to_write, parameter_types: [], return_type: :Int32
         },
-        send_break: {
-          function: :bareruby_uart_send_break, parameter_types: %i[Int32], return_type: :Nil
+        break: {
+          function: :bareruby_uart_break, parameter_types: %i[Int32], return_type: :Nil
         },
         clear_tx_buffer: {
           function: :bareruby_uart_clear_tx_buffer, parameter_types: [], return_type: :Nil
@@ -191,11 +191,11 @@ struct: :bareruby_uart_t,
       void bareruby_uart_puts(bareruby_uart_t *self, const char *value);
       void bareruby_uart_printf(bareruby_uart_t *self, const char *format, ...);
       void bareruby_uart_printf_line(bareruby_uart_t *self, const char *format, ...);
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self);
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self);
       int32_t bareruby_uart_peek(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_available(bareruby_uart_t *self);
       int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self);
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds);
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds);
       void bareruby_uart_flush(bareruby_uart_t *self);
       void bareruby_uart_clear_rx_buffer(bareruby_uart_t *self);
       void bareruby_uart_clear_tx_buffer(bareruby_uart_t *self);
@@ -208,11 +208,11 @@ struct: :bareruby_uart_t,
       uart: %i[bareruby_uart_init bareruby_uart_setmode bareruby_uart_write bareruby_uart_puts
                bareruby_uart_printf bareruby_uart_printf_line bareruby_uart_bytes_available
                bareruby_uart_flush bareruby_uart_clear_rx_buffer bareruby_uart_clear_tx_buffer
-               bareruby_uart_bytes_to_write bareruby_uart_send_break],
+               bareruby_uart_bytes_to_write bareruby_uart_break],
       # **One queue, and everyone reads it.** Whatever touches the receive side brings it,
       # a registration included — the handler is a consumer of the same queue as `gets`,
       # taking bytes with the same call, and whichever asks first gets the byte.
-      uart_receive: %i[bareruby_uart_read_byte bareruby_uart_peek bareruby_uart_irq],
+      uart_receive: %i[bareruby_uart_getbyte bareruby_uart_peek bareruby_uart_irq],
       uart_interrupt: %i[bareruby_uart_irq]
     }
   )

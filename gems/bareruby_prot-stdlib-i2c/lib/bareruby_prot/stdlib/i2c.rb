@@ -7,16 +7,20 @@ require "bareruby_prot/peripheral"
 # declare, and which translation unit a binding has to supply once it is reached.
 #
 # Nothing on the compiler's side mentions I2C. Uninstall this and a program that says
-# `I2C.new(0)` no longer compiles, while every other program compiles exactly as before.
+# `I2C.new(unit: 0)` no longer compiles, while every other program compiles exactly as
+# before.
 module BareRubyProt
   Peripheral.register(
     :I2C,
     struct: :bareruby_i2c_t,
     constants: {},
+    # **Which bus is named, not counted off.** Everything the bus is opened with is a
+    # keyword, so that source written against the same class elsewhere opens the same bus
+    # here. A unit given by position is a call nobody else's program makes.
     constructor: {
       function: :bareruby_i2c_init,
-      parameter_types: %i[Int32],
-      keywords: { frequency: 100_000 }
+      parameter_types: [],
+      keywords: { unit: 0, frequency: 100_000 }
     },
     # **`payload_from` is where the bytes this call sends begin.** One call in Ruby is one
     # transaction on the wire, so everything from that argument on — integers, strings,
@@ -43,11 +47,11 @@ module BareRubyProt
     # this only while this gem is installed.
     declaration: <<~CPP.chomp,
       typedef struct {
-          int32_t id;
+          int32_t unit;
           int32_t frequency;
       } bareruby_i2c_t;
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency);
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency);
       int32_t bareruby_i2c_write(
           bareruby_i2c_t *self, int32_t address, const char *bytes, int32_t length);
       bareruby_string_t *bareruby_i2c_read(

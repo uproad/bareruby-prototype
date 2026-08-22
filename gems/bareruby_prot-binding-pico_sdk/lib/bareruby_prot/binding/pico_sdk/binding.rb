@@ -195,7 +195,7 @@ module BareRubyProt
 
       /* The PL011 holds the line low for as long as BRK is set, so the requested span is
          served exactly. */
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
           uart_inst_t *port = bareruby_uart_port(self);
           uart_tx_wait_blocking(port);
           hw_set_bits(&uart_get_hw(port)->lcr_h, UART_UARTLCR_H_BRK_BITS);
@@ -273,7 +273,7 @@ module BareRubyProt
           return !gpio_get((uint)self->pin);
       }
 
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
           bareruby_gpio_interrupt_handler = handler;
           gpio_set_irq_enabled_with_callback(
@@ -387,7 +387,7 @@ module BareRubyProt
 
       /* **The one queue the receive side has.** The interrupt fills it from the line, and
          whoever asks first takes what is in it: a registered handler and a program calling
-         read_byte are the same kind of consumer, reaching the queue through the same call.
+         getbyte are the same kind of consumer, reaching the queue through the same call.
          What is not taken is nobody else's loss. */
       /* What this binding gives when the program did not ask. A program that asks reaches
          the same name from the header, settled where the call was written. */
@@ -448,7 +448,7 @@ module BareRubyProt
           uart_set_irq_enables(port, true, false);
       }
 
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self) {
           bareruby_uart_receive_attach(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
               return -1;
@@ -529,15 +529,15 @@ module BareRubyProt
       #include "hardware/i2c.h"
 
       static i2c_inst_t *bareruby_i2c_port(const bareruby_i2c_t *self) {
-          return (self->id == 0) ? i2c0 : i2c1;
+          return (self->unit == 0) ? i2c0 : i2c1;
       }
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
-          self->id = id;
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
+          self->unit = unit;
           self->frequency = frequency;
           i2c_init(bareruby_i2c_port(self), (uint)frequency);
-          uint sda_pin = (id == 0) ? 4u : 6u;
-          uint scl_pin = (id == 0) ? 5u : 7u;
+          uint sda_pin = (unit == 0) ? 4u : 6u;
+          uint scl_pin = (unit == 0) ? 5u : 7u;
           gpio_set_function(sda_pin, GPIO_FUNC_I2C);
           gpio_set_function(scl_pin, GPIO_FUNC_I2C);
           gpio_pull_up(sda_pin);
@@ -558,7 +558,7 @@ module BareRubyProt
       #include "hardware/i2c.h"
 
       static i2c_inst_t *bareruby_i2c_read_port(const bareruby_i2c_t *self) {
-          return (self->id == 0) ? i2c0 : i2c1;
+          return (self->unit == 0) ? i2c0 : i2c1;
       }
 
       bareruby_string_t *bareruby_i2c_read(

@@ -1,4 +1,4 @@
-i2c = I2C.new(1, frequency: 400_000)
+i2c = I2C.new(unit: 1, frequency: 400_000)
 
 arena(256) do
   command = Arena::String.new("\x30")

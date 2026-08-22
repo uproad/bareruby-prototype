@@ -10,6 +10,10 @@ require "bareruby_prot/peripheral"
 # an independent function running in the realtime context, and the compiler used to know
 # that by looking for this class and this method by name. It is declared now, so the
 # machinery stays the language's while the reason to use it is this gem's.
+#
+# It is named `irq` and takes the event by position, because that is how every other Ruby
+# for microcontrollers spells it. A registration under a name only this implementation
+# uses is a registration nobody's existing source can make.
 module BareRubyProt
   Peripheral.register(
     :GPIO,
@@ -26,9 +30,9 @@ module BareRubyProt
       read: { function: :bareruby_gpio_read, parameter_types: [], return_type: :Int32 },
       high?: { function: :bareruby_gpio_high, parameter_types: [], return_type: :Bool },
       low?: { function: :bareruby_gpio_low, parameter_types: [], return_type: :Bool },
-      on_interrupt: {
-        function: :bareruby_gpio_on_interrupt, parameter_types: %i[Int32], return_type: :Nil,
-        keywords: { edge: 0 }, block: :realtime_handler
+      irq: {
+        function: :bareruby_gpio_irq, parameter_types: %i[Int32], return_type: :Nil,
+        block: :realtime_handler
       }
     },
     required_name: "gpio",
@@ -43,12 +47,12 @@ module BareRubyProt
       int32_t bareruby_gpio_read(bareruby_gpio_t *self);
       bool bareruby_gpio_high(bareruby_gpio_t *self);
       bool bareruby_gpio_low(bareruby_gpio_t *self);
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler);
     CPP
     units: {
       gpio: %i[bareruby_gpio_init bareruby_gpio_write bareruby_gpio_read
-               bareruby_gpio_high bareruby_gpio_low bareruby_gpio_on_interrupt]
+               bareruby_gpio_high bareruby_gpio_low bareruby_gpio_irq]
     }
   )
 end
