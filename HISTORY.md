@@ -1156,6 +1156,49 @@ person who wrote the program.
 Cost: `2.5 KB` of `.uf2` for the second interface (76.0 → 78.5 KB on a Pico 1). Carrying
 the transfer on it as well had cost 9 KB more, and that is gone with it.
 
+### The names other people's programs already use
+
+Four calls were spelled here and nowhere else. A bus took its unit by position
+(`I2C.new(1, frequency: 400_000)`); a serial line broke the wire as `send_break` and
+fetched a byte as `read_byte`; a pin registered an interrupt as `on_interrupt(edge:)`.
+Every one of them is a call that source written for the same classes elsewhere makes
+differently, which means that source does not compile here — and compiling it is the
+entire point of carrying those class names in the first place. A compatible peripheral
+set with incompatible spellings is not compatible; it only looks it from a table of
+contents.
+
+They are now `I2C.new(unit: 1, ...)`, `UART#break`, `UART#getbyte` and
+`GPIO#irq(GPIO::EDGE_FALL)`. Three of the four are renames and cost nothing. Two things
+are worth recording:
+
+- **`break` is a keyword, and a method may still be called it.** `uart.break(1)` parses as
+  an ordinary call — a keyword after a dot is a method name — and reaches the binding as
+  `bareruby_uart_break` with nothing special anywhere on the path. The name was avoided out
+  of caution rather than necessity.
+- **A registration's event is a positional argument, not a keyword.** `GPIO#irq` had taken
+  its edge as `edge:` with a default, which meant the registration read differently from
+  `UART#irq` two files away, and differently again from every other Ruby for
+  microcontrollers. Both now take the event first and the block after it, and the
+  declaration is the same shape in both classes.
+
+The bus's unit reached C as `id` while Ruby called it `unit`; it is `unit` on both sides
+now, and the four bindings say `self->unit` where they said `self->id`.
+
+**What is deliberately not here.** The arguments these calls have elsewhere and do not
+have here — a timeout on every I2C call, `nostop:` on a write, `sda_pin:`/`scl_pin:`,
+`alt_function` on a pin, `rx_buffer_size:` as a constructor keyword rather than a
+compile-time one — were left alone. So were the two calls whose argument is optional
+elsewhere and required here (`break` and `read` on a serial line): this language has no
+optional positional parameter, so `uart.read` and `uart.read(64)` cannot both exist, and
+inventing one for this would be deciding a language question inside a rename. The handler
+block is handed two values where other implementations hand three; the third is not
+plumbed.
+
+Cost: nothing measurable. `samples/picoruby_interface.rb` — one bus, one line, one pin,
+one interrupt and an arena read — is 100,004 B of text and 7,328 B of bss on a Pico 1
+(187.5 KB UF2), and 25,888 B of text and 2,628 B of bss on an F4. Built for all eight
+targets and run on the host; not flashed.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

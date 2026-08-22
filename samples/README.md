@@ -25,8 +25,8 @@ it is given no argument.
 | `uart_one_queue.rb` | One receive queue that everyone reads: `peek`, `gets` and `bytes_available` about the same bytes, what nobody took still there afterwards, and `clear_rx_buffer` emptying it |
 | `uart_rx_buffer.rb` | `rx_buffer_size:` — how deep the receive queue is, settled while compiling and landing in `bss` byte for byte. Refused on the Arduino core, whose queue is its own |
 | `uart_rx_receive.rb` | The receive notification: `irq(UART::RX_RECEIVE)` handing a realtime handler the port and the event, and the handler reading the queue itself |
-| `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`read_byte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
-| `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `send_break`. A frame a device cannot produce is refused, never replaced |
+| `uart_buffered.rb` | Arduino HardwareSerial-shaped receive: `bytes_available`/`getbyte`/`peek` over the interrupt-fed ring, `stop_bits:`, and a timeout read composed from `ticks_ms` |
+| `uart_format.rb` | The frame the standard guideline states — `data_bits:`/`stop_bits:`/`parity:` asked for as 7E1 — plus `bytes_to_write` and `break`. A frame a device cannot produce is refused, never replaced |
 | `uart_flow_control.rb` | The spelling the guideline and PicoRuby use: `unit:`, `baudrate:` and its reader, `txd_pin:`/`rxd_pin:`, and `flow_control:` with `rts_pin:`/`cts_pin:` |
 | `uart_line_ending.rb` | `setmode` changing what the line was opened with and leaving what it does not name, and `line_ending=` reaching both what `puts` puts and what `gets` reads up to |
 | `peripheral_ruby.rb` | A peripheral class carrying Ruby: `can_read_line` written once in the gem that declares UART, and a method the program adds to the same class |
@@ -50,6 +50,7 @@ it is given no argument.
 | `implicit_return.rb` | Methods ending on a call, a `puts`, an `if` and a `while`, and one whose last expression is its value. Matches real Ruby |
 | `block_parameters.rb` | A block and its sender disagreeing on how many: a value nobody named is dropped, a name nothing was handed to is nil — in a counted loop and in a realtime handler alike |
 | `gpio_pico_loop.rb` | How much a peripheral call costs, read off a pin. Every GPIO a Pico 1 brings out to its header, pulsed one after another with nothing between the writes, so the period of GP0 is one whole sweep and nothing but the writes is on the path |
+| `picoruby_interface.rb` | The spellings PicoRuby publishes, on the four calls that had spellings of their own: `I2C.new(unit:)`, `UART#break`, `UART#getbyte`, `GPIO#irq` |
 
 ## A product ported over
 
