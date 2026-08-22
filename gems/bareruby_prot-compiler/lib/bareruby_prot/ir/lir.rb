@@ -82,7 +82,11 @@ module BareRubyProt
 
     def create_field_access(base, name, type) = build(:field_access, [base, name, type])
 
-    def create_address_of(value) = build(:address_of, [value])
+    # **Taking an address answers a pointer, and says so**, so that asking for a reference
+    # to one gives it back rather than taking its address again. A call that answers its
+    # receiver hands back what it was handed, and without this the next call in the chain
+    # would take the address of an address.
+    def create_address_of(value) = build(:address_of, [value, pointer_type(value_type(value))])
 
     def create_index(base, index, type) = build(:index, [base, index, type])
 

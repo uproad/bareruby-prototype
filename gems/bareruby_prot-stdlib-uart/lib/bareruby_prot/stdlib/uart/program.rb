@@ -22,7 +22,7 @@ class UART
     ending = line_terminator
     byte = 0
     while byte != ending
-      byte = read_byte
+      byte = getbyte
       line << byte if byte >= 0
     end
     line
@@ -32,7 +32,7 @@ class UART
   def read(length)
     taken = Arena::String.new("")
     while taken.size < length
-      byte = read_byte
+      byte = getbyte
       taken << byte if byte >= 0
     end
     taken

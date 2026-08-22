@@ -5,7 +5,7 @@ class UART
   def drop_waiting
     dropped = 0
     while can_read_line
-      read_byte
+      getbyte
       dropped += 1
     end
     dropped

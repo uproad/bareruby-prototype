@@ -8,11 +8,11 @@ uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE)
 
 uart.irq(UART::RX_RECEIVE) do |port, event|
   indicator = OnboardLED.new
-  byte = port.read_byte
+  byte = port.getbyte
   while byte >= 0
     indicator.on if byte == 79   # O
     indicator.off if byte == 70  # F
-    byte = port.read_byte
+    byte = port.getbyte
   end
 end
 

@@ -21,11 +21,11 @@ module BareRubyProt
           self->pin = pin;
           self->slice = (int32_t)pwm_gpio_to_slice_num((uint)pin);
           gpio_set_function((uint)pin, GPIO_FUNC_PWM);
-          bareruby_pwm_frequency(self, frequency);
-          bareruby_pwm_duty(self, duty);
+          bareruby_pwm_apply_frequency(self, frequency);
+          bareruby_pwm_apply_duty(self, duty);
       }
 
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
           self->frequency = frequency;
           if (frequency <= 0) {
               pwm_set_enabled((uint)self->slice, false);
@@ -37,16 +37,16 @@ module BareRubyProt
           pwm_set_enabled((uint)self->slice, true);
       }
 
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          bareruby_pwm_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          bareruby_pwm_apply_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
       }
 
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
           uint16_t top = (uint16_t)pwm_hw->slice[self->slice].top;
           pwm_set_gpio_level((uint)self->pin, (uint16_t)((uint32_t)top * (uint32_t)duty / 100u));
       }
 
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
           pwm_set_gpio_level((uint)self->pin, (uint16_t)pulse_width_us);
       }
     CPP
@@ -195,7 +195,7 @@ module BareRubyProt
 
       /* The PL011 holds the line low for as long as BRK is set, so the requested span is
          served exactly. */
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
           uart_inst_t *port = bareruby_uart_port(self);
           uart_tx_wait_blocking(port);
           hw_set_bits(&uart_get_hw(port)->lcr_h, UART_UARTLCR_H_BRK_BITS);
@@ -257,8 +257,9 @@ module BareRubyProt
           }
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           gpio_put((uint)self->pin, value != 0);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -273,7 +274,7 @@ module BareRubyProt
           return !gpio_get((uint)self->pin);
       }
 
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
           bareruby_gpio_interrupt_handler = handler;
           gpio_set_irq_enabled_with_callback(
@@ -328,12 +329,14 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
+          return milliseconds;
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
+          return seconds;
       }
 
       // One mark serves all three units, and it counts microseconds since boot in 64
@@ -387,7 +390,7 @@ module BareRubyProt
 
       /* **The one queue the receive side has.** The interrupt fills it from the line, and
          whoever asks first takes what is in it: a registered handler and a program calling
-         read_byte are the same kind of consumer, reaching the queue through the same call.
+         getbyte are the same kind of consumer, reaching the queue through the same call.
          What is not taken is nobody else's loss. */
       /* What this binding gives when the program did not ask. A program that asks reaches
          the same name from the header, settled where the call was written. */
@@ -448,7 +451,7 @@ module BareRubyProt
           uart_set_irq_enables(port, true, false);
       }
 
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self) {
           bareruby_uart_receive_attach(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
               return -1;
@@ -529,15 +532,15 @@ module BareRubyProt
       #include "hardware/i2c.h"
 
       static i2c_inst_t *bareruby_i2c_port(const bareruby_i2c_t *self) {
-          return (self->id == 0) ? i2c0 : i2c1;
+          return (self->unit == 0) ? i2c0 : i2c1;
       }
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
-          self->id = id;
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
+          self->unit = unit;
           self->frequency = frequency;
           i2c_init(bareruby_i2c_port(self), (uint)frequency);
-          uint sda_pin = (id == 0) ? 4u : 6u;
-          uint scl_pin = (id == 0) ? 5u : 7u;
+          uint sda_pin = (unit == 0) ? 4u : 6u;
+          uint scl_pin = (unit == 0) ? 5u : 7u;
           gpio_set_function(sda_pin, GPIO_FUNC_I2C);
           gpio_set_function(scl_pin, GPIO_FUNC_I2C);
           gpio_pull_up(sda_pin);
@@ -558,7 +561,7 @@ module BareRubyProt
       #include "hardware/i2c.h"
 
       static i2c_inst_t *bareruby_i2c_read_port(const bareruby_i2c_t *self) {
-          return (self->id == 0) ? i2c0 : i2c1;
+          return (self->unit == 0) ? i2c0 : i2c1;
       }
 
       bareruby_string_t *bareruby_i2c_read(

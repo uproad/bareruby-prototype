@@ -152,7 +152,7 @@ module BareRubyProt
          line low for an arbitrary span. So the requested time is served by sending break
          characters until it has passed -- the line is low for very nearly the whole of
          it, with one character's worth of idle between. */
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
           UART_HandleTypeDef *port = bareruby_board_uart(self->unit);
           bareruby_uart_flush(self);
           uint32_t deadline = HAL_GetTick() + (uint32_t)(milliseconds > 0 ? milliseconds : 0);
@@ -289,10 +289,11 @@ module BareRubyProt
           HAL_GPIO_Init(port, &config);
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           HAL_GPIO_WritePin(
               bareruby_gpio_port(self->pin), bareruby_gpio_pin(self->pin),
               value != 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -310,7 +311,7 @@ module BareRubyProt
           return bareruby_gpio_read(self) == 0;
       }
 
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
           GPIO_TypeDef *port = bareruby_gpio_port(self->pin);
           uint16_t pin = bareruby_gpio_pin(self->pin);
@@ -386,12 +387,14 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           bareruby_sleep_for(milliseconds > 0 ? (uint32_t)milliseconds : 0u, interrupt);
+          return milliseconds;
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           bareruby_sleep_for(seconds > 0 ? (uint32_t)seconds * 1000u : 0u, interrupt);
+          return seconds;
       }
 
       static uint32_t bareruby_asleep_mark;
@@ -440,7 +443,7 @@ module BareRubyProt
 
       /* **The one queue the receive side has.** The interrupt fills it from the line, and
          whoever asks first takes what is in it: a registered handler and a program calling
-         read_byte are the same kind of consumer, reaching the queue through the same call.
+         getbyte are the same kind of consumer, reaching the queue through the same call.
          Reading the data register clears the hardware flag, so there is nowhere else a
          byte could still be waiting — which is why there can only be one of these. */
       /* What this binding gives when the program did not ask. A program that asks reaches
@@ -544,7 +547,7 @@ module BareRubyProt
           HAL_NVIC_EnableIRQ(interrupt);
       }
 
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self) {
           bareruby_uart_receive_attach(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
               return -1;
@@ -632,13 +635,13 @@ module BareRubyProt
           return (uint16_t)((uint32_t)address << 1);
       }
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
-          self->id = id;
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
+          self->unit = unit;
           self->frequency = frequency;
           if (frequency <= 0) {
               bareruby_board_fault();
           }
-          I2C_HandleTypeDef *bus = bareruby_board_i2c(id);
+          I2C_HandleTypeDef *bus = bareruby_board_i2c(unit);
           if (bus->Init.ClockSpeed != (uint32_t)frequency) {
               if (HAL_I2C_DeInit(bus) != HAL_OK) {
                   bareruby_board_fault();
@@ -656,7 +659,7 @@ module BareRubyProt
               bareruby_board_fault();
           }
           HAL_StatusTypeDef status = HAL_I2C_Master_Transmit(
-              bareruby_board_i2c(self->id), bareruby_i2c_address(address), (uint8_t *)bytes,
+              bareruby_board_i2c(self->unit), bareruby_i2c_address(address), (uint8_t *)bytes,
               (uint16_t)length, HAL_MAX_DELAY);
           return status == HAL_OK ? length : -1;
       }
@@ -695,7 +698,7 @@ module BareRubyProt
           result->bytes[length] = '\\0';
 
           uint8_t *bytes = (uint8_t *)result->bytes;
-          I2C_HandleTypeDef *bus = bareruby_board_i2c(self->id);
+          I2C_HandleTypeDef *bus = bareruby_board_i2c(self->unit);
           uint16_t device = bareruby_i2c_read_address(address);
           HAL_StatusTypeDef status;
           if (output_length == 0) {
