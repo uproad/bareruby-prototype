@@ -1224,7 +1224,16 @@ They all answer now. Three things came out of doing it:
   sits in the header, once, and each binding kept a `void` function under an `apply_` name.
   `pwm.period_us(2273)` answers `439.9472` Hz and `pwm.pulse_width_us(1500)` answers a
   percentage of that period.
-- **The answers are `Fixed`, not `Float`**, which is what every fraction here is.
+- **The answers are `Fixed`, not `Float`**, which is what every fraction here is — except
+  a frequency, which is whole hertz. **The four calls are two pairs**: `frequency` and
+  `period_us` both set the frequency, one in hertz and one in microseconds of period, and
+  both answer the frequency; `duty` and `pulse_width_us` both set the duty and both answer
+  the duty. What is answered is the state that was set, in the unit that state is kept in
+  — never the argument. A frequency has no use for a fraction, so it is whole, which is a
+  deliberate departure from the float answered elsewhere; a duty keeps its fraction,
+  because a servo asks for 7.5 per cent. This also made `period_us` honest: it truncates
+  to whole hertz on the way to the slice, so a 2273 µs period is 439 Hz, and it now
+  answers 439 rather than the 439.9472 nothing on the pin was running at.
 
 **What is deliberately not here.** `getbyte` still answers `-1` for an empty queue where
 the same call elsewhere answers `nil`: a binding function that answers a nilable would
@@ -1233,15 +1242,12 @@ where a type's layout lives rather than a rename. `gets` and `read` answer a str
 never nothing, which is what deciding that a silent line is a line not yet finished
 already meant. The registration calls answer nothing, because the object other
 implementations answer with — the handle you would unregister through — does not exist
-here. Duty is not clamped to 0..100 before being answered. And **a frequency above 32,767
-Hz cannot be answered at all** in Q16.16, which is a real edge for anything driving a
-motor or dimming an LED fast; the answer wraps, and nothing says so.
+here. Duty is not clamped to 0..100 before being answered.
 
-`self->frequency` is whole Hz, so a pulse width asked for after a period is a fraction of
-the truncated frequency: 1500 µs of a 2273 µs period answers `65.84999%` where the
-unrounded figure is `65.99%`.
+A pulse width asked for after a period is a fraction of the whole-hertz frequency: 1500 µs
+of a 2273 µs period answers `65.84999%`, which is the truth about a pin running at 439 Hz.
 
-Cost: `samples/peripheral_answers.rb` is 46,608 B of text and 6,700 B of bss on a Pico 1
+Cost: `samples/peripheral_answers.rb` is 46,592 B of text and 6,700 B of bss on a Pico 1
 (85.5 KB UF2). Every other sample and `ref.rb` produce byte-identical host output to
 before the change. Built for its targets and run on the host; not flashed.
 

@@ -51,7 +51,7 @@ it is given no argument.
 | `block_parameters.rb` | A block and its sender disagreeing on how many: a value nobody named is dropped, a name nothing was handed to is nil — in a counted loop and in a realtime handler alike |
 | `gpio_pico_loop.rb` | How much a peripheral call costs, read off a pin. Every GPIO a Pico 1 brings out to its header, pulsed one after another with nothing between the writes, so the period of GP0 is one whole sweep and nothing but the writes is on the path |
 | `picoruby_interface.rb` | The spellings PicoRuby publishes, on the four calls that had spellings of their own: `I2C.new(unit:)`, `UART#break`, `UART#getbyte`, `GPIO#irq` |
-| `peripheral_answers.rb` | What the calls answer, not only what they take: `GPIO#write` answers 0, the four PWM calls answer the setting they applied as `Fixed`, the UART control calls answer the line and so chain, and `sleep_ms` answers the wait |
+| `peripheral_answers.rb` | What the calls answer, not only what they take: `GPIO#write` answers 0, the four PWM calls answer the setting they applied — a frequency in whole hertz, a duty as `Fixed` — the UART control calls answer the line and so chain, and `sleep_ms` answers the wait |
 
 ## A product ported over
 

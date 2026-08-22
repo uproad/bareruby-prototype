@@ -20,13 +20,17 @@ module BareRubyProt
       parameter_types: %i[Int32],
       keywords: { frequency: 0, duty: 0 }
     },
-    # **Each of these answers the setting it just applied.** Two answer the frequency and
-    # two answer the duty, because that is what asking for a period or a pulse width comes
-    # to. They are `Fixed` where PicoRuby answers `Float`, for the reason every fraction
-    # here is.
+    # **Each of these answers the setting it just applied**, in the unit that setting is
+    # kept in. Two of them set the frequency — one in hertz and one in microseconds of
+    # period — and answer the frequency. The other two set the duty, one of them by way of
+    # a pulse width, and answer the duty.
+    #
+    # **A frequency is whole hertz here.** PicoRuby answers a float; this does not, and
+    # says so as a deliberate departure rather than a fraction that was rounded away. A
+    # duty is a fraction and stays one — a servo asks for 7.5 per cent.
     methods: {
-      frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Fixed },
-      period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Fixed },
+      frequency: { function: :bareruby_pwm_frequency, parameter_types: %i[Int32], return_type: :Int32 },
+      period_us: { function: :bareruby_pwm_period_us, parameter_types: %i[Int32], return_type: :Int32 },
       duty: { function: :bareruby_pwm_duty, parameter_types: %i[Int32], return_type: :Fixed },
       pulse_width_us: {
         function: :bareruby_pwm_pulse_width_us, parameter_types: %i[Int32], return_type: :Fixed
@@ -47,20 +51,24 @@ module BareRubyProt
       void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us);
 
       /* **What these calls answer is arithmetic, not hardware.** Each answers the setting
-         it just applied as a Q16.16 fraction — asking for a period is asking for a
-         frequency, and asking for a pulse width is asking for a duty — and none of that
-         is a question a board is in a position to answer differently. So it is worked out
-         here, once, and each binding is left with the applying. */
+         it just applied — asking for a period is asking for a frequency, and asking for a
+         pulse width is asking for a duty — and none of that is a question a board is in a
+         position to answer differently. So it is worked out here, once, and each binding
+         is left with the applying.
+
+         **The frequency answered is the one that was set**, in whole hertz, which is what
+         the slice was actually given. Answering a fraction of a hertz would name a rate
+         nothing on the pin is running at. */
       static inline int32_t bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
           bareruby_pwm_apply_frequency(self, frequency);
           self->frequency = frequency;
-          return (int32_t)((int64_t)frequency << 16);
+          return frequency;
       }
 
       static inline int32_t bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
           bareruby_pwm_apply_period_us(self, period_us);
           self->frequency = (int32_t)(1000000 / period_us);
-          return (int32_t)(((int64_t)1000000 << 16) / period_us);
+          return self->frequency;
       }
 
       static inline int32_t bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {

@@ -4,13 +4,15 @@
 # source cannot be written against.
 #
 # Fractions are answered as Fixed rather than Float, which is what every fraction is here.
+# A frequency is not one of them: it is answered in whole hertz, which is what the pin was
+# actually given.
 led = GPIO.new(25, GPIO::OUT)
 puts "write answered #{led.write(1)}"
 
 pwm = PWM.new(15, frequency: 50, duty: 30)
-puts "frequency #{pwm.frequency(440)}"
-puts "period 2273us is #{pwm.period_us(2273)} Hz"
-puts "duty #{pwm.duty(50)}"
+puts "frequency #{pwm.frequency(440)} Hz"
+puts "a 2273us period is #{pwm.period_us(2273)} Hz"
+puts "duty #{pwm.duty(50)}%"
 puts "1500us of that period is #{pwm.pulse_width_us(1500)}%"
 
 # The control calls answer the line itself, so they chain.
