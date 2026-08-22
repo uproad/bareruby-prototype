@@ -1199,6 +1199,52 @@ one interrupt and an arena read — is 100,004 B of text and 7,328 B of bss on a
 (187.5 KB UF2), and 25,888 B of text and 2,628 B of bss on an F4. Built for all eight
 targets and run on the host; not flashed.
 
+### What a call answers is part of it
+
+Renaming the calls left half the job undone. `GPIO#write` answered nothing where the same
+class elsewhere answers 0; the four PWM calls answered nothing where they answer the
+setting they just applied; `UART#flush`, `#clear_rx_buffer`, `#clear_tx_buffer`,
+`#setmode` and `#break` answered nothing where they answer the line itself, which is what
+makes `uart.flush.puts "ready"` a sentence; `sleep` and `sleep_ms` answered nothing where
+Ruby answers how long it waited. A call whose name matches and whose answer does not is
+still a call that other people's source cannot be written against.
+
+They all answer now. Three things came out of doing it:
+
+- **Nobody has to answer `self`.** A binding returning the pointer it was just handed
+  would be four identical `return self;` lines, and the receiver is already in hand on
+  this side — so a declaration says `return_type: :self`, the call is emitted for what it
+  does, and the receiver is what the expression is worth. **No C changed at all** for the
+  five UART calls. What did change is that taking an address now says it produced a
+  pointer: chaining fed `&uart` back into a call that took its address again, and
+  `&&&&uart` is not a thing.
+- **What a PWM call answers is arithmetic, not hardware.** Asking for a period is asking
+  for a frequency, and asking for a pulse width is asking for a duty; PicoRuby's own
+  binding answers the converted value rather than reading anything back. So the conversion
+  sits in the header, once, and each binding kept a `void` function under an `apply_` name.
+  `pwm.period_us(2273)` answers `439.9472` Hz and `pwm.pulse_width_us(1500)` answers a
+  percentage of that period.
+- **The answers are `Fixed`, not `Float`**, which is what every fraction here is.
+
+**What is deliberately not here.** `getbyte` still answers `-1` for an empty queue where
+the same call elsewhere answers `nil`: a binding function that answers a nilable would
+need the nilable's representation to reach the bindings, and that is a question about
+where a type's layout lives rather than a rename. `gets` and `read` answer a string and
+never nothing, which is what deciding that a silent line is a line not yet finished
+already meant. The registration calls answer nothing, because the object other
+implementations answer with — the handle you would unregister through — does not exist
+here. Duty is not clamped to 0..100 before being answered. And **a frequency above 32,767
+Hz cannot be answered at all** in Q16.16, which is a real edge for anything driving a
+motor or dimming an LED fast; the answer wraps, and nothing says so.
+
+`self->frequency` is whole Hz, so a pulse width asked for after a period is a fraction of
+the truncated frequency: 1500 µs of a 2273 µs period answers `65.84999%` where the
+unrounded figure is `65.99%`.
+
+Cost: `samples/peripheral_answers.rb` is 46,608 B of text and 6,700 B of bss on a Pico 1
+(85.5 KB UF2). Every other sample and `ref.rb` produce byte-identical host output to
+before the change. Built for its targets and run on the host; not flashed.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one
