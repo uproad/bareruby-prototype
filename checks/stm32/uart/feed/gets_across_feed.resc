@@ -1,0 +1,7 @@
+emulation RunFor "0:00:00.005"
+sysbus.usart2 WriteChar 0x41
+sysbus.usart2 WriteChar 0x42
+emulation RunFor "0:00:00.020"
+sysbus.usart2 WriteChar 0x43
+sysbus.usart2 WriteChar 0x0A
+emulation RunFor "0:00:00.050"

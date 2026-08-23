@@ -40,7 +40,7 @@ samples/ の全 38 本のうち **19 本がテスト済み、19 本が未テス�
 | サンプル | 理由 | 対応の見込み |
 |---|---|---|
 | samples/logger.rb | UART ではなくボタン(GPIO)の入力待ち | v3 相当: GPIO エッジ注入 |
-| samples/uart_line_ending.rb | 入力は与えられるが、生キャプチャが必要(uart.txt は LF 正規化済みで、改行こそが試験対象) | 生キャプチャの追加 |
+| samples/uart_line_ending.rb | 入力は与えられるが、ホスト突き合わせには生キャプチャが必要(uart.txt は LF 正規化済みで、改行こそが試験対象) | 試験内容は専用スイート [checks/stm32/uart/](stm32/uart/) が固定回答で担保済み(TX側 `line_ending_tx` の hex キャプチャ、RX側 `gets_crlf`)。ホスト突き合わせ自体は対象外のまま |
 | samples/blink.rb | 無限ループで UART に何も言わない | v3: LED/デューティ比アサーション |
 | samples/heartbeat.rb | 同上(手動では一度確認済み: デューティ比 0.1 ± 0.05) | v3 |
 | samples/servo.rb | 同上 | v3 |
