@@ -15,7 +15,10 @@ module BareRubyProt
     MAX_LENGTHS = { Int32: 11, Int64: 20, Bool: 5, Fixed: 12, String: 64 }.freeze
 
     # Bool and Fixed have no printf conversion of their own, so to_s is a real call.
-    TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s }.freeze
+    # Int64 has one on paper and not on the machines: the smallest printfs — newlib-nano,
+    # avr-libc — read no ll length modifier, so it crosses as a string too.
+    TO_S_FUNCTIONS = { Bool: :bareruby_bool_to_s, Fixed: :bareruby_fixed_to_s,
+                       Int64: :bareruby_int64_to_s }.freeze
 
     def initialize(parts, typed_ast)
       @tast = typed_ast
@@ -59,8 +62,7 @@ module BareRubyProt
       # int on a 64-bit machine and a long on a 16-bit one, and long is 32 bits on both.
       # Pass 12 widens the value to match.
       case type
-      when :Int64 then "%lld"
-      when :String, :Bool, :Fixed then "%s"
+      when :String, :Bool, :Fixed, :Int64 then "%s"
       else "%ld"
       end
     end
