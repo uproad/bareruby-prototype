@@ -1375,17 +1375,31 @@ per board — roughly 5 s of Renode start-up plus the three virtual seconds.
 
 What emulation deliberately does not claim: the clock tree is modeled as already
 configured, so a wrong PLL profile that real silicon would refuse can pass here; I2C has
-no device behind it and was not exercised; UART receive samples, which take input, were
-not fed; and the LED wiring in the generated machine is asserted by nothing yet — the
-verb reads the UART and only that. An emulated pass is evidence the logic and the
-toolchain agree with the host, never that a board would.
+no device behind it and was not exercised; and the LED wiring in the generated machine
+is asserted by nothing yet — the verb reads the UART and only that. An emulated pass is
+evidence the logic and the toolchain agree with the host, never that a board would.
+
+The receive side is fed now: `emulate --input=FILE` queues the file's bytes on the
+stdout UART before the firmware's first instruction, which is the condition a host
+program finds when its stdin is a pipe — so `< FILE` on the host and `--input=FILE` on
+the board carry the same bytes and the diff keeps meaning something. Two accommodations
+in the generated Renode script were found necessary, each by watching a byte go
+missing. Renode's STM32 UART model drops what arrives while the receiver is off, and
+before the first instruction nothing has turned it on — so the script writes UE|RE into
+the port's CR1 first, which the firmware's own init then configures over without
+touching what queued. And the firmware flushes the data register when it arms its
+receive side — on hardware that eats power-on garbage, but here the first real byte was
+sitting in DR and `samples/uart_one_queue.rb` came back one byte short — so the queue
+leads with one NUL for the flush to eat. Both live in `run.resc` where a failing run
+can be read back.
 
 `./checks/emulate.sh` holds that comparison as a standing check: every sample
 [`checks/emulate.yml`](checks/emulate.yml) lists, on every STM32 entry the record holds,
-against the host build as the oracle. **17 samples agree line for line on all three
-boards** — the language samples that terminate with output, and the UART configuration
-samples among them — in 8 m 32 s for the 51 runs, sequentially. The YAML records why
-each of the other 21 samples is absent, and its first run produced two findings — both
+against the host build as the oracle. **19 samples agree line for line on all three
+boards** — the language samples that terminate with output, the UART configuration
+samples among them, and the two receive samples the `input:` key feeds — in about 10
+minutes for the 57 runs, sequentially. The YAML records why
+each of the other 19 samples is absent, and its first run produced two findings — both
 diagnosed and fixed below, with the three samples they had kept out now on the list —
 which is what the check is for:
 
