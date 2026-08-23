@@ -19,7 +19,8 @@ gems/
 ├── bareruby_prot-compiler/          the first stage: every pass, the IRs, the runtime
 ├── bareruby_prot/                   everything after it: the executable, target.yml, flashing
 ├── bareruby_prot-binding-*/         pico_sdk, arduino, stm32cube
-└── bareruby_prot-stdlib-*/          gpio, pwm, adc, uart, i2c, onboard_led
+├── bareruby_prot-stdlib-*/          gpio, pwm, adc, uart, i2c, onboard_led
+└── bareruby_prot-simulator/         the host build run with no board, against one made of objects
 ```
 
 **A gem is a build, not a checkout**: editing one changes nothing until it has been built
@@ -36,6 +37,13 @@ repository, and the first thing to know before changing anything in it.
 The line between them is the line between the two stages. Breaking it means reaching
 across a gem boundary rather than typing a relative path: it can still be done, but it
 cannot be done quietly.
+
+**The simulator is on neither side of that line**, because it reads an artifact rather
+than a compilation: an executable a build left, and nothing that produced it. It depends
+on no other gem here and nothing here depends on it — the host binding looks for it the
+way the STM32 one looks for Renode, and a desk without it has a target that builds and
+does not emulate. What it answers is in its own
+[`API.md`](gems/bareruby_prot-simulator/API.md).
 
 **What crosses that line is a binding, never the compiler.** A binding is written in the
 words of what it calls on one side and starts a second stage on the other, so the gem that
@@ -422,6 +430,14 @@ gitignored, because which machines are at this desk is true of the desk.
 7. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
    **never write "verified" for something that was only built** — say "built but not
    hardware-flashed".
+
+Before either of those sits one that needs nothing installed at all:
+`./checks/simulate.sh` runs every sample [`checks/simulate.yml`](checks/simulate.yml)
+lists under the simulator — the host build interpreted here, with a board made of Ruby
+objects behind its peripheral calls — and diffs what it printed against the same program
+run natively. About three and a half minutes for all 39. A simulated pass says the program
+and the host agree and that the board saw what the program meant; it is not a hardware
+run either, and is written up as "simulated".
 
 Between step 5 and step 7 sits a check no hardware is needed for: `./checks/emulate.sh`
 runs every sample [`checks/emulate.yml`](checks/emulate.yml) lists on every STM32 entry
