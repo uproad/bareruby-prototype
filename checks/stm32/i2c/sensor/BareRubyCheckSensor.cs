@@ -23,8 +23,10 @@ namespace Antmicro.Renode.Peripherals.I2C
     //   - two special registers sit outside the file. Writes selecting SEQUENCE are
     //     checked byte-for-byte against a rolling 0x00..0xFF counter, so a program can
     //     push all 256 byte values through the write path and the sensor keeps score.
-    //     A read selecting RESULT answers that score as three ASCII digits — fixed
-    //     width, so the reader can ask for exactly three bytes.
+    //     A read selecting RESULT answers that score as "MMM/CCC" — mismatches and
+    //     bytes received, three ASCII digits each, fixed width so the reader can ask
+    //     for exactly seven bytes. The count is what catches a missing chunk: a sweep
+    //     whose tail never arrived scores zero mismatches but not 256 received.
     public class BareRubyCheckSensor : II2CPeripheral
     {
         public BareRubyCheckSensor()
@@ -42,6 +44,7 @@ namespace Antmicro.Renode.Peripherals.I2C
             pointer = 0;
             expected = 0;
             mismatches = 0;
+            received = 0;
         }
 
         public void Write(byte[] data)
@@ -61,6 +64,7 @@ namespace Antmicro.Renode.Peripherals.I2C
                         mismatches++;
                     }
                     expected = (byte)(expected + 1);
+                    received++;
                 }
                 else
                 {
@@ -74,9 +78,10 @@ namespace Antmicro.Renode.Peripherals.I2C
         {
             if(pointer == ResultRegister)
             {
-                var digits = Math.Min(mismatches, 999).ToString("D3");
-                this.Log(LogLevel.Info, "check sensor answers score {0}", digits);
-                return System.Text.Encoding.ASCII.GetBytes(digits);
+                var score = Math.Min(mismatches, 999).ToString("D3")
+                    + "/" + Math.Min(received, 999).ToString("D3");
+                this.Log(LogLevel.Info, "check sensor answers score {0}", score);
+                return System.Text.Encoding.ASCII.GetBytes(score);
             }
             var from = pointer % FileSize;
             var reply = new byte[FileSize - from];
@@ -93,6 +98,7 @@ namespace Antmicro.Renode.Peripherals.I2C
         private byte pointer;
         private byte expected;
         private int mismatches;
+        private int received;
 
         private const int FileSize = 16;
         private const byte SequenceRegister = 0x40;
