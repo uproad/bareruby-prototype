@@ -1476,6 +1476,15 @@ replaced**: the language runtime, the inline C the standard classes ship with, a
 program's own code all run as the instructions say — so what a program computes is still
 the program's answer, and only what it says to a peripheral lands somewhere else.
 
+**Writing this down changed what the target is called.** The hosted entry had been
+recorded as `machine: none` — no board, so no machine — and that had been true only for
+as long as a call had nowhere to arrive. It has somewhere now: the simulator holds pins,
+ports and an indicator, and it is the one machine this binding reaches. The record reads
+`machine: host`, the composition is `host` / `host` / `x86_64-pc-linux`, and
+`Machine::NONE` is gone. Nothing about a build changed with it —
+one generated file is spelled `..._onboard_led_host.cpp` where it read `..._host_none.cpp`
+— but the entry now says what is actually there.
+
 **All 39 samples say under the simulator exactly what they say natively.**
 `./checks/simulate.sh` holds that as a standing check — every sample
 [`checks/simulate.yml`](checks/simulate.yml) lists, its printed output against the native

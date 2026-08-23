@@ -36,11 +36,5 @@ module BareRubyProt
     # more than one — so registering a key that is already there answers the machine that
     # is already there. Which binding named it first is not a fact about the machine.
     def self.register(key, chip: nil) = TABLE[key] ||= new(key, chip: chip)
-
-    # The machine doing the compiling has no peripheral to reach, so every binding call
-    # lands on a stub. It is still a machine, and saying so keeps the hosted target from
-    # being a shape of its own. The same answer serves a target that runs in a sandbox
-    # rather than on a board.
-    NONE = new(:none)
   end
 end

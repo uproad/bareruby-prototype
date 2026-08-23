@@ -311,7 +311,7 @@ written by hand: `./bareruby target add` asks, and writes the answer.
 
       family                machine
 
-      none                  raspberry-pi-pico
+      host                  raspberry-pi-pico
       Arduino               raspberry-pi-pico-w
     › Raspberry Pi Pico     raspberry-pi-pico2
       ST NUCLEO             raspberry-pi-pico2-w
@@ -380,9 +380,9 @@ came out of — so a board missing from that list is almost always a line still 
 in the Gemfile rather than a board this ecosystem cannot reach:
 
 ```
-none  (bareruby_prot-compiler)
+host  (bareruby_prot-compiler)
   host
-    machine: none  binding: host  triple: x86_64-pc-linux
+    machine: host  binding: host  triple: x86_64-pc-linux
 
 Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
   raspberry-pi-pico
@@ -526,7 +526,7 @@ Ubuntu 24.04 ships 13.3.
 
 ```sh
 ./bareruby build --target=host samples/features.rb
-./build/none-host-x86_64-pc-linux/bareruby_program
+./build/host-host-x86_64-pc-linux/bareruby_program
 ```
 
 `samples/blink.rb` loops forever by design — use `timeout 1`. Samples that receive take
