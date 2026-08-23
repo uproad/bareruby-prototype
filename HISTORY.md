@@ -1491,15 +1491,17 @@ an instruction the interpreter does not read, and there is not one floating-poin
 operation in any of them. The whole thing is 2,564 lines of Ruby — 778 of them the
 interpreter, 288 the unwinder, 400 the board.
 
-**Three things this answers that an emulated board could not.** The absences
-[`checks/emulate.yml`](checks/emulate.yml) records are mostly a harness that has nothing
-to reach with; here the peripherals are objects, so the caller reaches them directly.
+**Three things this answers that an emulated board does not.** The absences
+[`checks/emulate.yml`](checks/emulate.yml) records are mostly a harness with nothing to
+reach with; here every peripheral is an object, so the caller reaches it directly. The
+receive side is **not** among them any more — `--input=` feeds an emulated UART, and a
+simulated run is fed through the same flag from the same files.
 
 - **I2C reads answer.** `samples/i2c.rb` and `samples/picoruby_interface.rb` are on the
   list rather than waiting for a device model: what a bus answers is what was put in it.
-- **The receive samples take input.** The queue is an object and `stdin` is what fills it
-  when nothing else has, so the six UART receive samples run with the same pipe the host
-  build takes.
+- **A pin can be moved.** `logger` and `interrupt` wait on a GPIO edge, which the emulated
+  list records as a later harness step. Here a wait is where the caller gets its turn, so
+  giving one is a line — which is what the paragraph below does.
 - **A program that loops forever ends.** An instruction costs one microsecond of virtual
   time, so `gpio_pico_loop` and `avs` run out of the three virtual seconds they were given
   at 3,000,000 and 2,585,025 instructions rather than running until somebody stops them.

@@ -457,7 +457,8 @@ that only writes pins runs out of the run rather than running until somebody sto
 file's bytes are waiting on the stdout UART before the firmware's first instruction,
 which is what a host program finds when its stdin is a pipe — so `program < FILE` on the
 host and `emulate --input=FILE` on a board read the same bytes, and the diff between
-their outputs still means something. A program that only speaks needs no input, and the
+their outputs still means something. Under the simulator the same flag puts them on the
+port's receive queue; with no flag it reads this terminal's own input. A program that only speaks needs no input, and the
 flag stays home.
 
 ## What a build reaches for
