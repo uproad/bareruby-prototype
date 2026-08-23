@@ -7,6 +7,9 @@
 #   sample:  the program, from the repository root.
 #   for:     virtual seconds handed to --for=. 3 when unsaid, which outlasts every
 #            sample below.
+#   input:   a file of bytes the program receives, from the repository root. The boards
+#            get it on the UART through --input=, the host gets it on stdin, so both
+#            sides of the diff read the same wire. Absent when the program only speaks.
 #
 # What is NOT here is as deliberate as what is. This check's first run found three of
 # today's entries failing — features.rb printing `big=ld` for a 64-bit integer, m25.rb
@@ -16,9 +19,11 @@
 #
 # The absences wait on the harness or on the binding rather than on a fix:
 #
-#   - uart_receive, uart_one_queue, uart_line_ending, logger: wait for input — feeding
-#     the emulated UART RX is the next harness step (uart_line_ending also needs the
-#     raw capture: uart.txt is LF-normalized and line endings are what it tests).
+#   - uart_line_ending: could be fed like uart_receive below, but what it tests is the
+#     line ending itself, and uart.txt is LF-normalized. What it tests is held instead
+#     by checks/stm32/uart/ — line_ending_tx captures the TX bytes as hex, gets_crlf
+#     holds the RX side — so the host diff here stays out of it by design.
+#   - logger: waits on a button, not the UART — a GPIO edge is a later harness step.
 #   - blink, heartbeat, servo, asleep, gpio_pico_loop, tenji, tenji_int, avs, adc:
 #     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
 #     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
@@ -49,5 +54,9 @@ checks:
   - sample: samples/sleep_interrupt.rb
   - sample: samples/string.rb
   - sample: samples/uart_buffered.rb
+  - sample: samples/uart_one_queue.rb
+    input: checks/input/uart_one_queue.txt
+  - sample: samples/uart_receive.rb
+    input: checks/input/uart_receive.txt
   - sample: samples/uart_rx_buffer.rb
   - sample: samples/uart_rx_receive.rb

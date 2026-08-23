@@ -42,7 +42,7 @@ for board in "${BOARDS[@]}"; do TARGETS+=("--target=$board"); done
 
 passed=0
 failed=0
-while IFS=$'\t' read -r sample seconds; do
+while IFS=$'\t' read -r sample seconds input; do
     name=$(basename "$sample" .rb)
     kept="$WORK/$name"
     mkdir -p "$kept"
@@ -50,14 +50,17 @@ while IFS=$'\t' read -r sample seconds; do
 
     # One invocation builds the host and every board, then emulates the boards; the
     # host binary it leaves is then run for the expected output. Its own account goes
-    # to a file and is pointed at only when something refused.
-    if ! ./bareruby emulate "${TARGETS[@]}" --for="$seconds" "$sample" \
+    # to a file and is pointed at only when something refused. What the boards are fed
+    # through --input is what the host reads on stdin — the same bytes on both sides
+    # of the diff.
+    if ! ./bareruby emulate "${TARGETS[@]}" --for="$seconds" \
+         ${input:+--input="$input"} "$sample" \
          </dev/null >"$kept/emulate.log" 2>&1; then
         echo "$line  FAIL (emulate refused; $kept/emulate.log)"
         failed=$((failed + 1))
         continue
     fi
-    timeout 10 "./build/$HOST/bareruby_program" </dev/null \
+    timeout 10 "./build/$HOST/bareruby_program" <"${input:-/dev/null}" \
         >"$kept/expected.txt" 2>/dev/null
 
     ok=1
@@ -76,7 +79,7 @@ while IFS=$'\t' read -r sample seconds; do
     if [ $ok -eq 1 ]; then passed=$((passed + 1)); else failed=$((failed + 1)); fi
 done < <("$RUBY" -ryaml -e '
   YAML.safe_load_file(ARGV[0])["checks"].each do |c|
-    puts [c.fetch("sample"), c.fetch("for", 3)].join("\t")
+    puts [c.fetch("sample"), c.fetch("for", 3), c.fetch("input", "")].join("\t")
   end' checks/emulate.yml)
 
 echo "checks: $passed/$((passed + failed)) samples agree with the host," \

@@ -1,0 +1,65 @@
+checks:
+  - name: rx_order
+    input: input/rx_order.bin
+  - name: peek
+    input: input/peek.bin
+  - name: gets_terminator
+    input: input/gets_terminator.bin
+  - name: rx_overflow
+    input: input/rx_overflow.bin
+  - name: rx_interrupt
+    input: input/rx_interrupt.bin
+  - name: tx_bytes
+  - name: frame
+    observe: observe/frame.resc
+  - name: rx_default_254
+    input_bytes: 254
+  - name: rx_default_255
+    input_bytes: 255
+  - name: rx_default_256
+    input_bytes: 256
+  - name: rx_default_512
+    input_bytes: 512
+  - name: rx_resume_after_full
+    feed: feed/rx_resume_after_full.resc
+  - name: rx_wraparound
+    input_bytes: 300
+    chunk_size: 100
+  - name: clear_rx_buffer
+    feed: feed/clear_rx_buffer.resc
+  - name: read_length
+    input_bytes: 5
+  - name: rx_empty
+  - name: line_ending_tx
+    capture: hex
+  - name: setmode
+    observe: observe/frame.resc
+  - name: setmode_partial
+    observe: observe/frame.resc
+  - name: write_result
+  - name: rx_interrupt_multiple
+    input_bytes: 3
+  - name: tx_interpolation
+    capture: hex
+  - name: rx_all_byte_values
+    input_bytes: 256
+    pattern: full
+    chunk_size: 128
+  - name: gets_across_feed
+    feed: feed/gets_across_feed.resc
+  - name: read_across_feed
+    feed: feed/read_across_feed.resc
+  - name: gets_crlf
+    input: input/gets_crlf.bin
+  - name: irq_shared_queue
+    input: input/irq_shared_queue.bin
+  - name: irq_overflow
+    input: input/rx_overflow.bin
+  - name: irq_clear_rx_buffer
+    feed: feed/irq_clear_rx_buffer.resc
+  - name: frame_variants
+    observe: observe/frame.resc
+  - name: bytes_to_write
+  - name: clear_tx_buffer
+  - name: write_9n
+    capture: hex
