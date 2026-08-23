@@ -1460,3 +1460,22 @@ visible, roughly 32.6 KB on the F446, sits beside the figures
 
 And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
 binding carries no PWM unit — which the sample list now says out loud.
+
+## The STM32 UART binding has its own fixed-answer check
+
+The language-wide emulation check asks whether STM32 agrees with the host binding. The
+UART binding now has a narrower, independent answer under `checks/stm32/uart/`: seven
+small programs are compared with reviewed files rather than output produced by another
+binding. They prove that RX preserves arrival order, `peek` does not consume, `gets`
+honours a selected terminator, a four-slot ring keeps its first three bytes and drops the
+overflow, an RX interrupt reaches its handler, and `write` plus `puts` produce the exact
+TX bytes. The seventh check reads the emulated NUCLEO-F446RE's USART2 after opening it at
+9600 7E1: BRR `0x00001117`, CR1 `0x0000240C`, and zero in CR2 and CR3.
+
+`checks/stm32/uart/check.sh f446` passed 7/7 in 70 seconds. Each failure keeps the UART or
+register diff under `.bareruby/checks/stm32/uart/`; a pass removes the empty diff but
+keeps what was observed. Renode's configuration also lives under `.bareruby`, so the
+check does not need to write a user's configuration directory. This is an emulated
+peripheral check, not a hardware-flashed one: it says nothing about voltage, waveform,
+baud-rate tolerance, or another board's clock and UART instance. Those need their own
+board-specific answers rather than inheriting the F446 figures.
