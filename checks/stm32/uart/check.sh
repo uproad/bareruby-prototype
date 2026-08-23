@@ -25,12 +25,13 @@ mapfile -t checks < <("$RUBY" -ryaml -e '
   YAML.safe_load_file(ARGV[0])["checks"].each do |check|
     puts [check.fetch("name"), check.fetch("input", ""),
           check.fetch("observe", ""), check.fetch("input_bytes", ""),
-          check.fetch("feed", ""), check.fetch("chunk_size", "")].join("|")
+          check.fetch("feed", ""), check.fetch("chunk_size", ""),
+          check.fetch("capture", "")].join("|")
   end
 ' "$HERE/checks.yml")
 
 for check in "${checks[@]}"; do
-    IFS='|' read -r name input observe input_bytes feed chunk_size <<<"$check"
+    IFS='|' read -r name input observe input_bytes feed chunk_size capture <<<"$check"
     sample="$HERE/samples/$name.rb"
     expected="$HERE/expected/$name.txt"
     kept="$WORK/$name"
@@ -86,7 +87,14 @@ for check in "${checks[@]}"; do
         ' ".bareruby/emulate/$TARGET/uart.log" ".bareruby/emulate/$TARGET/uart.txt"
     fi
 
-    cp ".bareruby/emulate/$TARGET/uart.txt" "$kept/uart.txt"
+    if [ "$capture" = hex ]; then
+        "$RUBY" -e '
+          bytes = File.binread(ARGV.fetch(0)).bytes
+          File.write(ARGV.fetch(1), bytes.map { |byte| format("%02X", byte) }.join(" ") + "\n")
+        ' ".bareruby/emulate/$TARGET/uart.log" "$kept/uart.txt"
+    else
+        cp ".bareruby/emulate/$TARGET/uart.txt" "$kept/uart.txt"
+    fi
     ok=1
     if ! diff -u "$expected" "$kept/uart.txt" >"$kept/uart.diff" 2>&1; then
         ok=0

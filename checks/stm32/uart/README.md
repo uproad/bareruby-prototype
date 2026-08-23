@@ -24,6 +24,14 @@ checks/stm32/uart/check.sh f446
 | `rx_default_512` | a large overflow still leaves the first 255 bytes intact |
 | `rx_resume_after_full` | freed slots receive new bytes after an overflow |
 | `rx_wraparound` | 300 consumed bytes stay ordered across the ring boundary |
+| `clear_rx_buffer` | clearing RX empties the ring and later bytes still arrive |
+| `read_length` | `read(3)` returns exactly three bytes and leaves two queued |
+| `rx_empty` | an empty RX ring answers zero and `-1` without consuming data |
+| `line_ending_tx` | a selected CRLF ending reaches TX as exact raw bytes |
+| `setmode` | changing the whole frame at runtime reaches the USART registers |
+| `setmode_partial` | changing only baud rate preserves the other frame fields |
+| `write_result` | `write` returns the number of bytes placed on TX |
+| `rx_interrupt_multiple` | one handler receives three queued bytes in order |
 
 Results are kept under `.bareruby/checks/stm32/uart/<check>/`. `uart.txt` is the raw
 answer used by every check. `frame/registers.txt` is the four register reads. A failed

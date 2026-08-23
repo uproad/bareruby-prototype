@@ -25,3 +25,17 @@ checks:
   - name: rx_wraparound
     input_bytes: 300
     chunk_size: 100
+  - name: clear_rx_buffer
+    feed: feed/clear_rx_buffer.resc
+  - name: read_length
+    input_bytes: 5
+  - name: rx_empty
+  - name: line_ending_tx
+    capture: hex
+  - name: setmode
+    observe: observe/frame.resc
+  - name: setmode_partial
+    observe: observe/frame.resc
+  - name: write_result
+  - name: rx_interrupt_multiple
+    input_bytes: 3
