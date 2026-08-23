@@ -616,6 +616,11 @@ module BareRubyProt
     # nothing left for a toolchain here to add — and a toolchain is where a binding would
     # reach for the side of this that runs the second stage. This one never has to.
 
+    # **A board to run against, where there is no board.** The build already runs on the
+    # machine that made it, so what an emulator adds here is the peripherals: a run under
+    # the simulator answers a pin from a pin rather than from a stub that prints.
+    def self.emulate = HostEmulate
+
     def self.flash = HostFlash
 
     def self.build = HostBuild

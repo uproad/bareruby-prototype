@@ -19,6 +19,7 @@ path "gems" do
   gem "bareruby_prot-binding-arduino"
   gem "bareruby_prot-binding-pico_sdk"
   gem "bareruby_prot-binding-stm32cube"
+  gem "bareruby_prot-simulator"
   gem "bareruby_prot-stdlib-adc"
   gem "bareruby_prot-stdlib-gpio"
   gem "bareruby_prot-stdlib-i2c"

@@ -2,6 +2,7 @@
 
 require_relative "binding"
 require_relative "build"
+require_relative "emulate"
 require_relative "flash"
 
 # What this binding brings: the machines it reaches, and the compositions it can produce
