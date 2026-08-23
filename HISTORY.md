@@ -1499,3 +1499,25 @@ returns three and three interrupt-fed bytes reach the handler in order. The hand
 call count remains deliberately unspecified; only its observed bytes are held fixed.
 The complete `checks/stm32/uart/check.sh f446` run passed 21/21 in 243 seconds under
 Renode. It was built but not hardware-flashed.
+
+Twelve more checks close gaps the earlier rounds left open. The printf path — what an
+interpolated `write` or `puts` lowers to — is held as raw TX bytes: `write` appends no
+ending, `puts` appends one, and a 64-bit value crosses intact. All 256 byte values cross
+the receive queue unchanged, where the earlier generated pattern (1..251) never carried
+0x00 or 0xFF. `gets` and `read` complete a read whose bytes arrive twenty virtual
+milliseconds apart instead of answering short. Three interrupt checks pin the handler's
+contract: it consumes the same queue the program reads — a byte the handler took answers
+`-1` to the program — a registered handler does not change the full ring's keep-first
+policy, and clearing inside the handler still receives later bytes. 19200 7O2 reaches
+BRR `0x0000088B`, CR1 `0x0000260C` and CR2 `0x00002000`; after `flush` nothing is owed
+to the wire; `clear_tx_buffer` leaves sent bytes intact.
+
+Two findings came out of writing them. Renode's STM32_UART model does not retain CR1's
+M bit — `0x360C` written reads back `0x260C` — so the frame variant speaks 7O2 and the
+nine-bit word stays on the hardware list. And 9N passes the frame-bits check but mangles
+the data: the HAL reads a 9-bit no-parity transmit buffer as uint16 pairs while the
+binding hands it a C string, so `write "AB"` puts `41 00` on the wire and still returns
+2. `write_9n` pins that as a recorded gap, its expectation to be replaced when the
+binding either refuses 9N or grows a nine-bit send. The complete
+`checks/stm32/uart/check.sh f446` run passed 33/33 in 422 seconds under Renode. It was
+built but not hardware-flashed.
