@@ -8,18 +8,13 @@
 #   for:     virtual seconds handed to --for=. 3 when unsaid, which outlasts every
 #            sample below.
 #
-# What is NOT here is as deliberate as what is, and two absences are findings this
-# check made on its first run — the reason the file exists:
+# What is NOT here is as deliberate as what is. This check's first run found three of
+# today's entries failing — features.rb printing `big=ld` for a 64-bit integer, m25.rb
+# and arena.rb stopping dead at their first raise — and both findings were fixed for it:
+# 64-bit integers now cross printf as strings, and the STM32 link carries the full
+# libstdc++'s unwind tables. HISTORY.md holds the diagnoses and the figures.
 #
-#   - samples/features.rb     the emulated STM32 run prints `big=ld` where the host
-#                             prints big=3000000000: a 64-bit integer reaches a printf
-#                             that does not carry its length modifier. Not yet fixed.
-#   - samples/m25.rb          output stops at the first raise and never reaches
-#   - samples/arena.rb        "rescued": begin/rescue does not come back on the
-#                             emulated Cortex-M. Both match on the host, and more
-#                             virtual time does not change it. Not yet diagnosed.
-#
-# The rest wait on the harness or on the binding rather than on a fix:
+# The absences wait on the harness or on the binding rather than on a fix:
 #
 #   - uart_receive, uart_one_queue, uart_line_ending, logger: wait for input — feeding
 #     the emulated UART RX is the next harness step (uart_line_ending also needs the
@@ -39,11 +34,14 @@
 #   - require_helper, require_lib: libraries require.rb carries, not programs.
 
 checks:
+  - sample: samples/arena.rb
   - sample: samples/array.rb
   - sample: samples/block_parameters.rb
   - sample: samples/definite_assignment.rb
+  - sample: samples/features.rb
   - sample: samples/fixed.rb
   - sample: samples/implicit_return.rb
+  - sample: samples/m25.rb
   - sample: samples/nilable.rb
   - sample: samples/object.rb
   - sample: samples/peripheral_ruby.rb
