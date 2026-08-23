@@ -1379,3 +1379,23 @@ no device behind it and was not exercised; UART receive samples, which take inpu
 not fed; and the LED wiring in the generated machine is asserted by nothing yet — the
 verb reads the UART and only that. An emulated pass is evidence the logic and the
 toolchain agree with the host, never that a board would.
+
+`./checks/emulate.sh` holds that comparison as a standing check: every sample
+[`checks/emulate.yml`](checks/emulate.yml) lists, on every STM32 entry the record holds,
+against the host build as the oracle. **14 samples agree line for line on all three
+boards** — the language samples that terminate with output, and the UART configuration
+samples among them — in 8 m 25 s for the 42 runs, sequentially. The YAML records why
+each of the other 24 samples is absent, and its first run produced two findings, which
+is what the check is for:
+
+- **`samples/features.rb` prints `big=ld` on STM32 where the host prints
+  `big=3000000000`** — a 64-bit integer reaching a printf without its length modifier
+  surviving. First observed here; no hardware run had ever printed that line.
+- **`samples/m25.rb` and `samples/arena.rb` stop at their first `raise` and never print
+  "rescued"** — begin/rescue does not come back on the emulated Cortex-M, at 3 virtual
+  seconds and at 10. Both match the host exactly up to that line. Exceptions on STM32
+  had never been observed running before either.
+
+Neither is diagnosed yet, and `samples/peripheral_answers.rb` turned out not to build
+for STM32 at all — the binding carries no PWM unit — which the sample list now says
+out loud.
