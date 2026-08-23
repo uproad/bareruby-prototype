@@ -121,9 +121,13 @@ module BareRubyProt
         CXXFLAGS = $(COMMON) #{cxx_options}
         ASFLAGS  = $(MCU) $(OPTIMIZATION) -x assembler-with-cpp
 
+        # -l:libstdc++.a names the file, which is what slips past nano.specs' rewrite of
+        # -lstdc++ into -lstdc++_nano — whose exception objects carry no unwind tables,
+        # so a raise under it can only terminate. A program that never raises links not
+        # one byte of it.
         LDFLAGS  = $(MCU) -Tbareruby_program.ld -specs=nano.specs -specs=nosys.specs \\
                    -Wl,--gc-sections -Wl,-Map=$(BUILD)/bareruby_program.map \\
-                   -static -Wl,--start-group -lc -lm -Wl,--end-group
+                   -static -Wl,--start-group -lc -lm -l:libstdc++.a -Wl,--end-group
 
         VPATH = .. \\
                 $(CUBE)/#{@family::HAL_SOURCE_DIRECTORY} \\
