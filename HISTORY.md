@@ -1521,3 +1521,34 @@ binding hands it a C string, so `write "AB"` puts `41 00` on the wire and still 
 binding either refuses 9N or grows a nine-bit send. The complete
 `checks/stm32/uart/check.sh f446` run passed 33/33 in 422 seconds under Renode. It was
 built but not hardware-flashed.
+
+## The STM32 I2C binding has its own fixed-answer check
+
+The language-wide emulation check leaves I2C out: the host stub answers a read the
+emulated bus cannot, because nobody is on it. `checks/stm32/i2c/` puts somebody on it —
+a small C# `II2CPeripheral` Renode compiles at run time and attaches to I2C1 at `0x76`,
+a sixteen-byte register file behind a pointer, initialized to `0xF0..0xFF`. Twelve
+checks hold the binding to fixed answers against it. `write` returns its byte count and
+its bytes arrive intact, proved by reading them back. One-, two-, four- and sixteen-byte
+reads answer real data — the two-byte read is HAL's POS dance, the longer ones its BTF
+path. The `outputs` argument selects where a read starts. Integers, arrays, strings and
+an `Arena::String` assemble into one seven-byte transaction. All 256 byte values cross
+the write path — the sensor scores them against a rolling counter and answers `000`.
+100 kHz reaches CR1 `0x00000001`, CR2 `0x0000002A`, CCR `0x000000D2` and TRISE
+`0x0000002B`; 400 kHz reaches CCR `0x00008023` and TRISE `0x0000000D` through the
+DeInit → Init path. An address beyond seven bits is refused before touching the bus.
+
+Two facts shaped the harness. Renode 1.16.1's STM32F4_I2C model asks a slave for data
+with count=1 and does not model the POS bit HAL's two-byte receive leans on (renode#114),
+so a slave that honors the count starves HAL — a two-byte read answers `0x00` for its
+second byte and longer reads hang. The check sensor answers its whole tail instead,
+which is what makes every read above arrive as real data; upstream rewrote the model
+after 1.16.1 and no stable release carries the fix yet. And with nobody at the address
+the binding waits forever — `HAL_MAX_DELAY` where real silicon would NACK — so
+`missing_device` pins the hang as a recorded gap, its expectation to be replaced when
+the binding decides between a finite timeout and the status quo. Because `bareruby
+emulate` runs Renode against the plain machine, where an I2C program hangs against
+nobody, the harness hands the verb a stub in Renode's place and makes the one real run
+itself on the transformed script, sensor attached. The complete
+`checks/stm32/i2c/check.sh f446` run passed 12/12 in 208 seconds under Renode. It was
+built but not hardware-flashed.
