@@ -19,20 +19,20 @@ module BareRubyProt
           fprintf(stderr, "pwm_init(pin=%d, frequency=%d, duty=%d)\\n", (int)pin, (int)frequency, (int)duty);
       }
 
-      void bareruby_pwm_frequency(bareruby_pwm_t *self, int32_t frequency) {
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
           self->frequency = frequency;
           fprintf(stderr, "pwm_frequency(pin=%d, frequency=%d)\\n", (int)self->pin, (int)frequency);
       }
 
-      void bareruby_pwm_period_us(bareruby_pwm_t *self, int32_t period_us) {
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
           fprintf(stderr, "pwm_period_us(pin=%d, period_us=%d)\\n", (int)self->pin, (int)period_us);
       }
 
-      void bareruby_pwm_duty(bareruby_pwm_t *self, int32_t duty) {
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
           fprintf(stderr, "pwm_duty(pin=%d, duty=%d)\\n", (int)self->pin, (int)duty);
       }
 
-      void bareruby_pwm_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
           fprintf(stderr, "pwm_pulse_width_us(pin=%d, pulse_width_us=%d)\\n", (int)self->pin, (int)pulse_width_us);
       }
     CPP
@@ -176,8 +176,8 @@ module BareRubyProt
           return 0;
       }
 
-      void bareruby_uart_send_break(bareruby_uart_t *self, int32_t milliseconds) {
-          fprintf(stderr, "uart_send_break(unit=%d, milliseconds=%d)\\n",
+      void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
+          fprintf(stderr, "uart_break(unit=%d, milliseconds=%d)\\n",
                   (int)self->unit, (int)milliseconds);
       }
 
@@ -205,8 +205,9 @@ module BareRubyProt
           fprintf(stderr, "gpio_init(pin=%d, params=%d)\\n", (int)pin, (int)params);
       }
 
-      void bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
+      int32_t bareruby_gpio_write(bareruby_gpio_t *self, int32_t value) {
           fprintf(stderr, "gpio_write(pin=%d, value=%d)\\n", (int)self->pin, (int)value);
+          return 0;
       }
 
       int32_t bareruby_gpio_read(bareruby_gpio_t *self) {
@@ -224,9 +225,9 @@ module BareRubyProt
           return true;
       }
 
-      void bareruby_gpio_on_interrupt(
+      void bareruby_gpio_irq(
           bareruby_gpio_t *self, int32_t events, bareruby_interrupt_handler_t handler) {
-          fprintf(stderr, "gpio_on_interrupt(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
+          fprintf(stderr, "gpio_irq(pin=%d, events=%d)\\n", (int)self->pin, (int)events);
           handler();
       }
     CPP
@@ -276,16 +277,18 @@ module BareRubyProt
           }
       }
 
-      void bareruby_sleep(int32_t seconds, bool interrupt) {
+      int32_t bareruby_sleep(int32_t seconds, bool interrupt) {
           fprintf(stderr, "sleep(seconds=%d, interrupt=%s)\\n", (int)seconds,
                   bareruby_wait_interrupt(interrupt));
           bareruby_wait_deliver(interrupt);
+          return seconds;
       }
 
-      void bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
+      int32_t bareruby_sleep_ms(int32_t milliseconds, bool interrupt) {
           fprintf(stderr, "sleep_ms(milliseconds=%d, interrupt=%s)\\n", (int)milliseconds,
                   bareruby_wait_interrupt(interrupt));
           bareruby_wait_deliver(interrupt);
+          return milliseconds;
       }
 
       void bareruby_asleep(int32_t seconds, bool interrupt) {
@@ -318,7 +321,7 @@ module BareRubyProt
 
       /* **The one queue the receive side has.** stdin is the wire; filling from it stands
          in for the interrupt, and whoever asks first takes what is in the queue. A handler
-         and a program calling read_byte are the same kind of consumer, reaching it through
+         and a program calling getbyte are the same kind of consumer, reaching it through
          the same call. */
       /* What this binding gives when the program did not ask. A program that asks reaches
          the same name from the header, settled where the call was written. */
@@ -371,15 +374,15 @@ module BareRubyProt
           }
       }
 
-      int32_t bareruby_uart_read_byte(bareruby_uart_t *self) {
+      int32_t bareruby_uart_getbyte(bareruby_uart_t *self) {
           bareruby_uart_receive_fill(self);
           if (bareruby_uart_receive.tail == bareruby_uart_receive.head) {
-              fprintf(stderr, "uart_read_byte(unit=%d) -> -1\\n", (int)self->unit);
+              fprintf(stderr, "uart_getbyte(unit=%d) -> -1\\n", (int)self->unit);
               return -1;
           }
           uint8_t byte = bareruby_uart_receive.data[bareruby_uart_receive.tail];
           bareruby_uart_receive.tail = bareruby_uart_receive_next(bareruby_uart_receive.tail);
-          fprintf(stderr, "uart_read_byte(unit=%d) -> %d\\n", (int)self->unit, (int)byte);
+          fprintf(stderr, "uart_getbyte(unit=%d) -> %d\\n", (int)self->unit, (int)byte);
           return (int32_t)byte;
       }
 
@@ -417,7 +420,7 @@ module BareRubyProt
     # mode, and the pump plays the ISR's part, reading whatever has arrived into the ring.
     # With a handler registered the drain assembles lines exactly as a board does, so
     # CRLF, the 255-byte cap and the overlong discard behave byte for byte the same;
-    # without one the bytes stay in the ring for read_byte, peek and bytes_available.
+    # without one the bytes stay in the ring for getbyte, peek and bytes_available.
     UART_INTERRUPT = <<~CPP
       #include "bareruby_binding.h"
 
@@ -474,16 +477,16 @@ module BareRubyProt
           fputc('"', stderr);
       }
 
-      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t id, int32_t frequency) {
-          self->id = id;
+      void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
+          self->unit = unit;
           self->frequency = frequency;
-          fprintf(stderr, "i2c_init(id=%d, frequency=%d)\\n", (int)id, (int)frequency);
+          fprintf(stderr, "i2c_init(unit=%d, frequency=%d)\\n", (int)unit, (int)frequency);
       }
 
       int32_t bareruby_i2c_write(
           bareruby_i2c_t *self, int32_t address, const char *bytes, int32_t length) {
-          fprintf(stderr, "i2c_write(id=%d, address=0x%02x, bytes=",
-                  (int)self->id, (unsigned int)address);
+          fprintf(stderr, "i2c_write(unit=%d, address=0x%02x, bytes=",
+                  (int)self->unit, (unsigned int)address);
           bareruby_i2c_trace_bytes(bytes, length);
           fprintf(stderr, ") -> %d\\n", (int)length);
           return length;
@@ -517,8 +520,8 @@ module BareRubyProt
           for (int32_t index = 0; index < length; ++index) {
               bareruby_string_append_byte(result, fgetc(stdin));
           }
-          fprintf(stderr, "i2c_read(id=%d, address=0x%02x, length=%d, outputs=",
-                  (int)self->id, (unsigned int)address, (int)length);
+          fprintf(stderr, "i2c_read(unit=%d, address=0x%02x, length=%d, outputs=",
+                  (int)self->unit, (unsigned int)address, (int)length);
           bareruby_i2c_trace_read_bytes(outputs, output_length);
           fputs(") -> ", stderr);
           bareruby_i2c_trace_read_bytes(

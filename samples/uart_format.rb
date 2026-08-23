@@ -11,5 +11,5 @@ puts "pending #{uart.bytes_to_write}"
 uart.flush
 puts "pending #{uart.bytes_to_write}"
 
-uart.send_break(1)
+uart.break(1)
 puts "break sent"

@@ -9,6 +9,10 @@ module BareRubyProt
   # deadline is written as a signed difference and carries the wrap — which is what a
   # timeout composed from non-blocking reads needs.
   module BindingFunction
+    # **A wait answers how long it waited.** `sleep` and `sleep_ms` say so because that is
+    # what they say everywhere else Ruby is written; the `asleep` family has nowhere to
+    # take its spelling from and answers nothing.
+    #
     # **A wait is where a notification handler gets to run.** Time spent waiting is time
     # the program is not using, and delivering what has arrived in it is what keeps a
     # handler from waiting for the next call into the binding. `interrupt: false` says a
@@ -18,8 +22,8 @@ module BareRubyProt
     WAIT = { interrupt: true }.freeze
 
     BARE = {
-      sleep: { function: :bareruby_sleep, parameter_types: %i[Int32 Bool], return_type: :Nil, keywords: WAIT },
-      sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32 Bool], return_type: :Nil,
+      sleep: { function: :bareruby_sleep, parameter_types: %i[Int32 Bool], return_type: :Int32, keywords: WAIT },
+      sleep_ms: { function: :bareruby_sleep_ms, parameter_types: %i[Int32 Bool], return_type: :Int32,
                   keywords: WAIT },
       asleep: { function: :bareruby_asleep, parameter_types: %i[Int32 Bool], return_type: :Nil, keywords: WAIT },
       asleep_ms: { function: :bareruby_asleep_ms, parameter_types: %i[Int32 Bool], return_type: :Nil,

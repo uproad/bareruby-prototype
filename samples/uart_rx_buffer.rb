@@ -7,10 +7,10 @@ uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE, rx_buffer_size: 
 puts "waiting: #{uart.bytes_available}"
 
 taken = 0
-byte = uart.read_byte
+byte = uart.getbyte
 while byte >= 0
   taken += 1
-  byte = uart.read_byte
+  byte = uart.getbyte
 end
 
 puts "took #{taken} bytes"

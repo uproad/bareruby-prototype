@@ -1,4 +1,4 @@
-# Arduino HardwareSerial-style buffered receive: available/read_byte/peek backed by the
+# Arduino HardwareSerial-style buffered receive: available/getbyte/peek backed by the
 # interrupt-fed ring, and ticks_ms, composed into the timeout line read the framework
 # calls readBytesUntil. No callback is registered; the main loop owns the bytes.
 uart = UART.new(unit: 0, baudrate: 115_200, parity: UART::NONE, stop_bits: 1)
@@ -14,7 +14,7 @@ count = 0
 byte = 0
 while byte != 10 && (deadline - ticks_ms) > 0
   if uart.bytes_available > 0
-    byte = uart.read_byte
+    byte = uart.getbyte
     count += 1
   else
     sleep_ms(10)

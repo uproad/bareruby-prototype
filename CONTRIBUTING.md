@@ -188,14 +188,14 @@ of its own, asked for by that same key.
 
 Five cases the six installed classes cover between them:
 
-- **A block can be declared.** `GPIO#on_interrupt` takes a zero-argument block and turns
+- **A block can be declared.** `GPIO#irq` takes a zero-argument block and turns
   it into a function running in the realtime context. The handler, the context and the
   checks over it are the language's and stay here; what the gem declares is only that this
   method's block becomes one. One kind of block is declarable, because one kind exists.
 
   ```ruby
-  on_interrupt: { function: :bareruby_gpio_on_interrupt, parameter_types: %i[Int32],
-                  keywords: { edge: 0 }, block: :realtime_handler }
+  irq: { function: :bareruby_gpio_irq, parameter_types: %i[Int32],
+         block: :realtime_handler }
   ```
 
 - **A call that answers a variable-length string is handed somewhere to put it.** The
