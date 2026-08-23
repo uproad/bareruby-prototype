@@ -1396,6 +1396,20 @@ is what the check is for:
   seconds and at 10. Both match the host exactly up to that line. Exceptions on STM32
   had never been observed running before either.
 
-Neither is diagnosed yet, and `samples/peripheral_answers.rb` turned out not to build
-for STM32 at all — the binding carries no PWM unit — which the sample list now says
-out loud.
+The first finding is diagnosed, and the diagnosis has figures. The compiler spells an
+Int64 as `%lld` in two places — the interpolation formats of pass 5's `printf_format`,
+and `bareruby_puts_int64` in the generated runtime — and the STM32 build links
+`-specs=nano.specs`, whose printf does not carry the `ll` length modifier: it stops at
+`%l` and the remaining `ld` comes out as text. Linking the full newlib instead — what
+STM32CubeIDE's "Standard C" runtime setting does; newlib-nano has no pull-in symbol for
+`ll` the way `-u _printf_float` pulls in float — was measured to fix the line under
+emulation, and to cost `text` 13,660 → 39,160 B and `data` 104 → 1,732 B on
+`samples/features.rb` alone. The direction chosen instead, **not yet implemented**: format
+64-bit integers in the runtime the way Fixed and Bool already are — `%s` and a to_s
+helper through the same `TO_S_FUNCTIONS` route — which is a few hundred bytes, and
+reaches every binding at once: avr-libc's printf does not carry `ll` either, so the
+mega2560 line-for-line claim above deserves a hardware re-check on exactly this line.
+
+The exception stop is not diagnosed yet. And `samples/peripheral_answers.rb` turned out
+not to build for STM32 at all — the binding carries no PWM unit — which the sample list
+now says out loud.
