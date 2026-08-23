@@ -432,12 +432,11 @@ gitignored, because which machines are at this desk is true of the desk.
    hardware-flashed".
 
 Before either of those sits one that needs nothing installed at all:
-`./checks/simulate.sh` runs every sample [`checks/simulate.yml`](checks/simulate.yml)
-lists under the simulator — the host build interpreted here, with a board made of Ruby
-objects behind its peripheral calls — and diffs what it printed against the same program
-run natively. About three and a half minutes for all 39. A simulated pass says the program
-and the host agree and that the board saw what the program meant; it is not a hardware
-run either, and is written up as "simulated".
+`./checks/host.sh` runs every sample [`checks/host.yml`](checks/host.yml) lists on the
+hosted entry twice — interpreted, with this machine's peripherals behind the calls, and
+executed natively — and diffs what each printed. About three and a half minutes for all
+39. An interpreted pass says the two runs agree and that the peripherals saw what the
+program meant; it is not a hardware run either, and is written up as "interpreted".
 
 Between step 5 and step 7 sits a check no hardware is needed for: `./checks/emulate.sh`
 runs every sample [`checks/emulate.yml`](checks/emulate.yml) lists on every STM32 entry

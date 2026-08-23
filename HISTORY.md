@@ -1486,8 +1486,8 @@ one generated file is spelled `..._onboard_led_host.cpp` where it read `..._host
 — but the entry now says what is actually there.
 
 **All 39 samples say under the simulator exactly what they say natively.**
-`./checks/simulate.sh` holds that as a standing check — every sample
-[`checks/simulate.yml`](checks/simulate.yml) lists, its printed output against the native
+`./checks/host.sh` holds that as a standing check — every sample
+[`checks/host.yml`](checks/host.yml) lists, its printed output against the native
 run as the oracle — and it needs no board, no emulator installed and no device modelled.
 The whole list runs in **3 min 30 s** and interprets **10.2 million instructions** over
 it, from 13 for a library that only defines things to 3,000,000 for a loop that never

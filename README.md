@@ -546,8 +546,8 @@ emulate: .bareruby/emulate/host/stdout.txt holds that, ready for a diff.
 ```
 
 What the program printed goes to `stdout.txt` and what its serial ports sent goes to
-`uart.txt`. `./checks/simulate.sh` runs every sample that way and diffs the first against
-the native run. The board itself — pins, ports, duty cycles, the on-board LED — is read
+`uart.txt`. `./checks/host.sh` runs every sample both ways and diffs the first against
+the executed run. The board itself — pins, ports, duty cycles, the on-board LED — is read
 through the gem's own [`API.md`](gems/bareruby_prot-simulator/API.md), which is what a
 display or a check reaches for.
 

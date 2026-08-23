@@ -1,26 +1,25 @@
-# Which samples a simulated run verifies. ./checks/simulate.sh reads this file: every
-# sample below is built for the host entry, run under the simulator with
-# `bareruby emulate --target=<host>`, and what it printed compared line for line against
-# the same program run natively on this desk. The native run is the oracle, so no
-# expected output is stored here to go stale.
+# Which samples the hosted entry is checked with. ./checks/host.sh reads this file: every
+# sample below is built for that entry, run interpreted with `bareruby emulate`, and what
+# it printed compared line for line against the same program run natively on this desk.
+# The native run is the oracle, so no expected output is stored here to go stale.
 #
 #   sample:  the program, from the repository root.
 #   for:     virtual seconds handed to --for=. 3 when unsaid.
 #   input:   a file of bytes the program receives, from the repository root — the same
-#            files the emulated check is fed from, handed to the simulated run through
-#            --input= and to the native one on stdin.
+#            files the emulated check is fed from, handed to the interpreted run through
+#            --input= and to the executed one on stdin.
 #
 # **Every sample is here**, which is the difference between this list and the emulated
-# one beside it. A simulated run needs no board modelled and no device on a bus: every
-# peripheral is an object, and what one answers is what this side put in it. Input arrives
-# the same way on both lists — `--input=` and the files under `checks/input/`. The
-# programs that loop forever are here too: they end when the virtual time runs out,
-# because an instruction costs virtual time.
+# one beside it. This machine needs no modelling and has no device on a bus: every
+# peripheral it carries is an object, and what one answers is what this side put in it.
+# Input arrives the same way on both lists — `--input=` and the files under
+# `checks/input/`. The programs that loop forever are here too: they end when the virtual
+# time runs out, because an instruction costs virtual time.
 #
 # What this cannot check is the half that is not printed. A program that only writes pins
 # says nothing either way, so `blink` passing means the two runs agree about nothing
-# rather than about the LED. Reading a board back is what the simulator is for, and a
-# check that does it is a harness step of its own.
+# rather than about the LED. Reading the machine back is what its peripherals are there
+# for, and a check that does it is a harness step of its own.
 
 checks:
   - sample: samples/adc.rb
