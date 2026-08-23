@@ -1479,3 +1479,12 @@ check does not need to write a user's configuration directory. This is an emulat
 peripheral check, not a hardware-flashed one: it says nothing about voltage, waveform,
 baud-rate tolerance, or another board's clock and UART instance. Those need their own
 board-specific answers rather than inheriting the F446 figures.
+
+The same check now also holds the default 256-slot RX ring at its boundaries. Its usable
+capacity is 255 bytes: 254 and 255 bytes are retained in order, while inputs of 256 and
+512 bytes leave the first 255 intact and drop everything later. A staged run fills an
+eight-slot ring, consumes four bytes, then proves four newly arrived bytes occupy the
+freed slots. A separate 300-byte run feeds three groups slowly enough to avoid overflow
+and proves the read and write indices can cross the end of the array without changing
+order. `checks/stm32/uart/check.sh f446` passed all 13/13 checks in 134 seconds under
+Renode; it was built but not hardware-flashed.
