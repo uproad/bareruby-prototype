@@ -1,0 +1,14 @@
+checks:
+  - name: rx_order
+    input: input/rx_order.bin
+  - name: peek
+    input: input/peek.bin
+  - name: gets_terminator
+    input: input/gets_terminator.bin
+  - name: rx_overflow
+    input: input/rx_overflow.bin
+  - name: rx_interrupt
+    input: input/rx_interrupt.bin
+  - name: tx_bytes
+  - name: frame
+    observe: observe/frame.resc
