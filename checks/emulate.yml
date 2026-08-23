@@ -1,0 +1,53 @@
+# Which samples an emulated run verifies. ./checks/emulate.sh reads this file: every
+# sample below is built for the host entry and for every stm32cube entry
+# config/target.yml records, run under Renode with `bareruby emulate`, and its UART
+# compared line for line against the same program run on the host. The host build is
+# the oracle, so no expected output is stored here to go stale.
+#
+#   sample:  the program, from the repository root.
+#   for:     virtual seconds handed to --for=. 3 when unsaid, which outlasts every
+#            sample below.
+#
+# What is NOT here is as deliberate as what is. This check's first run found three of
+# today's entries failing — features.rb printing `big=ld` for a 64-bit integer, m25.rb
+# and arena.rb stopping dead at their first raise — and both findings were fixed for it:
+# 64-bit integers now cross printf as strings, and the STM32 link carries the full
+# libstdc++'s unwind tables. HISTORY.md holds the diagnoses and the figures.
+#
+# The absences wait on the harness or on the binding rather than on a fix:
+#
+#   - uart_receive, uart_one_queue, uart_line_ending, logger: wait for input — feeding
+#     the emulated UART RX is the next harness step (uart_line_ending also needs the
+#     raw capture: uart.txt is LF-normalized and line endings are what it tests).
+#   - blink, heartbeat, servo, asleep, gpio_pico_loop, tenji, tenji_int, avs, adc:
+#     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
+#     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
+#   - i2c, picoruby_interface: read I2C with no device behind it; the host stub
+#     answers, the emulated bus does not. Needs an I2C device model.
+#   - uart_format: the emulated run says "7E1 ready" and the host says nothing — the
+#     two bindings disagree about 7E1, which is a question for the bindings, not for
+#     this list.
+#   - uart_flow_control: flow control is refused on STM32 by design, so host and
+#     board are meant to disagree.
+#   - peripheral_answers: does not build for STM32 — the binding carries no PWM unit.
+#   - interrupt: produces no output and needs a GPIO edge.
+#   - require_helper, require_lib: libraries require.rb carries, not programs.
+
+checks:
+  - sample: samples/arena.rb
+  - sample: samples/array.rb
+  - sample: samples/block_parameters.rb
+  - sample: samples/definite_assignment.rb
+  - sample: samples/features.rb
+  - sample: samples/fixed.rb
+  - sample: samples/implicit_return.rb
+  - sample: samples/m25.rb
+  - sample: samples/nilable.rb
+  - sample: samples/object.rb
+  - sample: samples/peripheral_ruby.rb
+  - sample: samples/require.rb
+  - sample: samples/sleep_interrupt.rb
+  - sample: samples/string.rb
+  - sample: samples/uart_buffered.rb
+  - sample: samples/uart_rx_buffer.rb
+  - sample: samples/uart_rx_receive.rb

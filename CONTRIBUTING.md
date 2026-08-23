@@ -423,6 +423,13 @@ gitignored, because which machines are at this desk is true of the desk.
    **never write "verified" for something that was only built** — say "built but not
    hardware-flashed".
 
+Between step 5 and step 7 sits a check no hardware is needed for: `./checks/emulate.sh`
+runs every sample [`checks/emulate.yml`](checks/emulate.yml) lists on every STM32 entry
+the record holds, under Renode, and compares the UART line for line against the same
+program run on the host. Roughly nine minutes for three boards. The YAML says what is
+covered and why each absence is deliberate; an emulated pass is still not a hardware
+run, and is written up as "emulated", never "verified".
+
 ## Recording it
 
 The value of this repository is the record of what ran and what it cost, so a change that

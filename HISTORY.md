@@ -1379,3 +1379,70 @@ no device behind it and was not exercised; UART receive samples, which take inpu
 not fed; and the LED wiring in the generated machine is asserted by nothing yet — the
 verb reads the UART and only that. An emulated pass is evidence the logic and the
 toolchain agree with the host, never that a board would.
+
+`./checks/emulate.sh` holds that comparison as a standing check: every sample
+[`checks/emulate.yml`](checks/emulate.yml) lists, on every STM32 entry the record holds,
+against the host build as the oracle. **17 samples agree line for line on all three
+boards** — the language samples that terminate with output, and the UART configuration
+samples among them — in 8 m 32 s for the 51 runs, sequentially. The YAML records why
+each of the other 21 samples is absent, and its first run produced two findings — both
+diagnosed and fixed below, with the three samples they had kept out now on the list —
+which is what the check is for:
+
+- **`samples/features.rb` prints `big=ld` on STM32 where the host prints
+  `big=3000000000`** — a 64-bit integer reaching a printf without its length modifier
+  surviving. First observed here; no hardware run had ever printed that line.
+- **`samples/m25.rb` and `samples/arena.rb` stop at their first `raise` and never print
+  "rescued"** — begin/rescue does not come back on the emulated Cortex-M, at 3 virtual
+  seconds and at 10. Both match the host exactly up to that line. Exceptions on STM32
+  had never been observed running before either.
+
+The first finding is diagnosed, and the diagnosis has figures. The compiler spells an
+Int64 as `%lld` in two places — the interpolation formats of pass 5's `printf_format`,
+and `bareruby_puts_int64` in the generated runtime — and the STM32 build links
+`-specs=nano.specs`, whose printf does not carry the `ll` length modifier: it stops at
+`%l` and the remaining `ld` comes out as text. Linking the full newlib instead — what
+STM32CubeIDE's "Standard C" runtime setting does; newlib-nano has no pull-in symbol for
+`ll` the way `-u _printf_float` pulls in float — was measured to fix the line under
+emulation, and to cost `text` 13,660 → 39,160 B and `data` 104 → 1,732 B on
+`samples/features.rb` alone. The fix took the other direction: 64-bit integers are
+now rendered by the runtime the way Fixed and Bool already were — `%s` and
+`bareruby_int64_to_s` through the same `TO_S_FUNCTIONS` route — which costs 176 B of
+`text` on the F446 (13,660 → 13,836 B on `samples/features.rb`) against the full
+newlib's 25.5 KB, and reaches every binding at once: avr-libc's printf does not carry
+`ll` either, so the mega2560 line-for-line claim above deserves a hardware re-check on
+exactly this line, which is now expected to pass.
+
+The exception stop is diagnosed too, and the diagnosis closes the door it appears to
+close: **begin/rescue cannot work at all under `-specs=nano.specs`, on hardware exactly
+as under emulation.** Renode's function trace showed the raise reaching
+`_Unwind_RaiseException`, performing one search of the EXIDX table, and returning —
+which is `__cxa_throw`'s failure path, ending in `std::terminate`, `abort`, and the
+`_exit` loop the parked PC was found in. The search fails because nano.specs links
+`libstdc++_nano`, whose exception-handling objects carry **no `.ARM.exidx` sections at
+all** — `eh_throw.o` holds 0 against the full `libstdc++.a`'s 4 — so the unwinder,
+looking up the PC inside `__cxa_throw` itself, lands on the nearest earlier entry,
+`Reset_Handler [cantunwind]`, and gives up before any frame is unwound. The generated
+code, the linker script and the unwinder are all blameless; the table they consult is
+simply missing its middle.
+
+Measured on `samples/m25.rb` for the F446, with the emulated run against the host as
+the judge:
+
+| link | `text` | outcome |
+| --- | --- | --- |
+| `nano.specs` (before) | 20,796 B | stops at the first raise |
+| no `nano.specs` | 86,288 B | runs, matches the host line for line |
+| `nano.specs` + `-l:libstdc++.a` | 53,432 B | runs, matches the host line for line |
+
+The third row is the interesting one: the exact-filename spelling slips past the specs'
+`-lstdc++` → `-lstdc++_nano` rewrite, so newlib stays nano and only the C++ runtime
+grows. That is what the STM32 link now carries, unconditionally, because a program that
+never raises links not one byte of it — `samples/features.rb` measured byte-identical
+with the flag and without. `samples/arena.rb` was the same finding, as expected: it now
+runs and matches the host at 55,272 B of `text`. The raise-to-rescue cost this makes
+visible, roughly 32.6 KB on the F446, sits beside the figures
+[what exceptions cost](#what-exceptions-cost) already keeps.
+
+And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
+binding carries no PWM unit — which the sample list now says out loud.

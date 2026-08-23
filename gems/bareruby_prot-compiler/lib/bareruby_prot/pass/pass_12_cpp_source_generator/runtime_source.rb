@@ -74,6 +74,7 @@ module BareRubyProt
       void bareruby_puts_fixed(int32_t value);
       const char *bareruby_bool_to_s(bool value);
       const char *bareruby_fixed_to_s(int32_t value);
+      const char *bareruby_int64_to_s(int64_t value);
       int32_t bareruby_int32_to_fixed(int32_t value);
       int32_t bareruby_fixed_to_i32(int32_t value);
       int32_t bareruby_fixed_mul(int32_t left, int32_t right);
@@ -451,8 +452,26 @@ module BareRubyProt
           printf("%ld\\n", (long)value);
       }
 
+      /* Decimal digits written here rather than asked of printf: the smallest printf a
+         machine ships with — newlib-nano's, avr-libc's — reads no ll length modifier,
+         so a 64-bit integer crosses as a string or it crosses wrong. */
+      const char *bareruby_int64_to_s(int64_t value) {
+          static char buffer[21];
+          char *cursor = buffer + sizeof(buffer) - 1;
+          *cursor = '\\0';
+          uint64_t magnitude = value < 0 ? -(uint64_t)value : (uint64_t)value;
+          do {
+              *--cursor = (char)('0' + (magnitude % 10u));
+              magnitude /= 10u;
+          } while (magnitude != 0);
+          if (value < 0) {
+              *--cursor = '-';
+          }
+          return cursor;
+      }
+
       void bareruby_puts_int64(int64_t value) {
-          printf("%lld\\n", (long long)value);
+          printf("%s\\n", bareruby_int64_to_s(value));
       }
 
       void bareruby_puts_string(const char *value) {
