@@ -1488,3 +1488,14 @@ freed slots. A separate 300-byte run feeds three groups slowly enough to avoid o
 and proves the read and write indices can cross the end of the array without changing
 order. `checks/stm32/uart/check.sh f446` passed all 13/13 checks in 134 seconds under
 Renode; it was built but not hardware-flashed.
+
+Eight more checks now cover the UART API around that ring. They prove that clearing RX
+does not prevent later reception, `read(3)` consumes exactly three of five bytes, empty
+reads return the documented sentinels, and a CRLF line ending reaches the raw TX stream
+as `4F 4B 0D 0A`. They also read USART2 after both a complete and a baud-only `setmode`:
+9600 7E1 produces BRR `0x00001117` and CR1 `0x0000240C`, while changing only baud from
+115200 8N1 produces the same BRR and keeps CR1 at `0x0000200C`. Finally, `write("ABC")`
+returns three and three interrupt-fed bytes reach the handler in order. The handler's
+call count remains deliberately unspecified; only its observed bytes are held fixed.
+The complete `checks/stm32/uart/check.sh f446` run passed 21/21 in 243 seconds under
+Renode. It was built but not hardware-flashed.
