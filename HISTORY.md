@@ -1382,11 +1382,12 @@ toolchain agree with the host, never that a board would.
 
 `./checks/emulate.sh` holds that comparison as a standing check: every sample
 [`checks/emulate.yml`](checks/emulate.yml) lists, on every STM32 entry the record holds,
-against the host build as the oracle. **14 samples agree line for line on all three
+against the host build as the oracle. **17 samples agree line for line on all three
 boards** — the language samples that terminate with output, and the UART configuration
-samples among them — in 8 m 25 s for the 42 runs, sequentially. The YAML records why
-each of the other 24 samples is absent, and its first run produced two findings, which
-is what the check is for:
+samples among them — in 8 m 32 s for the 51 runs, sequentially. The YAML records why
+each of the other 21 samples is absent, and its first run produced two findings — both
+diagnosed and fixed below, with the three samples they had kept out now on the list —
+which is what the check is for:
 
 - **`samples/features.rb` prints `big=ld` on STM32 where the host prints
   `big=3000000000`** — a 64-bit integer reaching a printf without its length modifier
@@ -1404,11 +1405,13 @@ and `bareruby_puts_int64` in the generated runtime — and the STM32 build links
 STM32CubeIDE's "Standard C" runtime setting does; newlib-nano has no pull-in symbol for
 `ll` the way `-u _printf_float` pulls in float — was measured to fix the line under
 emulation, and to cost `text` 13,660 → 39,160 B and `data` 104 → 1,732 B on
-`samples/features.rb` alone. The direction chosen instead, **not yet implemented**: format
-64-bit integers in the runtime the way Fixed and Bool already are — `%s` and a to_s
-helper through the same `TO_S_FUNCTIONS` route — which is a few hundred bytes, and
-reaches every binding at once: avr-libc's printf does not carry `ll` either, so the
-mega2560 line-for-line claim above deserves a hardware re-check on exactly this line.
+`samples/features.rb` alone. The fix took the other direction: 64-bit integers are
+now rendered by the runtime the way Fixed and Bool already were — `%s` and
+`bareruby_int64_to_s` through the same `TO_S_FUNCTIONS` route — which costs 176 B of
+`text` on the F446 (13,660 → 13,836 B on `samples/features.rb`) against the full
+newlib's 25.5 KB, and reaches every binding at once: avr-libc's printf does not carry
+`ll` either, so the mega2560 line-for-line claim above deserves a hardware re-check on
+exactly this line, which is now expected to pass.
 
 The exception stop is diagnosed too, and the diagnosis closes the door it appears to
 close: **begin/rescue cannot work at all under `-specs=nano.specs`, on hardware exactly
@@ -1428,16 +1431,18 @@ the judge:
 
 | link | `text` | outcome |
 | --- | --- | --- |
-| `nano.specs` (today) | 20,796 B | stops at the first raise |
+| `nano.specs` (before) | 20,796 B | stops at the first raise |
 | no `nano.specs` | 86,288 B | runs, matches the host line for line |
 | `nano.specs` + `-l:libstdc++.a` | 53,432 B | runs, matches the host line for line |
 
 The third row is the interesting one: the exact-filename spelling slips past the specs'
 `-lstdc++` → `-lstdc++_nano` rewrite, so newlib stays nano and only the C++ runtime
-grows. The direction, **not yet implemented**: an exceptions-enabled STM32 build links
-the full `libstdc++` that way, and `--no-exceptions` keeps nano whole — which would put
-the cost where [what exceptions cost](#what-exceptions-cost) already keeps such
-figures. `samples/arena.rb` stops the same way and is expected to be the same finding.
+grows. That is what the STM32 link now carries, unconditionally, because a program that
+never raises links not one byte of it — `samples/features.rb` measured byte-identical
+with the flag and without. `samples/arena.rb` was the same finding, as expected: it now
+runs and matches the host at 55,272 B of `text`. The raise-to-rescue cost this makes
+visible, roughly 32.6 KB on the F446, sits beside the figures
+[what exceptions cost](#what-exceptions-cost) already keeps.
 
 And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
 binding carries no PWM unit — which the sample list now says out loud.
