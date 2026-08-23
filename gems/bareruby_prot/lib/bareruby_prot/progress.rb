@@ -39,7 +39,7 @@ module BareRubyProt
     TICK = 0.1
     KILOBYTE = 1024
     LABELS = { tools: "TOOLS", find: "FIND", compile: "COMPILE", build: "BUILD",
-               flash: "FLASH", attach: "ATTACH" }.freeze
+               flash: "FLASH", attach: "ATTACH", emulate: "EMULATE" }.freeze
 
     # The stages are given rather than fixed, because the verbs stack: what deploy does is
     # what build does and then what flash does, and a table that showed a column for a

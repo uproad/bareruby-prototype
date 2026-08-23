@@ -68,6 +68,18 @@ plan() {
           puts ["archive", name, tool["directory"], url, archive["sha256"]].join("\t")
         end
 
+        # The emulator is wanted only by `bareruby emulate`, so a platform it is not
+        # pinned for is a note rather than a stop: every build input still arrives.
+        (lock["emulate"] || {}).each do |name, tool|
+          archive = tool.dig("archives", platform)
+          unless archive
+            warn "bareruby: #{name} is not pinned for #{platform}; `bareruby emulate` stays uninstalled"
+            next
+          end
+          url = "https://github.com/#{tool["github"]}/releases/download/#{tool["release"]}/#{archive["file"]}"
+          puts ["archive", name, tool["directory"], url, archive["sha256"]].join("\t")
+        end
+
         families.each do |family|
           entry = lock["families"][family] or
             abort "bareruby: the lock pins no family called #{family.inspect}"
@@ -180,4 +192,8 @@ GCC_HOME=$("$RUBY" -ryaml -e 'puts YAML.safe_load_file(ARGV[0]).dig("common", "a
 "$TOOLS/$GCC_HOME/bin/arm-none-eabi-gcc" --version | head -1
 OPENOCD_HOME=$("$RUBY" -ryaml -e 'puts YAML.safe_load_file(ARGV[0]).dig("common", "openocd", "directory")' "$LOCK")
 "$TOOLS/$OPENOCD_HOME/bin/openocd" --version 2>&1 | head -1
+RENODE_HOME=$("$RUBY" -ryaml -e 'puts YAML.safe_load_file(ARGV[0]).dig("emulate", "renode", "directory").to_s' "$LOCK")
+if [ -n "$RENODE_HOME" ] && [ -x "$TOOLS/$RENODE_HOME/renode" ]; then
+    "$TOOLS/$RENODE_HOME/renode" --version 2>/dev/null | head -1
+fi
 echo "bareruby: installed under $TOOLS"

@@ -32,7 +32,7 @@ module BareRubyProt
     # record, and `target attach` reads an entry of it and writes what that entry's build
     # left — so all three belong to one, and the verb is not enough to answer for any of
     # them on its own.
-    ROOTED = ["compile", "build", "flash", "deploy", "init",
+    ROOTED = ["compile", "build", "flash", "deploy", "emulate", "init",
               "target add", "target attach", "target list", "tools install"].freeze
 
     # **What a run can see is what this project's bundle holds.** A gem installed at the
