@@ -12,3 +12,16 @@ checks:
   - name: tx_bytes
   - name: frame
     observe: observe/frame.resc
+  - name: rx_default_254
+    input_bytes: 254
+  - name: rx_default_255
+    input_bytes: 255
+  - name: rx_default_256
+    input_bytes: 256
+  - name: rx_default_512
+    input_bytes: 512
+  - name: rx_resume_after_full
+    feed: feed/rx_resume_after_full.resc
+  - name: rx_wraparound
+    input_bytes: 300
+    chunk_size: 100

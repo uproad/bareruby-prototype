@@ -18,10 +18,22 @@ checks/stm32/uart/check.sh f446
 | `rx_interrupt` | RX raises the registered notification and the handler reads the byte |
 | `tx_bytes` | `write` and `puts` put the exact expected bytes on TX |
 | `frame` | 9600 7E1 reaches USART2's BRR, CR1, CR2 and CR3 |
+| `rx_default_254` | the default ring keeps 254 bytes in order |
+| `rx_default_255` | all 255 usable slots of the default ring hold data |
+| `rx_default_256` | the 256th byte is dropped without changing the first 255 |
+| `rx_default_512` | a large overflow still leaves the first 255 bytes intact |
+| `rx_resume_after_full` | freed slots receive new bytes after an overflow |
+| `rx_wraparound` | 300 consumed bytes stay ordered across the ring boundary |
 
 Results are kept under `.bareruby/checks/stm32/uart/<check>/`. `uart.txt` is the raw
 answer used by every check. `frame/registers.txt` is the four register reads. A failed
 comparison leaves its `.diff`; a passing comparison removes it.
+
+The four default-capacity checks generate their input from one repeating byte pattern.
+The resume check feeds two groups at different virtual times, so the first fills the
+ring before the program frees slots and the second proves those slots can be reused.
+The wrap check feeds three 100-byte groups with time to consume between them, separating
+index wraparound from overflow.
 
 The register expectation belongs specifically to the NUCLEO-F446RE clock and USART2
 wiring. Another STM32 board gets its own expected register answer rather than inheriting
