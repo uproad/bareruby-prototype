@@ -140,6 +140,16 @@ bin/bareruby emulate --target=f446
 diff .bareruby/emulate/f446/uart.txt expected.txt  # 差分なし = 一致
 ```
 
+UART から読むプログラム（`uart.gets` など）には `--input=ファイル` で入力を
+与えます。ファイルのバイト列が実行開始前に UART の受信側に積まれるので、
+ホスト側で同じファイルを stdin に流した場合（`< ファイル`）と同じ条件になります:
+
+```sh
+bin/bareruby emulate --target=f446 --input=input.txt
+./build/host/bareruby_program < input.txt > expected.txt
+diff .bareruby/emulate/f446/uart.txt expected.txt
+```
+
 注意点は 2 つ。エミュレーションはロジックと出力の確認であって実機の証明では
 ありません（クロックは設定済みとして扱われ、I2C の先にデバイスはいません）。
 また Renode の Linux x64 ビルドだけがピン留めされているので、それ以外の環境では

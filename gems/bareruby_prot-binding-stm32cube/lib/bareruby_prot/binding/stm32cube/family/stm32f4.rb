@@ -194,6 +194,19 @@ module BareRubyProt
               #{pin.index} -> led@0
         REPL
       end
+
+      # Where the family's UARTs sit on the bus — the reference manual's memory map,
+      # which no board changes.
+      UART_BASES = {
+        "USART1" => 0x40011000, "USART2" => 0x40004400, "USART3" => 0x40004800,
+        "UART4" => 0x40004C00, "UART5" => 0x40005000, "USART6" => 0x40011400
+      }.freeze
+
+      # CR1 with UE and RE set: the receiver listening and nothing else decided.
+      # Emulation writes it before the first instruction, because Renode's model drops
+      # what arrives while the receiver is off — the firmware's own init then configures
+      # the port over this without touching what already queued.
+      def self.uart_receiver_on(instance) = [UART_BASES.fetch(instance) + 0x0C, 0x2004]
     end
 
     # The families this gem carries, by the key a device manifest names. F0 and F7 are

@@ -76,6 +76,9 @@ module BareRubyProt
                             written at the same time too.
         --for=SECONDS       emulate: how much virtual time to run before stopping — the
                             firmware itself never returns. 3 when nothing is said.
+        --input=FILE        emulate: bytes the firmware receives on its stdout UART,
+                            waiting before the first instruction — what a host program
+                            finds when its stdin is a pipe.
     USAGE
 
     def self.run(arguments) = new(arguments).run
@@ -91,6 +94,8 @@ module BareRubyProt
       @arguments -= @jobs_options
       @for_options = @arguments.grep(/\A#{FOR_PREFIX}/)
       @arguments -= @for_options
+      @input_options = @arguments.grep(/\A#{INPUT_PREFIX}/)
+      @arguments -= @input_options
     end
 
     # The table is finished here rather than by the command that drew it, because deploy is
@@ -452,6 +457,12 @@ module BareRubyProt
       planned = entries
       return nothing if planned.empty?
 
+      fed = emulated_input
+      if fed && !File.readable?(fed)
+        warn "bareruby: #{fed} is not a readable file, so there is nothing to feed."
+        return 1
+      end
+
       showing(planned, %i[tools compile build emulate])
       status = build
       return status unless status.zero?
@@ -468,7 +479,8 @@ module BareRubyProt
       @progress.at(:emulate, [entry]) do
         if offered.respond_to?(:emulate)
           offered.emulate.run(flash_directory_of(entry), into: emulate_directory_of(entry),
-                              seconds: emulated_for, options: entry.options)
+                              seconds: emulated_for, input: emulated_input,
+                              options: entry.options)
         else
           warn "#{entry.name}: #{offered.key} names no emulator — built, not emulated."
           true
@@ -483,6 +495,15 @@ module BareRubyProt
     def emulated_for
       found = @for_options.last
       found ? Integer(found.delete_prefix(FOR_PREFIX)) : 3
+    end
+
+    # What the firmware will be fed, named as a file so the same bytes can stand on the
+    # host program's stdin — the two runs this verb exists to compare.
+    INPUT_PREFIX = "--input="
+
+    def emulated_input
+      found = @input_options.last
+      found&.then { |option| File.expand_path(option.delete_prefix(INPUT_PREFIX)) }
     end
 
     EMULATIONS = File.expand_path(".bareruby/emulate", Dir.pwd)
