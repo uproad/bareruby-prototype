@@ -1533,7 +1533,9 @@ its bytes arrive intact, proved by reading them back. One-, two-, four- and sixt
 reads answer real data — the two-byte read is HAL's POS dance, the longer ones its BTF
 path. The `outputs` argument selects where a read starts. Integers, arrays, strings and
 an `Arena::String` assemble into one seven-byte transaction. All 256 byte values cross
-the write path — the sensor scores them against a rolling counter and answers `000`.
+the write path — the sensor scores them against a rolling counter and answers
+`000/256`, no mismatches out of every byte received, while the write returns sum to
+272.
 100 kHz reaches CR1 `0x00000001`, CR2 `0x0000002A`, CCR `0x000000D2` and TRISE
 `0x0000002B`; 400 kHz reaches CCR `0x00008023` and TRISE `0x0000000D` through the
 DeInit → Init path. An address beyond seven bits is refused before touching the bus.
