@@ -34,20 +34,22 @@ while IFS=$'\t' read -r sample seconds input; do
     name=$(basename "$sample" .rb)
     kept="$WORK/$name"
     mkdir -p "$kept"
-    printf '%b' "$input" > "$kept/input.txt"
     line=$(printf '%-34s' "$sample")
 
     # One invocation builds the host entry and runs what it built under the simulator.
-    # Its own account goes to a file and is pointed at only when something refused.
-    if ! ./bareruby emulate --target="$HOST" --for="$seconds" "$sample" \
-         <"$kept/input.txt" >"$kept/simulate.log" 2>&1; then
+    # Its own account goes to a file and is pointed at only when something refused. What
+    # the simulated run is fed through --input is what the native one reads on stdin —
+    # the same bytes on both sides of the diff.
+    if ! ./bareruby emulate --target="$HOST" --for="$seconds" \
+         ${input:+--input="$input"} "$sample" \
+         </dev/null >"$kept/simulate.log" 2>&1; then
         echo "$line  FAIL (the run refused; $kept/simulate.log)"
         failed=$((failed + 1))
         continue
     fi
     cp ".bareruby/emulate/$HOST/stdout.txt" "$kept/said.txt"
     cp ".bareruby/emulate/$HOST/uart.txt" "$kept/uart.txt"
-    timeout 10 "./build/$HOST/bareruby_program" <"$kept/input.txt" \
+    timeout 10 "./build/$HOST/bareruby_program" <"${input:-/dev/null}" \
         >"$kept/expected.txt" 2>/dev/null
 
     if diff "$kept/said.txt" "$kept/expected.txt" >"$kept/said.diff" 2>&1; then
@@ -60,8 +62,7 @@ while IFS=$'\t' read -r sample seconds input; do
     fi
 done < <("$RUBY" -ryaml -e '
   YAML.safe_load_file(ARGV[0])["checks"].each do |c|
-    puts [c.fetch("sample"), c.fetch("for", 3),
-          c.fetch("input", "").gsub("\n", "\\n")].join("\t")
+    puts [c.fetch("sample"), c.fetch("for", 3), c.fetch("input", "")].join("\t")
   end' checks/simulate.yml)
 
 echo "checks: $passed/$((passed + failed)) samples say on the simulator what they say here"

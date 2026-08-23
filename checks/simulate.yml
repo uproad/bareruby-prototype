@@ -6,14 +6,16 @@
 #
 #   sample:  the program, from the repository root.
 #   for:     virtual seconds handed to --for=. 3 when unsaid.
-#   input:   what to put on the wire — stdin, which is the serial port's receive line
-#            and what an I2C read answers with. \n is a newline.
+#   input:   a file of bytes the program receives, from the repository root — the same
+#            files the emulated check is fed from, handed to the simulated run through
+#            --input= and to the native one on stdin.
 #
 # **Every sample is here**, which is the difference between this list and the emulated
-# one beside it. A simulated run needs no board modelled, no device on a bus and no
-# harness to feed a UART: the peripherals are objects, and what they answer is what this
-# side put in them. The programs that loop forever are here too — they end when the
-# virtual time runs out, because an instruction costs virtual time.
+# one beside it. A simulated run needs no board modelled and no device on a bus: every
+# peripheral is an object, and what one answers is what this side put in it. Input arrives
+# the same way on both lists — `--input=` and the files under `checks/input/`. The
+# programs that loop forever are here too: they end when the virtual time runs out,
+# because an instruction costs virtual time.
 #
 # What this cannot check is the half that is not printed. A program that only writes pins
 # says nothing either way, so `blink` passing means the two runs agree about nothing
@@ -34,18 +36,17 @@ checks:
   - sample: samples/gpio_pico_loop.rb
   - sample: samples/heartbeat.rb
   - sample: samples/i2c.rb
-    input: "OK"
+    input: checks/input/i2c.txt
   - sample: samples/implicit_return.rb
   - sample: samples/interrupt.rb
   - sample: samples/logger.rb
-    input: "ABCD"
   - sample: samples/m25.rb
   - sample: samples/nilable.rb
   - sample: samples/object.rb
   - sample: samples/peripheral_answers.rb
   - sample: samples/peripheral_ruby.rb
   - sample: samples/picoruby_interface.rb
-    input: "OK"
+    input: checks/input/i2c.txt
   - sample: samples/require.rb
   - sample: samples/require_helper.rb
   - sample: samples/require_lib.rb
@@ -55,17 +56,13 @@ checks:
   - sample: samples/tenji.rb
   - sample: samples/tenji_int.rb
   - sample: samples/uart_buffered.rb
-    input: "ABCDhello UART\n"
   - sample: samples/uart_flow_control.rb
   - sample: samples/uart_format.rb
   - sample: samples/uart_line_ending.rb
-    input: "ABCDhello UART\n"
   - sample: samples/uart_one_queue.rb
-    input: "ABCDhello UART\n"
+    input: checks/input/uart_one_queue.txt
   - sample: samples/uart_receive.rb
-    input: "ABCDhello UART\n"
+    input: checks/input/uart_receive.txt
   - sample: samples/uart_rx_buffer.rb
-    input: "ABCDhello UART\n"
   - sample: samples/uart_rx_receive.rb
-    input: "ABCDhello UART\n"
   - sample: ref.rb

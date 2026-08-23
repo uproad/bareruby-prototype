@@ -24,15 +24,26 @@ module BareRubyProt
 
     SENT = "uart.txt"
 
-    def self.run(directory, into:, seconds:, options: {})
+    def self.run(directory, into:, seconds:, input: nil, options: {})
       return absent unless simulator?
 
       FileUtils.rm_rf(into)
       FileUtils.mkdir_p(into)
       said = StringIO.new(+"".b, "wb")
-      run = Simulator.run(File.join(directory, ARTIFACT), seconds: seconds, out: said,
-                                                          input: $stdin)
-      heard(into, said.string, run.board)
+      receiving(input) do |wire|
+        run = Simulator.run(File.join(directory, ARTIFACT), seconds: seconds, out: said,
+                                                            input: wire)
+        heard(into, said.string, run.board)
+      end
+    end
+
+    # What the ports receive on. A file named on the command line is the same wire an
+    # emulated board is fed through, so the two runs read the same bytes; with nothing
+    # named it is this terminal's own input, which is what the native build reads.
+    def self.receiving(input)
+      return yield($stdin) unless input
+
+      File.open(input, "rb") { |file| yield(file) }
     end
 
     # Two things were said and they are not the same thing, so they are labelled. What
