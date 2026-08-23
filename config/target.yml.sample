@@ -29,7 +29,7 @@
 # yet, and saying one names nothing prints the ones that do.
 #
 #   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re,
-#                                 mega2560, none
+#                                 mega2560, host (the machine doing the compiling)
 #   binding:  what it is called through.  host, pico_sdk, stm32cube, arduino
 #   triple:   which instruction set, and what lies under it.
 #               thumbv6m-none-eabi           RP2040
@@ -71,7 +71,7 @@ targets:
   # project written by `new` arrives with this entry and nothing else, so that it builds
   # before a board is attached; this checkout writes its own, so here it is written out.
   - name: host
-    machine: none
+    machine: host
     binding: host
     triple: x86_64-pc-linux
 

@@ -38,6 +38,6 @@
 # true of one desk. They live together until a second desk needs them not to.
 targets:
   - name: host
-    machine: none
+    machine: host
     binding: host
     triple: __TRIPLE__

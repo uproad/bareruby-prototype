@@ -541,9 +541,10 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_host.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_host.cpp"
 
-    # A machine with no indicator to reach answers all the same, so that whether a
-    # board has one never decides whether a program compiles.
-    ONBOARD_LED_NONE = <<~CPP
+    # The indicator this machine carries. Executed, the call traces itself; interpreted,
+    # it reaches the indicator the simulator holds. Either way the program says the same
+    # thing to it, which is the whole point of the class.
+    ONBOARD_LED = <<~CPP
       #include "bareruby_binding.h"
 
       #include <stdio.h>
@@ -567,7 +568,7 @@ module BareRubyProt
       }
     CPP
 
-    ONBOARD_LED_NONE_FILE = "bareruby_binding_onboard_led_host_none.cpp"
+    ONBOARD_LED_FILE = "bareruby_binding_onboard_led_host.cpp"
 
     FILES = {
       GPIO_FILE => GPIO,
@@ -579,7 +580,7 @@ module BareRubyProt
       UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
-      ONBOARD_LED_NONE_FILE => ONBOARD_LED_NONE
+      ONBOARD_LED_FILE => ONBOARD_LED
     }.freeze
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
@@ -615,6 +616,11 @@ module BareRubyProt
     # line. One g++ invocation is what the manifest already says in full, so there is
     # nothing left for a toolchain here to add — and a toolchain is where a binding would
     # reach for the side of this that runs the second stage. This one never has to.
+
+    # **A board to run against, where there is no board.** The build already runs on the
+    # machine that made it, so what an emulator adds here is the peripherals: a run under
+    # the simulator answers a pin from a pin rather than from a stub that prints.
+    def self.emulate = HostEmulate
 
     def self.flash = HostFlash
 

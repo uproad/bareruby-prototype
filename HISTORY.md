@@ -1461,6 +1461,91 @@ visible, roughly 32.6 KB on the F446, sits beside the figures
 And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
 binding carries no PWM unit — which the sample list now says out loud.
 
+### The machine that compiles, and the peripherals it turned out to have
+
+`emulate` reaches one more target, and it is the one that never needed emulating: the
+machine doing the compiling. That build is native and runs by being executed. What it had
+nothing for was its peripherals — a write to a pin reached a stub that printed what it was
+asked and forgot it, a read answered zero because nothing was there to read, and a wait
+returned without any time having passed.
+
+`bareruby_prot-simulator` runs that same executable a different way. The ELF is loaded
+here, its instructions are interpreted here, and each of the 42 functions a binding
+implements is trapped at its own address and answered by a Ruby object. **Nothing else is
+replaced**: the language runtime, the inline C the standard classes ship with, and the
+program's own code all run as the instructions say — so what a program computes is still
+the program's answer, and only what it says to a peripheral lands somewhere else.
+
+**Writing this down changed what the target is called.** The hosted entry had been
+recorded as `machine: none` — no board, so no machine — and that had been true only for
+as long as a call had nowhere to arrive. It has somewhere now: the simulator holds pins,
+ports and an indicator, and it is the one machine this binding reaches. The record reads
+`machine: host`, the composition is `host` / `host` / `x86_64-pc-linux`, and
+`Machine::NONE` is gone. Nothing about a build changed with it —
+one generated file is spelled `..._onboard_led_host.cpp` where it read `..._host_none.cpp`
+— but the entry now says what is actually there.
+
+**All 39 samples say under the simulator exactly what they say natively.**
+`./checks/host.sh` holds that as a standing check — every sample
+[`checks/host.yml`](checks/host.yml) lists, its printed output against the native
+run as the oracle — and it needs no board, no emulator installed and no device modelled.
+The whole list runs in **3 min 30 s** and interprets **10.2 million instructions** over
+it, from 13 for a library that only defines things to 3,000,000 for a loop that never
+waits. About 306,000 instructions a second.
+
+The instruction set turned out to be the small part. A `g++` build with no optimization
+level, over C++ written in a "better C" style, is integer work, calls, and the occasional
+aligned sixteen-byte move of a struct: **70 mnemonics cover every sample**, no sample met
+an instruction the interpreter does not read, and there is not one floating-point
+operation in any of them. The whole thing is 2,564 lines of Ruby — 778 of them the
+interpreter, 288 the unwinder, 400 the board.
+
+**Three things this answers that an emulated board does not.** The absences
+[`checks/emulate.yml`](checks/emulate.yml) records are mostly a harness with nothing to
+reach with; here every peripheral is an object, so the caller reaches it directly. The
+receive side is **not** among them any more — `--input=` feeds an emulated UART, and a
+simulated run is fed through the same flag from the same files.
+
+- **I2C reads answer.** `samples/i2c.rb` and `samples/picoruby_interface.rb` are on the
+  list rather than waiting for a device model: what a bus answers is what was put in it.
+- **A pin can be moved.** `logger` and `interrupt` wait on a GPIO edge, which the emulated
+  list records as a later harness step. Here a wait is where the caller gets its turn, so
+  giving one is a line — which is what the paragraph below does.
+- **A program that loops forever ends.** An instruction costs one microsecond of virtual
+  time, so `gpio_pico_loop` and `avs` run out of the three virtual seconds they were given
+  at 3,000,000 and 2,585,025 instructions rather than running until somebody stops them.
+
+**Exceptions come back without a personality routine.** The frames are walked through the
+saved base pointers every `-O0` frame keeps, rather than rebuilt from the call frame
+information, so the only table that has to be read is the one saying where each frame
+would catch. `samples/m25.rb` and `samples/arena.rb` raise, rescue and match the host —
+the same two samples whose failure on the emulated Cortex-M this file records above.
+
+**And one disagreement worth keeping.** A pulled-up input reads *high* here, because that
+is what a pulled-up pin with nothing attached to it actually reads; the host stub answers
+zero for every pin. `samples/logger.rb` is where that shows: natively it reports a button
+held down from the first instant, and under the simulator it reports nothing, which is
+what a board with nothing on the pin would do. Pressing it is one line, because a wait is
+where anything outside the program gets its turn:
+
+```ruby
+run.start do |board|
+  board.change(14, 0) if board.clock.ticks_ms.between?(500, 1500)   # pressed
+  board.change(14, 1) if board.clock.ticks_ms > 1500                # let go
+end
+```
+
+which says `logger ready` and then `pressed: 1` through `pressed: 11` — eleven polls in
+the second the pin was down — and leaves `gpio(14).changes` at 2.
+
+What it deliberately does not do: it reads no build with an optimization level, because
+the frame walk needs the frame pointers; every receive queue holds 256 bytes rather than
+the depth a program asked the build for; a throw is never asked what type it is, because
+every `catch` this compiler emits is a catch-all; and no device model sits behind any
+peripheral — a pin reads what it was last set to, and a bus answers what it was told to.
+A simulated pass is evidence the program and the host agree, and that the board saw what
+the program meant; never that hardware would.
+
 ## The STM32 UART binding has its own fixed-answer check
 
 The language-wide emulation check asks whether STM32 agrees with the host binding. The

@@ -6,7 +6,9 @@
 #     ./checks/emulate.sh          # from anywhere; it stands itself in the repo root
 #
 # The targets are read from config/target.yml, exactly as every verb reads them: the
-# one host entry is the oracle, and every stm32cube entry is emulated. A desk and CI
+# hosted entry is the oracle, and every stm32cube entry is emulated. **What is looked up
+# is an entry's name**, because that is what `--target=` takes — this desk happens to call
+# its hosted entry `host`, and another desk may not. A desk and CI
 # run the same script against their own record. One line per sample, a verdict per
 # board, and a status the shell can read; what each run said is kept under
 # .bareruby/checks/<sample>/ for reading a failure back.
@@ -18,11 +20,11 @@ cd "$ROOT"
 RUBY=${RUBY:-ruby}
 RECORD=config/target.yml
 
-HOST=$("$RUBY" -ryaml -e '
-  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["binding"] == "host" }
+ORACLE=$("$RUBY" -ryaml -e '
+  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["machine"] == "host" }
   puts entry ? entry["name"] : ""' "$RECORD")
-[ -n "$HOST" ] || {
-    echo "checks: $RECORD records no host entry, and the host build is the oracle." >&2
+[ -n "$ORACLE" ] || {
+    echo "checks: $RECORD records no entry whose machine is host, and that build is the oracle." >&2
     exit 2
 }
 mapfile -t BOARDS < <("$RUBY" -ryaml -e '
@@ -37,7 +39,7 @@ mapfile -t BOARDS < <("$RUBY" -ryaml -e '
 WORK=.bareruby/checks
 rm -rf "$WORK"
 
-TARGETS=("--target=$HOST")
+TARGETS=()
 for board in "${BOARDS[@]}"; do TARGETS+=("--target=$board"); done
 
 passed=0
@@ -48,19 +50,26 @@ while IFS=$'\t' read -r sample seconds input; do
     mkdir -p "$kept"
     line=$(printf '%-34s' "$sample")
 
-    # One invocation builds the host and every board, then emulates the boards; the
-    # host binary it leaves is then run for the expected output. Its own account goes
-    # to a file and is pointed at only when something refused. What the boards are fed
-    # through --input is what the host reads on stdin — the same bytes on both sides
-    # of the diff.
+    # **The oracle is built rather than emulated.** Its machine has an emulator of its own
+    # now — the peripherals it carries are objects, and `emulate` reaches them — but what
+    # this check wants from it is the executed run, so it is only built. Its own account
+    # goes to a file and is pointed at only when something refused. What the boards are fed
+    # through --input is what the oracle reads on stdin — the same bytes on both sides of
+    # the diff.
+    if ! ./bareruby build --target="$ORACLE" "$sample" \
+         </dev/null >"$kept/emulate.log" 2>&1; then
+        echo "$line  FAIL (the oracle refused to build; $kept/emulate.log)"
+        failed=$((failed + 1))
+        continue
+    fi
     if ! ./bareruby emulate "${TARGETS[@]}" --for="$seconds" \
          ${input:+--input="$input"} "$sample" \
-         </dev/null >"$kept/emulate.log" 2>&1; then
+         </dev/null >>"$kept/emulate.log" 2>&1; then
         echo "$line  FAIL (emulate refused; $kept/emulate.log)"
         failed=$((failed + 1))
         continue
     fi
-    timeout 10 "./build/$HOST/bareruby_program" <"${input:-/dev/null}" \
+    timeout 10 "./build/$ORACLE/bareruby_program" <"${input:-/dev/null}" \
         >"$kept/expected.txt" 2>/dev/null
 
     ok=1

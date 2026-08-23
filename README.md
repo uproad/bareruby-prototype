@@ -130,6 +130,7 @@ first, so each does its own work and then the next one's.
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
 ./bareruby emulate app.rb --target=f446      # build, then run it with no board attached
+./bareruby emulate app.rb --target=host      # the same, on this machine's own peripherals
 ./bareruby compile app.rb                    # first stage only, no toolchain needed
 ./bareruby                                   # prints usage
 ```
@@ -141,7 +142,7 @@ first, so each does its own work and then the next one's.
 | `build` | `compile`, then each binding's toolchain, leaving the artifact — and only that — in `build/<target>/` | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
-| `emulate` | `build`, then the firmware run with no board attached, on the emulator the binding names — Renode, for the STM32 boards. What the stdout UART said goes on screen and into `.bareruby/emulate/<target>/uart.txt`, LF-normalized, so one `diff` against the host build's output is a test | yes |
+| `emulate` | `build`, then what it built run with no board attached, on the emulator the binding names — Renode for the STM32 boards, a simulator written in Ruby for the machine doing the compiling. What was said goes on screen and into `.bareruby/emulate/<target>/`, so one `diff` against the host build's output is a test | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
 | `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. Without `--target` it asks which board goes under which entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
@@ -310,7 +311,7 @@ written by hand: `./bareruby target add` asks, and writes the answer.
 
       family                machine
 
-      none                  raspberry-pi-pico
+      host                  raspberry-pi-pico
       Arduino               raspberry-pi-pico-w
     › Raspberry Pi Pico     raspberry-pi-pico2
       ST NUCLEO             raspberry-pi-pico2-w
@@ -379,9 +380,9 @@ came out of — so a board missing from that list is almost always a line still 
 in the Gemfile rather than a board this ecosystem cannot reach:
 
 ```
-none  (bareruby_prot-compiler)
+host  (bareruby_prot-compiler)
   host
-    machine: none  binding: host  triple: x86_64-pc-linux
+    machine: host  binding: host  triple: x86_64-pc-linux
 
 Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
   raspberry-pi-pico
@@ -449,12 +450,15 @@ before the emulator stops — the firmware itself never returns, so the length o
 the one thing the verb has to be told. Three seconds when nothing is said, which outlasts
 every sample's say. Virtual time is why the run is the same on every desk: two runs of one
 firmware leave byte-identical `uart.txt` files, whatever the machine underneath was doing.
+Under the simulator an instruction costs virtual time as well as a wait does, so a program
+that only writes pins runs out of the run rather than running until somebody stops it.
 
 `--input=FILE` also belongs to `emulate` and is the receive side of the same wire: the
 file's bytes are waiting on the stdout UART before the firmware's first instruction,
 which is what a host program finds when its stdin is a pipe — so `program < FILE` on the
 host and `emulate --input=FILE` on a board read the same bytes, and the diff between
-their outputs still means something. A program that only speaks needs no input, and the
+their outputs still means something. Under the simulator the same flag puts them on the
+port's receive queue; with no flag it reads this terminal's own input. A program that only speaks needs no input, and the
 flag stays home.
 
 ## What a build reaches for
@@ -522,12 +526,30 @@ Ubuntu 24.04 ships 13.3.
 
 ```sh
 ./bareruby build --target=host samples/features.rb
-./build/none-host-x86_64-pc-linux/bareruby_program
+./build/host-host-x86_64-pc-linux/bareruby_program
 ```
 
 `samples/blink.rb` loops forever by design — use `timeout 1`. Samples that receive take
 their input on stdin: `printf 'ABCDhello UART\n' | ...` for `samples/uart_receive.rb`,
 `printf 'OK' | ...` for `samples/i2c.rb`.
+
+**The same build runs with real peripherals behind it too.** `emulate` interprets it
+here rather than executing it, and every peripheral call lands on a Ruby object instead of
+on the stub that prints — so a pin knows what it is at, a port keeps what it sent, and a
+wait moves virtual time. It needs no board and nothing installed, only the simulator gem
+in the project's bundle:
+
+```sh
+./bareruby emulate --target=host samples/logger.rb
+uart: logger ready
+emulate: .bareruby/emulate/host/stdout.txt holds that, ready for a diff.
+```
+
+What the program printed goes to `stdout.txt` and what its serial ports sent goes to
+`uart.txt`. `./checks/host.sh` runs every sample both ways and diffs the first against
+the executed run. The machine itself — pins, ports, duty cycles, the on-board LED — is read
+through the gem's own [`API.md`](gems/bareruby_prot-simulator/API.md), which is what a
+display or a check reaches for.
 
 ### NUCLEO-F446RE, through the STM32Cube HAL
 
