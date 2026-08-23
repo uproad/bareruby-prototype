@@ -44,6 +44,18 @@ common:
       darwin-arm64:
         file: xpack-openocd-0.12.0-7-darwin-arm64.tar.gz
         sha256: 667342c086984f3e5a55b4e0d5f711add13fb04de040fca493303000e6c19327
+# Reached only by `bareruby emulate`, so a platform it is not pinned for still installs
+# everything a build needs: install.sh says so and moves on rather than stopping. Only
+# the Linux x64 portable build exists as a self-contained archive upstream.
+emulate:
+  renode:
+    github: renode/renode
+    release: v1.16.1
+    directory: stm32cube/renode-1.16.1
+    archives:
+      linux-x64:
+        file: renode-1.16.1.linux-portable.tar.gz
+        sha256: 1a532d4b5b82de0dd154970c401e0c7b0e498d17304b2cecc007e306c8f9617c
 families:
   stm32f4:
     # One release and its submodule commits move as a set. Updating one of them to

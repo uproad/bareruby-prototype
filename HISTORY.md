@@ -1346,3 +1346,36 @@ where the two are meant to agree; and `samples/logger.rb` said `logger ready` th
 high some sixty times. The board is an ELEGOO MEGA 2560 R3 rather than the Arduino it
 copies — the same chip, the same bridge, and Arduino's own vendor and product ids, so
 nothing between the Ruby and the flash can tell the two apart.
+
+### Which targets have been emulated
+
+Emulated is a third claim, between built and hardware-run, and `bareruby emulate` is what
+makes it: the ELF `build` leaves, run under a pinned Renode 1.16.1 (a 52 MB archive, 97 MB
+installed, Linux x64 only — the one platform upstream ships self-contained), on a machine
+written from the same board and device manifests the firmware was built from. Nothing was
+modeled by hand: the base is Renode's own STM32F4 platform, and the manifests correct the
+memory sizes, wire the LED, and add the DWT counter at the proved SYSCLK — absent from the
+base platform, and every generated delay busy-waits on `DWT->CYCCNT`, so without it the
+first sleep never returns.
+
+**All three STM32 boards ran `samples/string.rb` under emulation and matched the host
+build line for line** — `stm32-nucleo-f446re` at 84 MHz, `stm32-nucleo-f401re` at 84 MHz,
+`stm32-f4discovery` at 168 MHz — which is the first time the F401RE and F4DISCOVERY
+firmware, built but never flashed, has been observed running at all, and the first
+observation of any STM32 firmware from the pinned `arm-none-eabi-g++` 13.2.1 (the hardware
+runs above predate the switch from STM32CubeIDE's toolchain). `samples/heartbeat.rb` was
+additionally held to its duty cycle in a hand-run Renode LED tester: 100 ms on / 900 ms
+off, asserted at 0.1 ± 0.05 over three virtual seconds. Stock HAL clock configuration —
+`HAL_RCC_OscConfig`, `HAL_RCC_ClockConfig`, the FLASH ACR readback — passes against
+Renode's RCC and flash controller models unmodified.
+
+Two consecutive runs leave byte-identical `uart.txt` files: virtual time makes the
+comparison deterministic, which is what fits it for CI. A run costs about 10 s wall clock
+per board — roughly 5 s of Renode start-up plus the three virtual seconds.
+
+What emulation deliberately does not claim: the clock tree is modeled as already
+configured, so a wrong PLL profile that real silicon would refuse can pass here; I2C has
+no device behind it and was not exercised; UART receive samples, which take input, were
+not fed; and the LED wiring in the generated machine is asserted by nothing yet — the
+verb reads the UART and only that. An emulated pass is evidence the logic and the
+toolchain agree with the host, never that a board would.

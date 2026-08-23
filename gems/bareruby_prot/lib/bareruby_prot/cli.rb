@@ -45,6 +45,9 @@ module BareRubyProt
                             leaving the artifact — and only that — in build/<target>/.
         flash               Write what build left onto the boards that take it.
         deploy  SOURCE.rb   build, then flash.
+        emulate SOURCE.rb   build, then run the firmware with no board attached, on the
+                            emulator the binding names. What the stdout UART said is
+                            shown, and kept LF-normalized for a diff.
         target add          Ask which machine this is, and write the answer into
                             target.yml. Nothing in an entry has to be looked up.
         target attach       Hold BOOTSEL on one board and run this once per board: it
@@ -71,6 +74,8 @@ module BareRubyProt
                             own. Without it, as many as there are targets, up to the
                             number of cores. Boards are found once, together, and then
                             written at the same time too.
+        --for=SECONDS       emulate: how much virtual time to run before stopping — the
+                            firmware itself never returns. 3 when nothing is said.
     USAGE
 
     def self.run(arguments) = new(arguments).run
@@ -84,6 +89,8 @@ module BareRubyProt
       @arguments -= @target_options
       @jobs_options = @arguments.grep(/\A#{Jobs::OPTION_PREFIX}/)
       @arguments -= @jobs_options
+      @for_options = @arguments.grep(/\A#{FOR_PREFIX}/)
+      @arguments -= @for_options
     end
 
     # The table is finished here rather than by the command that drew it, because deploy is
@@ -99,6 +106,7 @@ module BareRubyProt
       when "build" then build
       when "flash" then flash
       when "deploy" then deploy
+      when "emulate" then emulate
       when "target" then target
       when "tools" then tools
       else usage
@@ -431,6 +439,55 @@ module BareRubyProt
 
       flash
     end
+
+    # build, then the firmware run where there is no board: on the emulator the binding
+    # names, headless, for a fixed slice of virtual time. What the board's stdout UART
+    # said lands above the table and in a file a diff can read — which is what makes
+    # this a check a desk without the hardware, CI included, can still run. Virtual
+    # time keeps the file identical from run to run, so the diff means something.
+    #
+    # **One entry at a time, on purpose.** The output is the point of this verb, and
+    # two firmwares saying things at once is a transcript of neither.
+    def emulate
+      planned = entries
+      return nothing if planned.empty?
+
+      showing(planned, %i[tools compile build emulate])
+      status = build
+      return status unless status.zero?
+
+      planned.map { |entry| emulated(entry) }.all? ? 0 : 1
+    end
+
+    # A binding with no emulator is a machine nobody has modeled, which is an answer
+    # rather than an error — the host most of all, whose build already runs here. The
+    # answer passes through the stage so the row is finished rather than abandoned:
+    # a run that did everything it was asked must not read failed.
+    def emulated(entry)
+      offered = entry.target.binding
+      @progress.at(:emulate, [entry]) do
+        if offered.respond_to?(:emulate)
+          offered.emulate.run(flash_directory_of(entry), into: emulate_directory_of(entry),
+                              seconds: emulated_for, options: entry.options)
+        else
+          warn "#{entry.name}: #{offered.key} names no emulator — built, not emulated."
+          true
+        end
+      end
+    end
+
+    # The firmware loops forever by design, so how long to watch is the one thing the
+    # verb has to be told. Three virtual seconds outlasts every sample's say.
+    FOR_PREFIX = "--for="
+
+    def emulated_for
+      found = @for_options.last
+      found ? Integer(found.delete_prefix(FOR_PREFIX)) : 3
+    end
+
+    EMULATIONS = File.expand_path(".bareruby/emulate", Dir.pwd)
+
+    def emulate_directory_of(entry) = File.join(EMULATIONS, entry.name)
 
     # **Whoever asks first says what the run is**, and everyone after gets what they asked
     # for. Which source is being compiled is worth saying only where something is compiled,

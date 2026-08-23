@@ -4,6 +4,7 @@ require_relative "manifests"
 require_relative "build"
 require_relative "toolchain"
 require_relative "flash"
+require_relative "emulate"
 require_relative "init"
 
 module BareRubyProt
@@ -802,6 +803,8 @@ module BareRubyProt
     def self.toolchain = Stm32CubeToolchain
 
     def self.flash = Stm32CubeFlash
+
+    def self.emulate = Stm32CubeEmulate
 
     def self.build = Stm32CubeBuild
 

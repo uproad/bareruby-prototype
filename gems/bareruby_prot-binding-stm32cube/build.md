@@ -44,6 +44,42 @@ With one probe attached nothing needs naming; with several, list the probe seria
 `boards:` in `config/target.yml` — SWD is reached through the probe, so it is the
 probe's serial, not the board's.
 
+## Emulate
+
+```sh
+./bareruby emulate samples/string.rb --target=f446           # 3 virtual seconds
+./bareruby emulate samples/heartbeat.rb --target=f446 --for=10
+```
+
+The ELF `build` leaves is run under [Renode](https://renode.io), headless, with no board
+attached. The machine is written from the same manifests the firmware was built from —
+memory sizes and the LED from the board and device YAML, the DWT counter at the proved
+SYSCLK so a millisecond asked for is a virtual millisecond. What the board's stdout UART
+said goes on screen and is kept LF-normalized at `.bareruby/emulate/<target>/uart.txt`,
+so a test is one diff against the host build of the same program:
+
+```sh
+./bareruby build samples/string.rb --target=host --target=f446
+./build/host/bareruby_program > expected.txt
+./bareruby emulate samples/string.rb --target=f446
+diff .bareruby/emulate/f446/uart.txt expected.txt
+```
+
+Virtual time makes the run deterministic: the same firmware leaves a byte-identical
+`uart.txt` on every run and every desk, which is what lets CI hold the comparison.
+
+Renode arrives with everything else `install.sh` pins — a 52 MB archive, 97 MB installed,
+Linux x64 only, because that is the one platform upstream ships as a self-contained
+archive. A desk that keeps
+its own Renode names it with `RENODE`. The one thing the run fetches for itself is the
+SVD file Renode reads register names from, once, into its own cache; the run works the
+same without it.
+
+What this does not prove: an emulated run is not a hardware run. The clock tree is
+modeled as "already configured", I2C has no device behind it, and electrical reality —
+pull-ups, timing margins, a wire — is not in the picture. `HISTORY.md` keeps the two
+claims apart.
+
 ## Serial
 
 `puts` leaves by the board's stdout UART — the ST-LINK virtual COM port, 115200 8N1:

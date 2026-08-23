@@ -129,6 +129,7 @@ first, so each does its own work and then the next one's.
 ./bareruby deploy app.rb                     # compile, build, and write it onto them
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
+./bareruby emulate app.rb --target=f446      # build, then run it with no board attached
 ./bareruby compile app.rb                    # first stage only, no toolchain needed
 ./bareruby                                   # prints usage
 ```
@@ -140,6 +141,7 @@ first, so each does its own work and then the next one's.
 | `build` | `compile`, then each binding's toolchain, leaving the artifact — and only that — in `build/<target>/` | yes |
 | `flash` | writes what `build` left onto the boards that take it | yes |
 | `deploy` | `build`, then `flash` | yes |
+| `emulate` | `build`, then the firmware run with no board attached, on the emulator the binding names — Renode, for the STM32 boards. What the stdout UART said goes on screen and into `.bareruby/emulate/<target>/uart.txt`, LF-normalized, so one `diff` against the host build's output is a test | yes |
 | `target add` | asks which machine this is and writes it into `config/target.yml` | writes it |
 | `target attach` | adds one board behind an entry: writes a numbered name and the binding's resident firmware into the board, then records it under the entry. Without `--target` it asks which board goes under which entry. No program of yours; hold BOOTSEL first | writes it |
 | `target list` | every machine the installed gems can target, by family, each family saying which gem it came from | no |
@@ -421,7 +423,7 @@ build/pico/
 build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
 ```
 
-## Three flags
+## Four flags
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and the
 unwinder and its tables are left out. It is worth several kilobytes of flash even in a
@@ -441,6 +443,12 @@ about what is built — the same artifacts, byte for byte — only how long the 
 Several identical boards on one target are still written in turn: the row is the unit, and
 they are one row. Under WSL it is worth knowing when to reach for `--jobs=1`
 ([above](#the-commands)).
+
+`--for=SECONDS` belongs to `emulate` and says how much **virtual** time the firmware runs
+before the emulator stops — the firmware itself never returns, so the length of a run is
+the one thing the verb has to be told. Three seconds when nothing is said, which outlasts
+every sample's say. Virtual time is why the run is the same on every desk: two runs of one
+firmware leave byte-identical `uart.txt` files, whatever the machine underneath was doing.
 
 ## What a build reaches for
 
@@ -533,6 +541,11 @@ that keeps several says which:
 
 The binding's [README](gems/bareruby_prot-binding-stm32cube/README.md) records project
 preparation, the ownership boundary, CubeMX regeneration and pin mapping.
+
+The STM32 boards are also the ones `emulate` reaches: the same ELF `build` leaves is run
+under Renode, headless, with no board attached, and what USART2 said is compared against
+the host build line for line. The binding's [build.md](gems/bareruby_prot-binding-stm32cube/build.md#emulate)
+says how.
 
 `./bareruby flash --target=f446` writes the ELF over SWD with `STM32_Programmer_CLI`,
 naming ST-LINK probe serials from `boards:` when more than one probe is attached. **That

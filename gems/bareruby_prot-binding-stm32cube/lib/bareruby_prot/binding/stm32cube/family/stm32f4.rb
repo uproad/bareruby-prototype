@@ -154,6 +154,46 @@ module BareRubyProt
           }
         C
       end
+
+      # ------------------------------------------------------------------------------
+
+      # The machine for Renode, written from the same manifests the firmware was. The
+      # base platform is Renode's own STM32F4; what the manifests correct is what the
+      # firmware actually touches: the DWT counter every delay above busy-waits on —
+      # absent from the base, and a counter that never moves is that loop never ending —
+      # this device's memory sizes, and the board's LED.
+      def self.renode_platform(board, clock)
+        text = <<~REPL
+          using "platforms/cpus/stm32f4.repl"
+
+          // The delays busy-wait on DWT->CYCCNT, so the counter advances at the proved
+          // SYSCLK — a millisecond asked for is a virtual millisecond. SysTick is what
+          // HAL timeouts are measured against, so it runs at the same clock.
+          dwt: Miscellaneous.DWT @ sysbus 0xE0001000
+              frequency: #{clock.sysclk}
+
+          nvic:
+              systickFrequency: #{clock.sysclk}
+
+          flash:
+              size: #{format('0x%X', board.device.flash.size)}
+
+          sram:
+              size: #{format('0x%X', board.device.main_ram.size)}
+        REPL
+        return text unless board.led
+
+        pin = board.led.pin
+        <<~REPL
+          #{text.chomp}
+
+          led: Miscellaneous.LED @ gpioPort#{pin.port} #{pin.index}
+              invert: #{board.led.active_high? ? 'false' : 'true'}
+
+          gpioPort#{pin.port}:
+              #{pin.index} -> led@0
+        REPL
+      end
     end
 
     # The families this gem carries, by the key a device manifest names. F0 and F7 are
