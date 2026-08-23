@@ -1410,6 +1410,34 @@ helper through the same `TO_S_FUNCTIONS` route — which is a few hundred bytes,
 reaches every binding at once: avr-libc's printf does not carry `ll` either, so the
 mega2560 line-for-line claim above deserves a hardware re-check on exactly this line.
 
-The exception stop is not diagnosed yet. And `samples/peripheral_answers.rb` turned out
-not to build for STM32 at all — the binding carries no PWM unit — which the sample list
-now says out loud.
+The exception stop is diagnosed too, and the diagnosis closes the door it appears to
+close: **begin/rescue cannot work at all under `-specs=nano.specs`, on hardware exactly
+as under emulation.** Renode's function trace showed the raise reaching
+`_Unwind_RaiseException`, performing one search of the EXIDX table, and returning —
+which is `__cxa_throw`'s failure path, ending in `std::terminate`, `abort`, and the
+`_exit` loop the parked PC was found in. The search fails because nano.specs links
+`libstdc++_nano`, whose exception-handling objects carry **no `.ARM.exidx` sections at
+all** — `eh_throw.o` holds 0 against the full `libstdc++.a`'s 4 — so the unwinder,
+looking up the PC inside `__cxa_throw` itself, lands on the nearest earlier entry,
+`Reset_Handler [cantunwind]`, and gives up before any frame is unwound. The generated
+code, the linker script and the unwinder are all blameless; the table they consult is
+simply missing its middle.
+
+Measured on `samples/m25.rb` for the F446, with the emulated run against the host as
+the judge:
+
+| link | `text` | outcome |
+| --- | --- | --- |
+| `nano.specs` (today) | 20,796 B | stops at the first raise |
+| no `nano.specs` | 86,288 B | runs, matches the host line for line |
+| `nano.specs` + `-l:libstdc++.a` | 53,432 B | runs, matches the host line for line |
+
+The third row is the interesting one: the exact-filename spelling slips past the specs'
+`-lstdc++` → `-lstdc++_nano` rewrite, so newlib stays nano and only the C++ runtime
+grows. The direction, **not yet implemented**: an exceptions-enabled STM32 build links
+the full `libstdc++` that way, and `--no-exceptions` keeps nano whole — which would put
+the cost where [what exceptions cost](#what-exceptions-cost) already keeps such
+figures. `samples/arena.rb` stops the same way and is expected to be the same finding.
+
+And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
+binding carries no PWM unit — which the sample list now says out loud.
