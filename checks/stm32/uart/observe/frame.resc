@@ -1,0 +1,5 @@
+# USART2 on the NUCLEO-F446RE: BRR, CR1, CR2, CR3.
+sysbus ReadDoubleWord 0x40004408
+sysbus ReadDoubleWord 0x4000440C
+sysbus ReadDoubleWord 0x40004410
+sysbus ReadDoubleWord 0x40004414

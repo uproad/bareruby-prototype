@@ -1375,17 +1375,31 @@ per board — roughly 5 s of Renode start-up plus the three virtual seconds.
 
 What emulation deliberately does not claim: the clock tree is modeled as already
 configured, so a wrong PLL profile that real silicon would refuse can pass here; I2C has
-no device behind it and was not exercised; UART receive samples, which take input, were
-not fed; and the LED wiring in the generated machine is asserted by nothing yet — the
-verb reads the UART and only that. An emulated pass is evidence the logic and the
-toolchain agree with the host, never that a board would.
+no device behind it and was not exercised; and the LED wiring in the generated machine
+is asserted by nothing yet — the verb reads the UART and only that. An emulated pass is
+evidence the logic and the toolchain agree with the host, never that a board would.
+
+The receive side is fed now: `emulate --input=FILE` queues the file's bytes on the
+stdout UART before the firmware's first instruction, which is the condition a host
+program finds when its stdin is a pipe — so `< FILE` on the host and `--input=FILE` on
+the board carry the same bytes and the diff keeps meaning something. Two accommodations
+in the generated Renode script were found necessary, each by watching a byte go
+missing. Renode's STM32 UART model drops what arrives while the receiver is off, and
+before the first instruction nothing has turned it on — so the script writes UE|RE into
+the port's CR1 first, which the firmware's own init then configures over without
+touching what queued. And the firmware flushes the data register when it arms its
+receive side — on hardware that eats power-on garbage, but here the first real byte was
+sitting in DR and `samples/uart_one_queue.rb` came back one byte short — so the queue
+leads with one NUL for the flush to eat. Both live in `run.resc` where a failing run
+can be read back.
 
 `./checks/emulate.sh` holds that comparison as a standing check: every sample
 [`checks/emulate.yml`](checks/emulate.yml) lists, on every STM32 entry the record holds,
-against the host build as the oracle. **17 samples agree line for line on all three
-boards** — the language samples that terminate with output, and the UART configuration
-samples among them — in 8 m 32 s for the 51 runs, sequentially. The YAML records why
-each of the other 21 samples is absent, and its first run produced two findings — both
+against the host build as the oracle. **19 samples agree line for line on all three
+boards** — the language samples that terminate with output, the UART configuration
+samples among them, and the two receive samples the `input:` key feeds — in about 10
+minutes for the 57 runs, sequentially. The YAML records why
+each of the other 19 samples is absent, and its first run produced two findings — both
 diagnosed and fixed below, with the three samples they had kept out now on the list —
 which is what the check is for:
 
@@ -1520,3 +1534,64 @@ every `catch` this compiler emits is a catch-all; and no device model sits behin
 peripheral — a pin reads what it was last set to, and a bus answers what it was told to.
 A simulated pass is evidence the program and the host agree, and that the board saw what
 the program meant; never that hardware would.
+
+## The STM32 UART binding has its own fixed-answer check
+
+The language-wide emulation check asks whether STM32 agrees with the host binding. The
+UART binding now has a narrower, independent answer under `checks/stm32/uart/`: seven
+small programs are compared with reviewed files rather than output produced by another
+binding. They prove that RX preserves arrival order, `peek` does not consume, `gets`
+honours a selected terminator, a four-slot ring keeps its first three bytes and drops the
+overflow, an RX interrupt reaches its handler, and `write` plus `puts` produce the exact
+TX bytes. The seventh check reads the emulated NUCLEO-F446RE's USART2 after opening it at
+9600 7E1: BRR `0x00001117`, CR1 `0x0000240C`, and zero in CR2 and CR3.
+
+`checks/stm32/uart/check.sh f446` passed 7/7 in 70 seconds. Each failure keeps the UART or
+register diff under `.bareruby/checks/stm32/uart/`; a pass removes the empty diff but
+keeps what was observed. Renode's configuration also lives under `.bareruby`, so the
+check does not need to write a user's configuration directory. This is an emulated
+peripheral check, not a hardware-flashed one: it says nothing about voltage, waveform,
+baud-rate tolerance, or another board's clock and UART instance. Those need their own
+board-specific answers rather than inheriting the F446 figures.
+
+The same check now also holds the default 256-slot RX ring at its boundaries. Its usable
+capacity is 255 bytes: 254 and 255 bytes are retained in order, while inputs of 256 and
+512 bytes leave the first 255 intact and drop everything later. A staged run fills an
+eight-slot ring, consumes four bytes, then proves four newly arrived bytes occupy the
+freed slots. A separate 300-byte run feeds three groups slowly enough to avoid overflow
+and proves the read and write indices can cross the end of the array without changing
+order. `checks/stm32/uart/check.sh f446` passed all 13/13 checks in 134 seconds under
+Renode; it was built but not hardware-flashed.
+
+Eight more checks now cover the UART API around that ring. They prove that clearing RX
+does not prevent later reception, `read(3)` consumes exactly three of five bytes, empty
+reads return the documented sentinels, and a CRLF line ending reaches the raw TX stream
+as `4F 4B 0D 0A`. They also read USART2 after both a complete and a baud-only `setmode`:
+9600 7E1 produces BRR `0x00001117` and CR1 `0x0000240C`, while changing only baud from
+115200 8N1 produces the same BRR and keeps CR1 at `0x0000200C`. Finally, `write("ABC")`
+returns three and three interrupt-fed bytes reach the handler in order. The handler's
+call count remains deliberately unspecified; only its observed bytes are held fixed.
+The complete `checks/stm32/uart/check.sh f446` run passed 21/21 in 243 seconds under
+Renode. It was built but not hardware-flashed.
+
+Twelve more checks close gaps the earlier rounds left open. The printf path — what an
+interpolated `write` or `puts` lowers to — is held as raw TX bytes: `write` appends no
+ending, `puts` appends one, and a 64-bit value crosses intact. All 256 byte values cross
+the receive queue unchanged, where the earlier generated pattern (1..251) never carried
+0x00 or 0xFF. `gets` and `read` complete a read whose bytes arrive twenty virtual
+milliseconds apart instead of answering short. Three interrupt checks pin the handler's
+contract: it consumes the same queue the program reads — a byte the handler took answers
+`-1` to the program — a registered handler does not change the full ring's keep-first
+policy, and clearing inside the handler still receives later bytes. 19200 7O2 reaches
+BRR `0x0000088B`, CR1 `0x0000260C` and CR2 `0x00002000`; after `flush` nothing is owed
+to the wire; `clear_tx_buffer` leaves sent bytes intact.
+
+Two findings came out of writing them. Renode's STM32_UART model does not retain CR1's
+M bit — `0x360C` written reads back `0x260C` — so the frame variant speaks 7O2 and the
+nine-bit word stays on the hardware list. And 9N passes the frame-bits check but mangles
+the data: the HAL reads a 9-bit no-parity transmit buffer as uint16 pairs while the
+binding hands it a C string, so `write "AB"` puts `41 00` on the wire and still returns
+2. `write_9n` pins that as a recorded gap, its expectation to be replaced when the
+binding either refuses 9N or grows a nine-bit send. The complete
+`checks/stm32/uart/check.sh f446` run passed 33/33 in 422 seconds under Renode. It was
+built but not hardware-flashed.

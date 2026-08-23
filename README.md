@@ -424,7 +424,7 @@ build/pico/
 build/pico2_w-pico_sdk-thumbv8m.main-none-eabihf/
 ```
 
-## Four flags
+## Five flags
 
 `--no-exceptions` drops the exception mechanism: `begin` becomes a compile error and the
 unwinder and its tables are left out. It is worth several kilobytes of flash even in a
@@ -452,6 +452,13 @@ every sample's say. Virtual time is why the run is the same on every desk: two r
 firmware leave byte-identical `uart.txt` files, whatever the machine underneath was doing.
 Under the simulator an instruction costs virtual time as well as a wait does, so a program
 that only writes pins runs out of the run rather than running until somebody stops it.
+
+`--input=FILE` also belongs to `emulate` and is the receive side of the same wire: the
+file's bytes are waiting on the stdout UART before the firmware's first instruction,
+which is what a host program finds when its stdin is a pipe — so `program < FILE` on the
+host and `emulate --input=FILE` on a board read the same bytes, and the diff between
+their outputs still means something. A program that only speaks needs no input, and the
+flag stays home.
 
 ## What a build reaches for
 

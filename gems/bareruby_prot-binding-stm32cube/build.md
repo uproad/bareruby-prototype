@@ -68,6 +68,24 @@ diff .bareruby/emulate/f446/uart.txt expected.txt
 Virtual time makes the run deterministic: the same firmware leaves a byte-identical
 `uart.txt` on every run and every desk, which is what lets CI hold the comparison.
 
+A program that reads is fed the same way, with `--input=FILE`: the file's bytes are
+queued on the stdout UART's receive side before the first instruction, which is the
+condition a host program finds when its stdin is a pipe — so `< FILE` on the host and
+`--input=FILE` on the board carry the same bytes:
+
+```sh
+./bareruby emulate samples/uart_receive.rb --target=f446 --input=checks/input/uart_receive.txt
+./build/host/bareruby_program < checks/input/uart_receive.txt > expected.txt
+diff .bareruby/emulate/f446/uart.txt expected.txt
+```
+
+Two accommodations in the generated Renode script make the timing honest, and both are
+worth knowing when reading `run.resc`: the receiver is switched on by a register write
+before the machine runs (the model drops what arrives while it is off), and the queue
+leads with one NUL for the firmware's arm-time flush of the data register to discard —
+on hardware that flush eats power-on garbage; here it would have eaten the first real
+byte.
+
 Renode arrives with everything else `install.sh` pins — a 52 MB archive, 97 MB installed,
 Linux x64 only, because that is the one platform upstream ships as a self-contained
 archive. A desk that keeps
