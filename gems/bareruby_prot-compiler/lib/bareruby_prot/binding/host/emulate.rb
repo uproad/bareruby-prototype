@@ -4,16 +4,15 @@ require "fileutils"
 require "stringio"
 
 module BareRubyProt
-  # The host build run with no board attached. The machine doing the compiling is the one
-  # machine whose build already runs here, so what this adds is not a way to run it — it
-  # is a board to run it against: the peripheral calls that would have printed what they
-  # were asked land on objects that remember, and the program's own output comes back
-  # unchanged.
+  # The host build run interpreted rather than executed. **The machine is the same one
+  # either way** — this desk, which is what the entry names — but executed, a peripheral
+  # call prints what it was asked and forgets it, while interpreted it reaches the
+  # peripheral itself and that peripheral is still there when the run ends.
   #
   # What the program said goes on screen and into a file, the way the emulated boards
   # leave theirs, so the same `diff` answers whether they agree. What the serial ports
-  # sent is kept beside it, because on this board that is a different thing from what the
-  # program printed: there is no wire, and the port kept every byte instead.
+  # sent is kept beside it, because here that is a different thing from what the program
+  # printed: there is no wire, and the port kept every byte instead.
   #
   # **The simulator is a gem rather than a program, and is looked for the same way.** A
   # desk without it has a target that builds and does not emulate, which is an answer.
@@ -33,7 +32,7 @@ module BareRubyProt
       receiving(input) do |wire|
         run = Simulator.run(File.join(directory, ARTIFACT), seconds: seconds, out: said,
                                                             input: wire)
-        heard(into, said.string, run.board)
+        heard(into, said.string, run.machine)
       end
     end
 
@@ -49,9 +48,9 @@ module BareRubyProt
     # Two things were said and they are not the same thing, so they are labelled. What
     # the program printed is what the host build prints and what an emulated board's
     # stdout UART says, which is the diff this file exists for; what a port sent is what
-    # this board kept instead of putting it on a wire.
-    def self.heard(into, said, board)
-      sent = sent(board)
+    # this machine kept instead of putting it on a wire.
+    def self.heard(into, said, machine)
+      sent = sent(machine)
       File.write(File.join(into, SAID), said)
       File.write(File.join(into, SENT), sent)
       said.each_line { |line| warn line.chomp }
@@ -60,9 +59,9 @@ module BareRubyProt
       true
     end
 
-    # Every port's send side, in unit order. Nothing on this board reads them, so what a
-    # program wrote is all still there.
-    def self.sent(board) = board.uart.values.map(&:transmitted).join
+    # Every port's send side, in unit order. Nothing on this machine reads them, so what
+    # a program wrote is all still there.
+    def self.sent(machine) = machine.uart.values.map(&:transmitted).join
 
     def self.shown(path) = path.delete_prefix("#{Dir.pwd}/")
 

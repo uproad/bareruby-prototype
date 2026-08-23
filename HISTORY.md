@@ -1461,13 +1461,13 @@ visible, roughly 32.6 KB on the F446, sits beside the figures
 And `samples/peripheral_answers.rb` turned out not to build for STM32 at all — the
 binding carries no PWM unit — which the sample list now says out loud.
 
-### The machine that compiles, run against a board
+### The machine that compiles, and the peripherals it turned out to have
 
 `emulate` reaches one more target, and it is the one that never needed emulating: the
-machine doing the compiling. That build is native and runs by being executed. What it has
-no board for is everything else — a write to a pin reaches a stub that prints what it was
-asked and forgets it, a read answers zero because nothing is there to read, and a wait
-returns without any time having passed.
+machine doing the compiling. That build is native and runs by being executed. What it had
+nothing for was its peripherals — a write to a pin reached a stub that printed what it was
+asked and forgot it, a read answered zero because nothing was there to read, and a wait
+returned without any time having passed.
 
 `bareruby_prot-simulator` runs that same executable a different way. The ELF is loaded
 here, its instructions are interpreted here, and each of the 42 functions a binding

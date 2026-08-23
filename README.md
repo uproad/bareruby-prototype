@@ -130,7 +130,7 @@ first, so each does its own work and then the next one's.
 ./bareruby build app.rb --target=pico2       # one recorded target, no flashing
 ./bareruby flash                             # write what the last build left, again
 ./bareruby emulate app.rb --target=f446      # build, then run it with no board attached
-./bareruby emulate app.rb --target=host      # the same, on a board made of Ruby objects
+./bareruby emulate app.rb --target=host      # the same, on this machine's own peripherals
 ./bareruby compile app.rb                    # first stage only, no toolchain needed
 ./bareruby                                   # prints usage
 ```
@@ -533,11 +533,11 @@ Ubuntu 24.04 ships 13.3.
 their input on stdin: `printf 'ABCDhello UART\n' | ...` for `samples/uart_receive.rb`,
 `printf 'OK' | ...` for `samples/i2c.rb`.
 
-**The same build runs with a board behind it too.** `emulate` interprets it here rather
-than executing it, and every peripheral call lands on a Ruby object instead of on the stub
-that prints — so a pin knows what it is at, a port keeps what it sent, and a wait moves
-virtual time. It needs no board and nothing installed, only the simulator gem in the
-project's bundle:
+**The same build runs with real peripherals behind it too.** `emulate` interprets it
+here rather than executing it, and every peripheral call lands on a Ruby object instead of
+on the stub that prints — so a pin knows what it is at, a port keeps what it sent, and a
+wait moves virtual time. It needs no board and nothing installed, only the simulator gem
+in the project's bundle:
 
 ```sh
 ./bareruby emulate --target=host samples/logger.rb
@@ -547,7 +547,7 @@ emulate: .bareruby/emulate/host/stdout.txt holds that, ready for a diff.
 
 What the program printed goes to `stdout.txt` and what its serial ports sent goes to
 `uart.txt`. `./checks/host.sh` runs every sample both ways and diffs the first against
-the executed run. The board itself — pins, ports, duty cycles, the on-board LED — is read
+the executed run. The machine itself — pins, ports, duty cycles, the on-board LED — is read
 through the gem's own [`API.md`](gems/bareruby_prot-simulator/API.md), which is what a
 display or a check reaches for.
 

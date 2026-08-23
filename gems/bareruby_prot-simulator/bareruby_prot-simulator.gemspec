@@ -1,17 +1,16 @@
 # frozen_string_literal: true
 
-# The machine the host build has no board to run on, packaged: an interpreter for the
-# instructions the compiling desk speaks, and a board made of Ruby objects behind the
-# calls a program makes into a peripheral. It depends on nothing, because what it reads
-# is an artifact rather than a compilation — the ELF a build left, and nothing that
-# produced it.
+# The other half of `binding: host`, packaged: an interpreter for the instructions the
+# compiling desk speaks, and the peripherals that desk carries behind the calls a program
+# makes into one. It depends on nothing, because what it reads is an artifact rather than
+# a compilation — the ELF a build left, and nothing that produced it.
 #
 # The name carries the prototype's own prefix rather than the one the real compiler will
 # use, because this is a throwaway and has no business holding that name anywhere.
 Gem::Specification.new do |spec|
   spec.name = "bareruby_prot-simulator"
   spec.version = "0.0.1"
-  spec.summary = "Runs a host build with no board, on a board made of Ruby objects."
+  spec.summary = "Interprets a host build, with the desk's own peripherals behind its calls."
   spec.authors = ["uproad"]
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0"

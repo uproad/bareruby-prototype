@@ -20,7 +20,7 @@ gems/
 ├── bareruby_prot/                   everything after it: the executable, target.yml, flashing
 ├── bareruby_prot-binding-*/         pico_sdk, arduino, stm32cube
 ├── bareruby_prot-stdlib-*/          gpio, pwm, adc, uart, i2c, onboard_led
-└── bareruby_prot-simulator/         the host build run with no board, against one made of objects
+└── bareruby_prot-simulator/         the host build interpreted, with the desk's own peripherals
 ```
 
 **A gem is a build, not a checkout**: editing one changes nothing until it has been built

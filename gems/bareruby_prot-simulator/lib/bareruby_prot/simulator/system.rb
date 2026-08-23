@@ -38,9 +38,9 @@ module BareRubyProt
 
       # The addresses the three stream names hold, written into memory so that reading
       # one gives back a stream the way reading it in C would.
-      def values(machine)
+      def values(binding)
         NAMES.each_with_index.to_h do |name, index|
-          machine.memory.write64(HOLDERS + (index * 8), STREAMS + (index * 0x10))
+          binding.memory.write64(HOLDERS + (index * 8), STREAMS + (index * 0x10))
           [name, HOLDERS + (index * 8)]
         end
       end
@@ -64,82 +64,82 @@ module BareRubyProt
 
       # ---- printing -------------------------------------------------------------
 
-      def print_out(machine)
-        write(OUT, rendered(machine, machine.argument(0), Passed.new(machine, 1)))
+      def print_out(binding)
+        write(OUT, rendered(binding, binding.argument(0), Passed.new(binding, 1)))
       end
 
-      def print_varying(machine)
-        arguments = Varying.new(machine, machine.argument(1))
-        write(OUT, rendered(machine, machine.argument(0), arguments))
+      def print_varying(binding)
+        arguments = Varying.new(binding, binding.argument(1))
+        write(OUT, rendered(binding, binding.argument(0), arguments))
       end
 
-      def print_stream(machine)
-        arguments = Passed.new(machine, 2)
-        write(machine.argument(0), rendered(machine, machine.argument(1), arguments))
+      def print_stream(binding)
+        arguments = Passed.new(binding, 2)
+        write(binding.argument(0), rendered(binding, binding.argument(1), arguments))
       end
 
-      def print_buffer(machine) = filled(machine, Passed.new(machine, 3))
+      def print_buffer(binding) = filled(binding, Passed.new(binding, 3))
 
-      def print_buffer_varying(machine)
-        filled(machine, Varying.new(machine, machine.argument(3)))
+      def print_buffer_varying(binding)
+        filled(binding, Varying.new(binding, binding.argument(3)))
       end
 
-      def filled(machine, arguments)
-        text = rendered(machine, machine.argument(2), arguments)
-        kept = text.byteslice(0, machine.argument(1) - 1)
-        machine.memory.write(machine.argument(0), "#{kept}\0")
-        machine.answer(text.bytesize)
+      def filled(binding, arguments)
+        text = rendered(binding, binding.argument(2), arguments)
+        kept = text.byteslice(0, binding.argument(1) - 1)
+        binding.memory.write(binding.argument(0), "#{kept}\0")
+        binding.answer(text.bytesize)
       end
 
-      def put_line(machine) = write(OUT, "#{machine.string(machine.argument(0))}\n")
+      def put_line(binding) = write(OUT, "#{binding.string(binding.argument(0))}\n")
 
-      def put_string(machine)
-        write(machine.argument(1), machine.string(machine.argument(0)))
+      def put_string(binding)
+        write(binding.argument(1), binding.string(binding.argument(0)))
       end
 
-      def write_stream(machine)
-        length = machine.argument(1) * machine.argument(2)
-        write(machine.argument(3), machine.bytes(machine.argument(0), length))
-        machine.answer(machine.argument(2))
+      def write_stream(binding)
+        length = binding.argument(1) * binding.argument(2)
+        write(binding.argument(3), binding.bytes(binding.argument(0), length))
+        binding.answer(binding.argument(2))
       end
 
-      def put_byte(machine)
-        write(machine.argument(1), (machine.argument(0) & 0xFF).chr)
-        machine.answer(machine.argument(0))
+      def put_byte(binding)
+        write(binding.argument(1), (binding.argument(0) & 0xFF).chr)
+        binding.answer(binding.argument(0))
       end
 
       def write(stream, bytes) = (stream == ERR ? @err : @out).write(bytes)
 
       # ---- the rest -------------------------------------------------------------
 
-      def get_byte(machine) = machine.answer(@input&.getbyte || REFUSED)
+      def get_byte(binding) = binding.answer(@input&.getbyte || REFUSED)
 
-      def read_bytes(machine)
-        arrived = @input&.read_nonblock(machine.argument(2), exception: false)
-        return machine.answer(REFUSED) unless arrived.is_a?(String)
+      def read_bytes(binding)
+        arrived = @input&.read_nonblock(binding.argument(2), exception: false)
+        return binding.answer(REFUSED) unless arrived.is_a?(String)
 
-        machine.memory.write(machine.argument(1), arrived)
-        machine.answer(arrived.bytesize)
+        binding.memory.write(binding.argument(1), arrived)
+        binding.answer(arrived.bytesize)
       end
 
-      def copy(machine)
-        machine.memory.write(machine.argument(0),
-                             machine.memory.read(machine.argument(1), machine.argument(2)))
-        machine.answer(machine.argument(0))
+      def copy(binding)
+        binding.memory.write(binding.argument(0),
+                             binding.memory.read(binding.argument(1), binding.argument(2)))
+        binding.answer(binding.argument(0))
       end
 
-      def length(machine) = machine.answer(machine.string(machine.argument(0)).bytesize)
+      def length(binding) = binding.answer(binding.string(binding.argument(0)).bytesize)
 
-      def compare(machine)
-        left = machine.string(machine.argument(0))
-        machine.answer((left <=> machine.string(machine.argument(1))) & 0xFFFF_FFFF)
+      def compare(binding)
+        left = binding.string(binding.argument(0))
+        binding.answer((left <=> binding.string(binding.argument(1))) & 0xFFFF_FFFF)
       end
 
-      def answer_zero(machine) = machine.answer(0)
+      def answer_zero(binding) = binding.answer(0)
 
-      def leave(machine)
-        @status = machine.argument(0) & 0xFF
-        machine.stop
+      def leave(binding)
+        @status = binding.argument(0) & 0xFF
+        binding.stop
       end
     end
   end

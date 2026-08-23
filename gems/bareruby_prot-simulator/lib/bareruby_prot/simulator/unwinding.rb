@@ -51,42 +51,42 @@ module BareRubyProt
 
       private
 
-      def allocated(machine) = machine.answer(machine.place("\0" * OBJECT))
+      def allocated(binding) = binding.answer(binding.place("\0" * OBJECT))
 
-      def caught(machine) = machine.answer(machine.memory.read64(machine.argument(0)))
+      def caught(binding) = binding.answer(binding.memory.read64(binding.argument(0)))
 
-      def finished(machine) = machine.answer(0)
+      def finished(binding) = binding.answer(0)
 
-      def thrown(machine) = unwind(machine, machine.argument(0))
+      def thrown(binding) = unwind(binding, binding.argument(0))
 
-      def resumed(machine) = unwind(machine, machine.argument(0))
+      def resumed(binding) = unwind(binding, binding.argument(0))
 
       # Up the chain of saved base pointers, one frame at a time, until one of them says
       # it has somewhere to land. A run that gets to the top without finding one is a
       # program with nothing to catch what it threw, and it ends there.
-      def unwind(machine, object)
-        frame = machine.cpu.register(Cpu::RBP)
+      def unwind(binding, object)
+        frame = binding.cpu.register(Cpu::RBP)
         while frame.positive?
           returning = @memory.read64(frame + 8)
-          break if returning == Machine::SENTINEL
+          break if returning == Binding::SENTINEL
 
           found = landing_pad(returning - 1)
-          return land(machine, found, object, frame) if found
+          return land(binding, found, object, frame) if found
 
           frame = @memory.read64(frame)
         end
-        machine.stop
+        binding.stop
       end
 
       # A landing pad runs in the frame that is catching, so the frame that threw is left
       # behind: the stack pointer goes back to what it was before the call, and the two
       # registers the pad reads are the object and which catch matched.
-      def land(machine, found, object, frame)
-        machine.cpu.set_register(Cpu::RAX, object)
-        machine.cpu.set_register(Cpu::RDX, found.last)
-        machine.cpu.set_register(Cpu::RSP, frame + 16)
-        machine.cpu.set_register(Cpu::RBP, @memory.read64(frame))
-        machine.resume(found.first)
+      def land(binding, found, object, frame)
+        binding.cpu.set_register(Cpu::RAX, object)
+        binding.cpu.set_register(Cpu::RDX, found.last)
+        binding.cpu.set_register(Cpu::RSP, frame + 16)
+        binding.cpu.set_register(Cpu::RBP, @memory.read64(frame))
+        binding.resume(found.first)
       end
 
       # ---- the tables the compiler left -----------------------------------------

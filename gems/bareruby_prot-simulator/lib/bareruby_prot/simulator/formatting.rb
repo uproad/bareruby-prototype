@@ -18,20 +18,20 @@ module BareRubyProt
 
       NARROW = [nil, "hh", "h"].freeze
 
-      def rendered(machine, pointer, arguments)
-        machine.string(pointer).gsub(CONVERSION) do
+      def rendered(binding, pointer, arguments)
+        binding.string(pointer).gsub(CONVERSION) do
           spelling = ::Regexp.last_match(1)
           length = ::Regexp.last_match(2)
           kind = ::Regexp.last_match(3)
           next "%" if kind == "%"
 
           format("%#{spelling}#{kind == 'p' ? 'x' : kind}",
-                 converted(machine, kind, length, arguments.take))
+                 converted(binding, kind, length, arguments.take))
         end
       end
 
-      def converted(machine, kind, length, raw)
-        return machine.string(raw) if kind == "s"
+      def converted(binding, kind, length, raw)
+        return binding.string(raw) if kind == "s"
         return raw & 0xFF if kind == "c"
 
         bits = NARROW.include?(length) ? 32 : 64
@@ -42,13 +42,13 @@ module BareRubyProt
       # The arguments of a call that takes as many as it was given, in the registers and
       # then on the stack the calling convention names.
       class Passed
-        def initialize(machine, first)
-          @machine = machine
+        def initialize(binding, first)
+          @binding = binding
           @index = first
         end
 
         def take
-          value = @machine.argument(@index)
+          value = @binding.argument(@index)
           @index += 1
           value
         end
@@ -60,8 +60,8 @@ module BareRubyProt
       class Varying
         REGISTERS = 48
 
-        def initialize(machine, pointer)
-          @memory = machine.memory
+        def initialize(binding, pointer)
+          @memory = binding.memory
           @pointer = pointer
         end
 

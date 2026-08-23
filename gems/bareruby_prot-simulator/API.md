@@ -1,34 +1,41 @@
 # The simulator, and what it answers
 
 A host build is a real executable for the machine that compiled it, and it already runs
-there. What it has no board for is everything else: a write to a pin reaches a stub that
-prints what it was asked and forgets it, a read answers zero because there is nothing to
-read, and a wait returns without any time having passed.
+there. **The machine is that desk** — the entry says `machine: host` — and what the
+executable has for its peripherals is a stub: a write to a pin prints what it was asked
+and forgets it, a read answers zero, and a wait returns without any time having passed.
 
-This gem runs that same executable a different way. The instructions are interpreted
-here rather than executed by the desk, and every call the program makes into a peripheral
-is caught before it reaches the stub and answered by an object instead. The object stays
+This gem runs that same executable a different way. The instructions are interpreted here
+rather than executed by the desk, and every call the program makes into a peripheral is
+caught before it reaches the stub and answered by an object instead. The object stays
 after the call — so a pin knows what it is at, a port keeps what it sent, and a run that
 has finished can be read.
 
 That is the whole of what this is for. **A trace says a pin was written; a `Gpio` says
 what the pin is.**
 
+Two classes carry that between them, named for what they are:
+
+| | |
+| --- | --- |
+| `Binding` | what a generated call arrives at. On a board that is C over an SDK; here it is Ruby over an interpreter |
+| `Machine` | the desk, and the peripherals it carries |
+
 ```ruby
 require "bareruby_prot/simulator"
 
 run = BareRubyProt::Simulator.run("build/host/bareruby_program", seconds: 3)
 
-run.board.gpio(25).high?          # => true
-run.board.gpio(25).changes        # => 6
-run.board.uart(0).transmitted     # => "ready\r\n"
-run.clock.ticks_ms                # => 3000
+run.machine.gpio(25).high?          # => true
+run.machine.gpio(25).changes        # => 6
+run.machine.uart(0).transmitted     # => "ready\r\n"
+run.clock.ticks_ms                  # => 3000
 ```
 
 ## Starting a run
 
 ```ruby
-BareRubyProt::Simulator.run(artifact, seconds: 3, out: $stdout, err: $stderr, input: nil) { |board| }
+BareRubyProt::Simulator.run(artifact, seconds: 3, out: $stdout, err: $stderr, input: nil) { |machine| }
 ```
 
 | | |
@@ -39,7 +46,7 @@ BareRubyProt::Simulator.run(artifact, seconds: 3, out: $stdout, err: $stderr, in
 | `err:` | where a panic goes |
 | `input:` | an `IO` attached as the wire a serial port receives on, and as what an I2C read answers with. `$stdin` makes a run take its input the way the host build does |
 
-A block given here is the one below under [driving the board](#driving-the-board-from-outside).
+A block given here is the one below under [driving the machine](#driving-the-machine-from-outside).
 It answers a `Run`, already finished; `Simulator::Run.new(...)` builds the same thing
 without starting it.
 
@@ -47,18 +54,18 @@ without starting it.
 
 | | |
 | --- | --- |
-| `board` | the `Board` everything below is on |
+| `machine` | the `Machine` everything below is on |
 | `clock` | the `Clock` this run kept time by |
 | `status` | what the program exited with — 0 unless it panicked |
 | `finished?` | whether the program ended by itself rather than running out of time |
-| `machine` | the interpreter, for a caller that needs memory or an instruction count |
-| `start { \|board\| }` | run it, when it was built rather than run. The block runs every time the program waits |
+| `instructions` | how many were interpreted — what the run cost |
+| `start { \|machine\| }` | run it, when it was built rather than run. The block runs every time the program waits |
 
-## Board
+## Machine
 
-The peripherals a program opened, filed under what it opened them as. Each reader
-answers one when it is given a number and the whole table when it is not, so
-`board.gpio` is every pin the program touched and `board.gpio(25)` is one of them.
+The peripherals a program opened, filed under what it opened them as. Each reader answers
+one when it is given a number and the whole table when it is not, so `machine.gpio` is
+every pin the program touched and `machine.gpio(25)` is one of them.
 
 | | |
 | --- | --- |
@@ -70,9 +77,10 @@ answers one when it is given a number and the whole table when it is not, so
 | `onboard_led` | the one indicator, which is always there |
 | `clock` | the same clock the run kept |
 | `change(pin, level)` | move an input from outside, and deliver the interrupt if that is the edge somebody registered for |
+| `while_waiting { \|machine\| }` | what to run every time the program waits (`Run#start` passes its block here) |
 
-A peripheral the program never opened is not on the board: `board.gpio(3)` is `nil`
-until a `GPIO.new(3, ...)` has run.
+A peripheral the program never opened is not there yet: `machine.gpio(3)` is `nil` until
+a `GPIO.new(3, ...)` has run.
 
 ## Gpio
 
@@ -80,7 +88,7 @@ until a `GPIO.new(3, ...)` has run.
 | --- | --- |
 | `pin` | which pin |
 | `level` | `0` or `1`, now |
-| `level=` | set it, without delivering an interrupt — `Board#change` is the one that does that |
+| `level=` | set it, without delivering an interrupt — `Machine#change` is the one that does that |
 | `high?` / `low?` | the same, asked as a question |
 | `changes` | how many times it has changed. **A blink is visible in this without watching every write** |
 | `direction` | `:in`, `:out` or `:high_z` |
@@ -107,7 +115,7 @@ reads an input is one of the places the two disagree.
 | `baudrate`, `data_bits`, `stop_bits` | the frame, as it stands now — `setmode` moves these |
 | `parity` | `:none`, `:even` or `:odd` |
 | `flow_control?` | whether RTS/CTS was asked for |
-| `txd_pin`, `rxd_pin`, `rts_pin`, `cts_pin` | the pins it was opened on, `-1` for a pin the program left to the board |
+| `txd_pin`, `rxd_pin`, `rts_pin`, `cts_pin` | the pins it was opened on, `-1` for a pin the program left to the machine |
 | `line_ending` | what `puts` puts after a line, which the program can change |
 | `breaks` | how many times a break has been sent |
 | `events` / `handler` | the receive notification, if one was registered |
@@ -160,8 +168,8 @@ and a frequency are one setting asked for two ways.
 Nothing here reads the desk's clock. A wait moves virtual time by exactly what it was
 asked to wait for, and **one instruction costs one microsecond**, which makes this a
 one-megahertz machine. Both of those are the same on every desk, so two runs of one
-artifact leave identical boards — which is what lets a board be something a check is
-written against.
+artifact leave the machine in the same state — which is what lets it be something a check
+is written against.
 
 | | |
 | --- | --- |
@@ -174,13 +182,13 @@ The instruction cost is also what ends a program that never waits: a loop that o
 writes pins runs out of the time it was given rather than running until somebody stops
 it.
 
-## Driving the board from outside
+## Driving the machine from outside
 
-Nothing is attached to this board but the caller, so an input only changes when it is
+Nothing is attached to this machine but the caller, so an input only changes when it is
 changed here — and **a wait is when that happens**. A block given to `start` runs every
-time the program waits, holding the board, which is the same moment a board would deliver
-an interrupt to a program. Before the program has run there is nothing to set up: a
-peripheral does not exist until the program has opened it.
+time the program waits, holding the machine, which is the same moment hardware would
+deliver an interrupt to a program. Before the program has run there is nothing to set up:
+a peripheral does not exist until the program has opened it.
 
 `samples/logger.rb` watches a pulled-up input and says over its serial port how many
 times it has seen it pressed. Nothing is on the pin, so it reads high and the program
@@ -188,16 +196,16 @@ says nothing — until this presses it for a second:
 
 ```ruby
 run = BareRubyProt::Simulator::Run.new("build/host/bareruby_program", seconds: 3)
-run.start do |board|
-  board.change(14, 0) if board.clock.ticks_ms.between?(500, 1500)   # pressed
-  board.change(14, 1) if board.clock.ticks_ms > 1500                # let go
+run.start do |machine|
+  machine.change(14, 0) if machine.clock.ticks_ms.between?(500, 1500)   # pressed
+  machine.change(14, 1) if machine.clock.ticks_ms > 1500                # let go
 end
 
-run.board.uart(0).transmitted   # => "logger ready\npressed: 1\n... pressed: 11\n"
-run.board.gpio(14).changes      # => 2
+run.machine.uart(0).transmitted   # => "logger ready\npressed: 1\n... pressed: 11\n"
+run.machine.gpio(14).changes      # => 2
 ```
 
-`Board#change` runs a registered handler before it returns when the move is the edge it
+`Machine#change` runs a registered handler before it returns when the move is the edge it
 was registered for. A receive notification is delivered inside the next wait that allows
 one, because a handler runs in thread mode rather than in the interrupt — which is why
 putting bytes on a wire in this block is enough to make one arrive.
@@ -211,6 +219,6 @@ putting bytes on a wire in this block is enough to make one arrive.
   in the build; here every queue holds 256 bytes.
 - **No type comparison on a throw.** Every `catch` this compiler emits is a catch-all, so
   what is thrown is never asked what it is.
-- **Nothing is attached.** A pin reads what it was last set to, an ADC reads what it was
+- **Nothing is attached to it.** A pin reads what it was last set to, an ADC reads what it was
   given, and a bus answers what it was told to answer. There is no device model behind
   any of them.
