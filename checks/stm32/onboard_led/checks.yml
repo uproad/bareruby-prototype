@@ -1,0 +1,10 @@
+checks:
+  - name: on_wire
+    observe: observe/led.resc
+  - name: off_after_on
+    observe: observe/led.resc
+  - name: write_cycle
+    observe: observe/led.resc
+    during: observe/mid_state.resc
+  - name: init_state
+    observe: observe/led.resc

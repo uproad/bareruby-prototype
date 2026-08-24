@@ -1668,3 +1668,41 @@ on hardware. One API gap is recorded rather than tested: the stdlib registers
 `EDGE_FALL` only, and the rising path waits for an `EDGE_RISE` constant to say so. The
 complete `checks/stm32/gpio/check.sh f446` run passed 7/7 in 57 seconds under Renode.
 It was built but not hardware-flashed.
+
+## The onboard LED, the clock profile and the sleeps get their own checks
+
+Three more suites, written as test cases first, reviewed for gaps, then implemented on
+the stub-Renode harness the I2C and GPIO suites established. Three more sit as
+reviewed test-case documents waiting on their bindings: ADC (no unit and no Renode F4
+model — a C# model like the I2C sensor will be needed), PWM (no unit, though probing
+showed the pinned STM32_Timer drives compare output all the way to the GPIO, so duty
+lands in the emulator when the binding does), and SPI (no stdlib class yet).
+
+`checks/stm32/onboard_led/` holds the class that deliberately knows no pin number:
+`on` lights the machine's LED model with no pin named anywhere in the program, `off`
+returns it dark, `write` folds zero and non-zero onto the same two answers, and `new`
+alone settles the LED off. The mid-cycle observation rides a `during:` probe the
+harness says between two slices of the run. 4/4 in 45 seconds.
+
+`checks/stm32/clock/` pins the premise every other suite's register expectations stand
+on — SYSCLK 84 MHz, APB1 42 MHz. Five observation-only checks read the profile out of
+the registers: PLLCFGR `0x22015410`, CFGR `0x0000100A`, CR `0x03000483`, FLASH ACR at
+two wait states, PWR VOS at scale 3. Time measured in the emulator would be circular
+here — the machine's DWT and SysTick are written from the same arithmetic — so the
+registers are the non-circular check and the frequencies stay on hardware. The pinned
+RCC model mirrors ready bits instantly, the flash controller drops the cache bits the
+way the GPIO model drops OTYPER, and PWR resets unlike the reference manual, so the
+PWR expectations are recorded model measurements. 5/5 in 52 seconds.
+
+`checks/stm32/sleep/` turns timing claims into exact numbers on deterministic virtual
+time, measured by the programs themselves through `ticks_ms`: 100 ms costs exactly
+100, 1 ms costs 2, a 20 ms body stretches a sleep lap to 120 while an asleep lap holds
+at 100, and an overrun re-anchors instead of carrying debt. Renode's LED tester turned
+out to carry `AssertDutyCycle` after all, and a failed assertion aborts the script —
+so a success marker said after it is the expectation, and blink holds 0.5 and
+heartbeat 0.1 where a hand-run once held 0.1 ± 0.05. A byte fed mid-wait shows
+`interrupt: false` deferring delivery to the next default wait without losing it. And
+`asleep_us`'s recorded fault — a delay that moves no period mark and never delivers —
+pins as: the delay itself costs its 500 ms, the overdue `asleep_ms` after it costs 0
+and never drains, the handler stays silent to the end. 10/10 in 337 seconds. All three
+suites were built but not hardware-flashed.
