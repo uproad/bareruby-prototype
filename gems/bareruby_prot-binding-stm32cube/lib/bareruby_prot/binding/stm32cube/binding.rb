@@ -405,6 +405,49 @@ module BareRubyProt
       }
     CPP
 
+    ADC = <<~CPP
+      #include "bareruby_binding.h"
+      #include "bareruby_board.h"
+
+      /* The Pico binding's design, mirrored: the pin is wired analog once and the
+         channel selected per read, so any number of ADC objects share the board's one
+         converter. Which channel reads a pin is the board's table — the same answer
+         PWM's table gives about timers. */
+
+      void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
+          uint32_t channel = 0;
+          bareruby_board_adc(pin, &channel);
+          self->pin = pin;
+          self->channel = (int32_t)channel;
+      }
+
+      int32_t bareruby_adc_read_raw(bareruby_adc_t *self) {
+          uint32_t channel = 0;
+          ADC_HandleTypeDef *adc = bareruby_board_adc(self->pin, &channel);
+          ADC_ChannelConfTypeDef select = {0};
+          select.Channel = channel;
+          select.Rank = 1;
+          select.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+          if (HAL_ADC_ConfigChannel(adc, &select) != HAL_OK) {
+              bareruby_board_fault();
+          }
+          if (HAL_ADC_Start(adc) != HAL_OK) {
+              bareruby_board_fault();
+          }
+          if (HAL_ADC_PollForConversion(adc, HAL_MAX_DELAY) != HAL_OK) {
+              bareruby_board_fault();
+          }
+          int32_t raw = (int32_t)HAL_ADC_GetValue(adc);
+          HAL_ADC_Stop(adc);
+          return raw;
+      }
+
+      int32_t bareruby_adc_read(bareruby_adc_t *self) {
+          int64_t raw = (int64_t)bareruby_adc_read_raw(self);
+          return (int32_t)((raw * 3300 * 65536) / (4095 * 1000));
+      }
+    CPP
+
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -824,6 +867,7 @@ module BareRubyProt
     I2C_READ_FILE = "bareruby_binding_i2c_read_stm32.cpp"
     ONBOARD_LED_FILE = "bareruby_binding_onboard_led_stm32.cpp"
     PWM_FILE = "bareruby_binding_pwm_stm32.cpp"
+    ADC_FILE = "bareruby_binding_adc_stm32.cpp"
 
     FILES = {
       GPIO_FILE => GPIO,
@@ -834,14 +878,16 @@ module BareRubyProt
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
       ONBOARD_LED_FILE => ONBOARD_LED,
-      PWM_FILE => PWM
+      PWM_FILE => PWM,
+      ADC_FILE => ADC
     }.freeze
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
     UNITS = { onboard_led: ONBOARD_LED_FILE, gpio: GPIO_FILE, uart: UART_FILE,
               uart_receive: UART_RECEIVE_FILE, uart_interrupt: UART_INTERRUPT_FILE,
-              i2c: I2C_FILE, i2c_read: I2C_READ_FILE, pwm: PWM_FILE }.freeze
+              i2c: I2C_FILE, i2c_read: I2C_READ_FILE, pwm: PWM_FILE,
+              adc: ADC_FILE }.freeze
 
     # One file answers every machine, so what remains machine-bound is refusal: a board
     # whose manifest carries no LED refuses the OnboardLED unit here, before any C
