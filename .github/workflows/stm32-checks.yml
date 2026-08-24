@@ -1,10 +1,11 @@
-# Every check this repository has, on every push that asks for review. The fixed-answer
-# suites fan out one job per suite and the host-agreement harness one job per board, so
-# the wall time is the slowest single suite rather than the sum. Everything a job
-# reaches for is pinned: the toolchain by sources.lock.yml (cached under its hash, so
-# only a lock change downloads), and the desk record written fresh — CI is a desk like
-# any other, and config/target.yml is what a desk says about itself.
-name: checks
+# Every STM32 check this repository has, on every push that asks for review. The
+# fixed-answer suites fan out one job per suite and the host-agreement harness one job
+# per board, so the wall time is the slowest single suite rather than the sum.
+# Everything a job reaches for is pinned: the toolchain by sources.lock.yml (cached
+# under its hash, so only a lock change downloads), and the desk record written fresh —
+# CI is a desk like any other, and config/target.yml is what a desk says about itself.
+# Checks for another target family would be their own workflow beside this one.
+name: stm32 checks
 
 on:
   pull_request:
@@ -13,12 +14,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: checks-${{ github.ref }}
+  group: stm32-checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   suite:
-    name: ${{ matrix.suite }}
+    name: stm32 ${{ matrix.suite }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -73,7 +74,7 @@ jobs:
           if-no-files-found: ignore
 
   emulate:
-    name: emulate ${{ matrix.board.name }}
+    name: stm32 emulate ${{ matrix.board.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
