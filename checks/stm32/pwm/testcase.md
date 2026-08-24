@@ -10,78 +10,70 @@ checks/stm32/pwm/check.sh f446
 `samples/<英字名>.rb`、`expected/<英字名>.txt`、および実行結果を保存する
 `.bareruby/checks/stm32/pwm/<英字名>/`に使用します。未実装テストの英字名は予定名です。
 
-**このスイートは全テスト未実装です。** STM32Cubeバインディングは`pwm`ユニットを
-持たず(`binding.rb`にPWMの翻訳単位が無く、stdlib側のペリフェラル定義も「STM32Cube
-経由のNUCLEOはPWMに答えない」と明記)、PWMを使うプログラムはSTM32向けにビルド
-できません(`checks/emulate.yml`の`peripheral_answers`の記録)。このスイートは
-バインディングのPWM実装と同時に作ります。ピン→タイマー/チャネルの対応は
-バインディングの設計判断待ちで、以下の期待レジスタ値・観測アドレスは実装時に
-確定します。
+## バインディングの設計(実装済み)
+
+STM32Cubeバインディングの`pwm`ユニットはPicoバインディングの設計を鏡写しにして
+います: ボードがタイマーを**1MHzティック**(84MHzタイマクロックをPSC=83で分周)に
+prescale済みで渡すので、周期はマイクロ秒の長さそのもの(ARR=1e6/周波数-1)、
+パルス幅はコンペア値そのものです。`frequency <= 0`はカウンタを直接停止します。
+
+どのピンをどのTIMのどのチャネルが答えるかは**ボードマニフェストのpwm表**の記録で、
+プログラムはピン番号(GPIOと同じ「1ポート16本、ポートAから」の通し番号)だけを
+言います。表に無いピンは`bareruby_board_fault`で拒否されます。NUCLEO-F446REの表は
+PA5(ピン5、TIM2_CH1、AF1 — LD2と共有でエミュレータの観測点)、PA15(ピン15、
+TIM2_CH1、AF1 — Picoピン番号のサンプルの着地点)、PC7(ピン39、TIM3_CH2、AF2 —
+Arduino D9)です。
 
 ## テストの仕組み
 
-ピン番号はGPIOスイートと同じ「1ポート16本、ポートAから」の通し番号です。PWMに
-使えるのはタイマーのチャネルが引き出されたピンだけで、どのピンをどのTIMのどの
-チャネルへ割り当てるかがバインディングの設計判断です(候補の例: PA5はTIM2_CH1
-(AF1)で基板のLD2と重なる。F446のAFは TIM1/TIM2=AF1、TIM3〜5=AF2、TIM8〜11=AF3)。
+Renodeのstm32f4機械のタイマーは`STM32_Timer`モデルです。実測(1.16.1)で、
+CR1・CCMR1・CCER・PSC・ARR・CCRへの書き込みは読み戻しで保持され、さらにモデルは
+**コンペア出力をGPIOまで駆動します**(stm32f4.replが各TIMチャネルをAF番号付きで
+GPIOへ接続: `timer2: 0 -> gpioPortA#05@01`)。PWMモード1の極性も実機どおりで、
+PA5=LD2のLEDモデルに対するLEDTesterのデューティ比アサーションが成立します。
+1つだけ保持されないビットがあります: **CCMR1のOC1PE(プリロード有効)は書き込みが
+落ち、読みは0です**(実機ならHALが立てるので`0x68`、モデルでは`0x60`)。gpioスイート
+のOTYPERと同じ既知の制約として、期待値はモデルの実測値で固定しています。
 
-Renodeのstm32f4機械のタイマーは`STM32_Timer`モデルです。実測(1.16.1、TIM2ベース
-`0x40000000`への`WriteDoubleWord`/`ReadDoubleWord`)では、CR1(+0x00)・CCMR1(+0x18)・
-CCER(+0x20)・PSC(+0x28)・ARR(+0x2C)・CCR1(+0x34)への書き込みが読み戻しで保持されて
-います。さらにモデルは**コンペア出力をGPIOまで駆動します**: stm32f4.replは各TIMの
-チャネルをAF番号付きでGPIOへ接続しており(例: `timer2: 0 -> gpioPortA#05@01`)、
-実測でPA5をAF1にしてTIM2_CH1をPWM1モードで走らせると、PA5のLEDモデルの状態が
-仮想時間とともに変わりました。つまりエミュレータで固定できるのは次の4つです。
-
-- 4メソッドの戻り値。宣言側の算術でボード非依存の契約なので、UART出力で固定します
-  (`samples/peripheral_answers.rb`と同じ確認)。
-- 初期化・設定の計算結果がTIMレジスタ(PSC・ARR・CCR)へ届くこと。
-- PWMピンのGPIO側がAFモードになること(MODERのAF=`10`。gpioスイートのobserve方式で
-  観測可能)。
-- 波形のデューティ・周期(仮想時間)。測り方はLEDテスター(`CreateLEDTester`)か
-  RunFor分割でのピン状態サンプリングのどちらかを実装時に確定します。実機に残るのは
-  電気的な実波形と実クロックの精度だけになります。
-
-ハーネスはGPIO・I2Cスイートと同じスタブRenode方式(`checks/stm32/gpio/check.sh`
-参照)を再利用します。ビルドにはRenodeの代わりにスタブを渡し(ELF・machine.repl・
-run.rescだけ作らせる)、生成されたrun.rescへレジスタ観測を差し込んで、本物の
-Renodeを自分で1回だけ起動します。検証結果はUART(USART2)へ出力し、
-`expected/<英字名>.txt`と比較します。
+ハーネスはスタブRenode方式(`checks/stm32/gpio/check.sh`参照)+sleepスイートの
+duty方式です。レジスタ観測は`quit`直前に差し込み`expected/<英字名>.registers`と
+比較、`duty_wave`は`RunFor`をLEDTester(`AssertDutyCycle`、失敗時はスクリプト中断
+→成功マーカー方式)に差し替えて`expected/<英字名>.duty`と比較します。検証結果は
+UART(USART2)へ出力し、`expected/<英字名>.txt`と比較します。
 
 ## 戻り値契約テスト
 
 | テスト名 | ファイル・結果フォルダ名 | 実装状況 | 入力・設定 | 期待結果 | 確認すること |
 | --- | --- | --- | --- | --- | --- |
-| 4メソッドの戻り値契約 | `method_answers` | 未実装 | `PWM.new(pin, frequency: 50, duty: 30)`の後、`frequency(50)`、`period_us(20000)`、`duty(50)`、`pulse_width_us(1500)`の戻り値を出力 | `50`、`50`、`50.0`、`7.5`(HzはInt32、%はFixed。Fixedの表示形式はホスト実行の出力に合わせて実装時に確定) | 各メソッドが「いま適用した設定」を答えること。`period_us`はHzで、`pulse_width_us`は構造体が保持する周波数から%で答えること。答えは宣言側の算術なので、ここで固定するのは呼び出しがSTM32向けにビルドでき、実機文脈でも同じ答えが返ること。この時点で`samples/peripheral_answers.rb`のホスト突き合わせ(`checks/emulate.yml`の除外)も復帰させる。 |
+| 4メソッドの戻り値契約 | `method_answers` | 実装済み | `PWM.new(15, frequency: 50, duty: 30)`の後、`frequency(50)`、`period_us(20_000)`、`duty(50)`、`pulse_width_us(1500)`の戻り値を出力 | `50`、`50`、`50.0`、`7.5` | 各メソッドが「いま適用した設定」を答えること。`period_us`はHzで、`pulse_width_us`は構造体が保持する周波数から%で答えること。答えは宣言側の算術なので、ここで固定するのは呼び出しがSTM32向けにビルドでき、実機文脈でも同じ答えが返ること。なお`samples/peripheral_answers.rb`のホスト突き合わせはこれでビルド可能になったが、ホストが`uart.puts`をstderrのトレースで答える食い違いが残るため復帰は別途(`checks/emulate.yml`の記録参照)。 |
 
 ## 設定レジスタテスト
 
 UARTの`frame`・I2Cの`frequency_registers`・GPIOの`config_registers`と同じく、初期化と
-設定の計算結果がレジスタへ届くことを直接読んで固定します。Renodeのモデルは値を保持
-するだけで動作には使わないため、ここで固定するのは「バインディングの計算がレジスタに
-届くこと」です。期待値はNUCLEO-F446RE固有です(タイマクロックはAPB1側で84MHz。
-APB2側のタイマーでもPPRE2=÷1なので同じ84MHzになり、ピン選定に依らない)。PSCとARRの
-分担(分解能の取り方)もバインディングの設計判断のため、具体値は実装時に確定します。
+設定の計算結果がレジスタへ届くことを直接読んで固定します。期待値は84MHzタイマ
+クロック(APB1側。APB2側のタイマーでもPPRE2=÷1なので同じ84MHz)のNUCLEO-F446RE
+固有です。
 
 | テスト名 | ファイル・結果フォルダ名 | 実装状況 | 入力・設定 | 期待結果 | 確認すること |
 | --- | --- | --- | --- | --- | --- |
-| 周波数の反映 | `frequency_registers` | 未実装 | `PWM.new(pin, frequency: 50)`で初期化して停止。観測で該当TIMのPSC・ARR・CR1を読む | (PSC+1)×(ARR+1)=タイマクロック/50となる組と、CR1のCEN=1(具体値は実装時に確定) | `frequency:`の分周計算がPSC・ARRへ届き、カウンタが起動されること。`period_us`経由の再設定も同じレジスタに落ちるので、初期化後に`period_us(20000)`を呼んで値が変わらないことも同じサンプルで押さえる。 |
-| デューティの反映 | `duty_registers` | 未実装 | `PWM.new(pin, frequency: 50, duty: 25)`で初期化して停止。観測で該当チャネルのCCR・CCMR・CCERを読む | CCR≒周期の25%、CCMRのOCxM=PWMモード、CCERのCCxE=1(具体値は実装時に確定) | `duty:`の比率計算がCCRへ届き、チャネルがPWM出力比較モードで有効化されること。`pulse_width_us`経由(1500us=7.5%相当)の再設定も同じCCRに落ちることを併せて押さえる。 |
-| GPIO側のAFモード | `af_registers` | 未実装 | PWMピンを初期化して停止。観測で該当ポートのMODERとAFRL/AFRHを読む | 該当ピンのMODERビットが`10`(AF)、AFRにタイマーのAF番号(具体値はピン対応の確定後) | ピンがタイマーへ配線されること(GPIO_MODE_AF_PPの経路)。他ピンのビット(リセット値・USART2のPA2/PA3)が保存されたままであることも`led_wire`と同様に押さえる。 |
-| 波形のデューティ観測 | `duty_wave` | 未実装 | `PWM.new(pin, frequency:, duty:)`で走らせたまま停止せず、ハーネスが仮想時間でピン状態を観測する | 指定したデューティ比(許容幅込み、具体値は実装時に確定) | コンペア出力が実際にピンまで駆動され、デューティ比が指定どおりであること(上の実測でモデルが駆動することは確認済み。LEDテスターかRunFor分割サンプリングかは実装時に確定)。PA5をPWMに使うならLD2のLEDモデルがそのまま観測点になる。 |
+| 周波数の反映 | `frequency_registers` | 実装済み | `PWM.new(5, frequency: 50)`の後`period_us(20_000)`して停止。観測でTIM2のCR1・PSC・ARRを読む | CR1 `0x1`(CEN)、PSC `0x53`(83)、ARR `0x4E1F`(19999) | `frequency:`の分周計算がPSC・ARRへ届き、カウンタが起動されること。`period_us`経由の再設定も同じレジスタに落ち、値を変えないこと。 |
+| デューティの反映 | `duty_registers` | 実装済み | `PWM.new(5, frequency: 50, duty: 25)`で初期化して停止。観測でTIM2のCCMR1・CCER・CCR1を読む | CCMR1 `0x60`(OC1M=PWMモード1。実機ならOC1PE込みで`0x68` — 上記のモデル制約)、CCER `0x1`(CC1E)、CCR1 `0x1388`(5000=20000の25%) | `duty:`の比率計算がCCRへ届き、チャネルがPWM出力比較モードで有効化されること。 |
+| パルス幅の反映 | `pulse_width_registers` | 実装済み | `PWM.new(39, frequency: 50)`の後`pulse_width_us(1500)`して停止。観測でTIM3のPSC・CCR2を読む | PSC `0x53`、CCR2 `0x5DC`(1500) | 1MHzティックゆえパルス幅がコンペア値そのものであること。PC7の表の行(TIM3・チャネル2・AF2)が正しく引かれること。 |
+| GPIO側のAFモード | `af_registers` | 実装済み | `PWM.new(5, ...)`で初期化して停止。観測でポートAのMODERとAFRLを読む | MODER `0xA80008A0`(リセット値+USART2+PA5がAF=`10`)、AFRL `0x00107700`(PA2/PA3=AF7、PA5=AF1) | ピンがタイマーへ配線されること(GPIO_MODE_AF_PPの経路)。他ピンのビットが保存されたままであることも`led_wire`と同様に押さえる。 |
+| 波形のデューティ観測 | `duty_wave` | 実装済み | `PWM.new(5, frequency: 50, duty: 30)`して停止(カウンタはハードウェアなので回り続ける)。LEDTesterが仮想2秒を測定 | デューティ比`0.3`±0.05のアサーション成功 | コンペア出力が実際にピン(LD2のLEDモデル)まで駆動され、デューティ比が指定どおりであること。モデルのPWM極性が実機のPWMモード1と一致することもここが押さえる。 |
 
 ## 境界値テスト
 
 | テスト名 | ファイル・結果フォルダ名 | 実装状況 | 入力・設定 | 期待結果 | 確認すること |
 | --- | --- | --- | --- | --- | --- |
-| dutyの両端 | `duty_bounds` | 未実装 | `duty(0)`と`duty(100)`の戻り値を出力して停止。観測でCCRを読む | `0.0`、`100.0`、CCRが常時low相当(0)と常時high相当(具体値は実装時に確定) | 0%と100%が%のまま答えられ、レジスタ上も両端(パルス無し・全周期)に落ちること。100%が「ARRちょうど」か「ARR+1」かはHALのPWMモードの端の扱いを実装時に確認して固定する。 |
-| 極端な周波数 | `frequency_bounds` | 未実装 | 1Hzのような低い周波数と、タイマクロックに近い高い周波数を設定 | 設計判断待ち | 16ビットのPSC・ARR(32ビットTIMを使うなら別)で表せない・分解能が潰れる指定をどう扱うか(丸め・クランプ・`bareruby_board_fault`)は設計判断待ちで、判断が下りた契約をここで固定する。 |
+| dutyの両端 | `duty_bounds` | 実装済み | `PWM.new(5, frequency: 50)`の後、`duty(0)`と`duty(100)`の戻り値を出力して停止。観測でCCR1を読む | `0.0`、`100.0`、CCR1 `0x4E20`(20000=ARR+1) | 0%と100%が%のまま答えられ、レジスタ上も両端に落ちること。PWMモード1はCNT<CCRの間activeなので、全周期をコンペア値にした「ARR+1」が常時highの正しい表現。 |
+| 極端な周波数 | `frequency_bounds` | 未実装 | 1Hzのような低い周波数と、タイマクロックに近い高い周波数を設定 | 設計判断待ち | 1MHzティックでは16Hz未満が16ビットARR(TIM3等)に収まらず、1MHz超は周期が表現できない。丸め・クランプ・`bareruby_board_fault`のどれにするかは設計判断待ちで、判断が下りた契約をここで固定する(現状は算術がそのまま流れる)。 |
 
 ## 異常系テスト
 
 | テスト名 | ファイル・結果フォルダ名 | 実装状況 | 入力・設定 | 期待結果 | 確認すること |
 | --- | --- | --- | --- | --- | --- |
-| PWMに使えないピンの拒否 | `no_timer_pin` | 未実装 | マーカー出力後に、タイマーチャネルの無いピンで`PWM.new`(候補はピン対応の確定後に選ぶ) | マーカーのみ(以降の出力なし) | タイマーチャネルが引き出されていないピンが`bareruby_board_fault`で拒否されること。範囲外ピン・未配線ポートの拒否がGPIOと同じ経路を通るなら、その旨も実装時に記す。 |
+| 表に無いピンの拒否 | `no_timer_pin` | 実装済み | マーカー出力後に`PWM.new(0, frequency: 50)`(PA0 — パッケージにはあるが表に無い) | マーカーのみ(以降の出力なし) | ボードのpwm表に無いピンが`bareruby_board_fault`で拒否されること。GPIOの範囲検査より前に、表の既定分岐が答える。 |
 
 ## 実機で確認するテスト
 
@@ -91,11 +83,12 @@ APB2側のタイマーでもPPRE2=÷1なので同じ84MHzになり、ピン選�
 
 | テスト名 | 予定ファイル・結果フォルダ名 | 実装状況 | 確認すること |
 | --- | --- | --- | --- |
-| 波形の周波数・デューティ | `waveform_measure` | 未実装 | `frequency:`と`duty:`の指定が実波形の周波数・デューティに反映されること。レジスタ反映と仮想時間のデューティはエミュレータで確認予定(`frequency_registers`、`duty_registers`、`duty_wave`)。 |
-| サーボのパルス | `servo_pulse` | 未実装 | `samples/servo.rb`の50Hz・1000〜2000usのパルス(中立1500us=7.5%)が波形に現れ、サーボが追従すること。 |
-| dutyの両端の電気的振る舞い | `duty_bounds_electrical` | 未実装 | 0%で常時low、100%でグリッチ無く常時highが出ること。レジスタ反映はエミュレータで確認予定(`duty_bounds`)。 |
+| 波形の周波数・デューティ | `waveform_measure` | 未実装 | `frequency:`と`duty:`の指定が実波形の周波数・デューティに反映されること。レジスタ反映と仮想時間のデューティはエミュレータで確認済み(`frequency_registers`、`duty_registers`、`duty_wave`)。 |
+| サーボのパルス | `servo_pulse` | 未実装 | `samples/servo.rb`の50Hz・1000〜2000usのパルス(中立1500us)がPC7(D9)の波形に現れ、サーボが追従すること。 |
+| dutyの両端の電気的振る舞い | `duty_bounds_electrical` | 未実装 | 0%で常時low、100%でグリッチ無く常時highが出ること。レジスタ反映はエミュレータで確認済み(`duty_bounds`)。 |
+| CCRプリロードの実機確認 | `ccr_preload_hardware` | 未実装 | HALが立てるOC1PE(モデルが保持しないビット)が実機ではCCMR1に立ち、走行中のデューティ変更が周期境界で反映されること。 |
 
 PWMの検証結果はUART出力として、それぞれ`expected/<英字名>.txt`と比較します。
-`frequency_registers`・`duty_registers`・`af_registers`・`duty_bounds`ではTIMとGPIOの
-レジスタを直接読み、`expected/<英字名>.registers`とも比較します。失敗時の出力や
-差分は`.bareruby/checks/stm32/pwm/<英字名>/`に残ります。
+レジスタ観測のテストは`expected/<英字名>.registers`と、`duty_wave`はLEDTesterの
+成功マーカーを`expected/<英字名>.duty`とも比較します。失敗時の出力や差分は
+`.bareruby/checks/stm32/pwm/<英字名>/`に残ります。

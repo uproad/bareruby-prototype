@@ -41,7 +41,10 @@
 #     this list.
 #   - uart_flow_control: flow control is refused on STM32 by design, so host and
 #     board are meant to disagree.
-#   - peripheral_answers: does not build for STM32 — the binding carries no PWM unit.
+#   - peripheral_answers: builds for STM32 now that the binding carries a PWM unit
+#     (checks/stm32/pwm/ holds the answers), but the host binding logs uart.puts as a
+#     stderr trace instead of writing the text, so the boards say "chained" where the
+#     host says nothing — a question for the host binding, like uart_format.
 #   - interrupt: produces no output and needs a GPIO edge. The edge-to-handler path
 #     it exercises is held instead by checks/stm32/gpio/ (irq_falling) — the host
 #     diff here stays out of it by design.

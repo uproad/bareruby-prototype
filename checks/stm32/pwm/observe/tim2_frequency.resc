@@ -1,0 +1,3 @@
+sysbus ReadDoubleWord 0x40000000
+sysbus ReadDoubleWord 0x40000028
+sysbus ReadDoubleWord 0x4000002C
