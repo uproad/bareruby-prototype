@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [uart, i2c, gpio, onboard_led, clock, sleep, pwm]
+        suite: [uart, i2c, gpio, onboard_led, clock, sleep, pwm, adc]
     steps:
       - uses: actions/checkout@v4
 

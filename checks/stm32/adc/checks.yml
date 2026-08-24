@@ -1,0 +1,28 @@
+# The fixed-answer ADC checks. check.sh reads this file: each name is a sample under
+# samples/, its UART compared against expected/<name>.txt.
+#
+#   give:    channel voltages the check model holds before the run starts, as
+#            channel=millivolts pairs separated by spaces.
+#   steps:   voltage changes injected mid-run, |-separated: each step slices 0.4
+#            virtual seconds off the run and then applies its pairs, so a sample
+#            reading every 500 ms sees one step per read.
+#   observe: a .resc of register reads said before quit, its answers compared
+#            against expected/<name>.registers.
+checks:
+  - name: read_raw_levels
+    give: 0=0
+    steps: 0=3300|0=1650
+  - name: read_raw_byte_edges
+    give: 0=206
+    steps: 0=207|0=3095
+  - name: read_voltage_scale
+    give: 0=1650
+  - name: pin_channel_map
+    give: 0=100 1=200 4=400 8=800 11=1100 10=1000
+  - name: analog_moder
+    observe: observe/moder.resc
+  - name: adc_registers
+    give: 4=3300
+    observe: observe/registers.resc
+  - name: invalid_pin
+  - name: non_analog_pin

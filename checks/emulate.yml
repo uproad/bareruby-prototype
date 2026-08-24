@@ -30,8 +30,11 @@
 #     loop forever and say nothing on the UART. The duty-cycle assertions are held
 #     now by checks/stm32/sleep/ (blink_duty, heartbeat_duty — replacing the old
 #     hand-run 0.1 ± 0.05 record) — the host diff here stays out of it by design.
-#     asleep and adc also use the ADC, which the STM32 binding does not carry yet
-#     (checks/stm32/adc/testcase.md keeps that record).
+#     asleep, adc, avs, tenji and tenji_int also read the ADC: the binding carries
+#     one now and they build, but their Pico pin numbers sit on no row of this
+#     board's adc table (and their PWM pins on none of its pwm table), so on the
+#     board they stop at bareruby_board_fault — builds, not verified runs. The
+#     converter itself is held by checks/stm32/adc/.
 #   - i2c, picoruby_interface: read I2C with no device behind it; the host stub
 #     answers, the emulated bus does not. The emulated bus is held instead by
 #     checks/stm32/i2c/, whose harness attaches a C# check sensor — the host diff
