@@ -1783,6 +1783,13 @@ question nobody asked. `Clock` now takes `nil` for a length and is never over, t
 extension names none, and the panel keeps the last few thousand frames behind its slider
 rather than all of them.
 
+**And it took the panel down on the way.** The frame limit was given the name a constant
+two lines above it already had, and a repeated `const` is a syntax error — so the whole
+script failed to parse and the panel drew no pins, no speed buttons and no frames. Three
+symptoms, one line. Nothing had ever read that script: it lives inside an HTML file, so
+`node --check` on the extension never saw it. **`package.sh` now pulls it out and checks
+it before packing**, and refuses to write a `.vsix` that would draw nothing.
+
 That change made a second one necessary. Frames were written at the waits, so a program
 that never waits wrote none — `samples/gpio_pico_loop.rb`, twenty-six pins and no sleep,
 showed nothing at all. They are written between instructions now, at most one per

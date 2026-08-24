@@ -25,6 +25,18 @@ OUT="bareruby-visualizer-$VERSION.vsix"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# **The panel's script is read before it is packed.** It lives inside an HTML file, so
+# nothing else here would ever look at it — and a syntax error in it is a panel that draws
+# nothing at all, with no way to tell that apart from a run that produced nothing.
+ruby -e '
+  page = File.read("media/panel.html")
+  script = page[/<script nonce="\{\{nonce\}\}">(.*?)<\/script>/m, 1]
+  File.write("/tmp/bareruby-panel-check.js", script)
+' && node --check /tmp/bareruby-panel-check.js || {
+    echo "package: media/panel.html does not parse." >&2
+    exit 1
+}
+
 mkdir -p "$WORK/extension/media"
 cp package.json extension.js watch.rb README.md "$WORK/extension/"
 cp media/panel.html "$WORK/extension/media/"
