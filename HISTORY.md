@@ -1728,6 +1728,24 @@ finely here: ten nanoseconds is a hundredth of the smallest thing that happens. 
 step to the instruction clock is what settled it, and the period follows whatever that
 clock is set to.
 
+**Two of the seven colours are reserved.** A pin's ring says what claimed it, and the set
+was settled up front — green out, red in, orange ADC, blue DAC, cyan I2C, violet UART,
+yellow PWM — but two of them reach nothing.
+
+`I2C` was the interesting one. The class takes `unit:` and no pins, so a bus that has been
+opened cannot say which two lines it is on. Reading how PicoRuby does it settled what the
+right shape is rather than what to patch: the symbol is `<CHIP>_I2C<N>` with no primary
+alias — `:RP2040_I2C0`, `:RP2040_I2C1`, `:ESP32_I2C0`, `:ESP32_I2C1` — and pins come
+beside it, `sda_pin:` and `scl_pin:`, which `PICORUBY_COMPATIBILITY.md` already writes
+down and this prototype has never implemented. RP2040 also carries the table the other
+way, so a unit can be inferred from a pin: I2C0 takes SDA `0,4,8,…` and SCL `1,5,9,…`,
+I2C1 the odd pairs between them. **Its default is the loose end**: with pins left out it
+uses `PICO_DEFAULT_I2C_SDA_PIN`/`SCL` without looking at the unit at all, so
+`:RP2040_I2C1` opened bare lands on i2c0's pins. Guessing a rule for the hosted machine
+out of that would have been inventing one. The bus stays uncoloured until the class grows
+its pins, in a change of its own. `DAC` is reserved the same way — ESP32
+has one, nothing here reaches it.
+
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
 builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus

@@ -87,6 +87,7 @@
   }
   #scrub { width: 100%; margin-top: 10px; accent-color: var(--vscode-textLink-foreground); }
   #legend { font-size: 10px; opacity: .6; margin-top: 10px; line-height: 1.7; }
+  #legend .kept { opacity: .45; }
   .key {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%;
     border: 2px solid; margin: 0 3px 0 9px; vertical-align: -1px;
@@ -163,6 +164,10 @@
     out: "--out", in: "--in", adc: "--adc", dac: "--dac",
     i2c: "--i2c", uart: "--uart", pwm: "--pwm"
   };
+  // Two of those never reach a pin yet, and the legend says so rather than leaving
+  // somebody waiting for a colour that is not coming. A bus is opened by number and
+  // answers with no pins at all; nothing reaches a converter going the other way.
+  const KEPT = ["dac", "i2c"];
   const PINS = 50;
   const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0];
   // What a full-scale reading is worth in volts. The converter is twelve bits.
@@ -218,6 +223,8 @@
         if (pin >= 0) held[pin] = { mode: "uart", fill: 0 };
       }
     }
+    // A bus claims no pin here. It is opened by unit and never says which two it took,
+    // which is a hole in the class rather than in this panel.
     for (const wave of Object.values(frame.pwm)) {
       held[wave.pin] = { mode: "pwm", fill: wave.duty / 100, value: wave.duty + "%" };
     }
@@ -327,7 +334,9 @@
     speeds.appendChild(free);
 
     find("legend").innerHTML = Object.entries(MODES).map(([name, colour]) =>
-      '<span class="key" style="border-color:var(' + colour + ')"></span>' + name.toUpperCase()
+      '<span class="' + (KEPT.includes(name) ? "kept" : "") + '">' +
+      '<span class="key" style="border-color:var(' + colour + ')"></span>' +
+      name.toUpperCase() + (KEPT.includes(name) ? " (reserved)" : "") + "</span>"
     ).join("");
   }
 

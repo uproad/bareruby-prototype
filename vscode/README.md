@@ -108,9 +108,11 @@ between the start and the end. `samples/blink.rb` leaves 7 over three virtual se
 If the run said anything on the way out — no simulator in the bundle, no `bundle` on the
 path, a program that would not build — it is in a red box at the top instead of in a log.
 
-**What is not drawn**: an I2C unit is opened by number and never says which pins it took,
-so a bus colours nothing. Nothing here is a `DAC` either — the colour is in the legend
-because the mode exists, not because a program can reach one yet.
+**Two modes are reserved and reach no pin yet**, and the legend says so beside them.
+`I2C` is opened by unit and answers with no pins at all — which is a hole in the class
+rather than in this panel, and one that is being closed separately. `DAC` is a mode
+nothing can reach going the other way. The colours are settled; what fills them is not
+here yet.
 
 ## What is in here
 
