@@ -51,21 +51,30 @@ bundle exec ruby .../vscode/watch.rb app/main.rb 3 input.txt
 
 ## In the editor
 
-The extension is not published anywhere, so it is loaded from where it sits. **Point VS
-Code at the extension and at the project separately** — they are different directories:
+The extension is not published anywhere, so it is packed here and installed from the
+file. **Under a remote connection it lands on the remote side**, which is where it has to
+be: it starts a process in the project and reads the project's files.
+
+```sh
+./vscode/package.sh
+code --install-extension vscode/bareruby-visualizer-0.0.1.vsix
+```
+
+Then **Developer: Reload Window** from the palette
+(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), open the project, and run **BareRuby:
+Watch this program run**. It watches the `.rb` file in front of you, or `app/main.rb` when
+that is not one. How much virtual time a run gets is `bareruby.seconds` in settings, 3 by
+default.
+
+**The extension carries `watch.rb` with it**, so once it is installed this checkout does
+not have to be anywhere: the project's bundle is what the run reaches for.
+
+While changing the extension itself, packing every time is not worth it — point VS Code at
+the extension and at a project as two paths:
 
 ```sh
 code --extensionDevelopmentPath=~/ruby/bareruby-prototype/vscode ~/ruby/bareruby-projects/test
 ```
-
-In that window, run **BareRuby: Watch this program run** from the command palette
-(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>). It watches the `.rb` file in front of
-you, or `app/main.rb` when that is not one. How much virtual time a run gets is
-`bareruby.seconds` in settings, 3 by default.
-
-The other way is <kbd>F5</kbd>: open `bareruby-prototype/vscode` itself in VS Code and
-press it. That opens an Extension Development Host with **no folder**, so open the project
-in it before running the command.
 
 ## What is in here
 
@@ -75,6 +84,7 @@ in it before running the command.
 | `extension.js` | starts that in the project and hands each line to a panel. Decides nothing about the machine |
 | `media/panel.html` | the panel: the whole of what is drawn, and the slider |
 | `package.json` | one command, one setting |
+| `package.sh` | packs the five of them into a `.vsix` |
 
 **There is no build step.** It is plain JavaScript, loaded as it is — a throwaway has no
 business growing an npm toolchain, and nothing here is large enough to want one.

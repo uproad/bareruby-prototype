@@ -1684,6 +1684,13 @@ What it cost: 436 lines, of which the panel is 188, the extension 71 and the Rub
 **There is no build step** — plain JavaScript, loaded as it is. A throwaway has no business
 growing an npm toolchain, and nothing here is large enough to want one.
 
+**Installing it needed one anyway, of a sort.** VS Code installs an extension from a
+`.vsix`, and a `.vsix` is a zip with two manifests beside the files — so `package.sh`
+writes those two by hand and zips the directory, in a page, without `vsce`. Under a remote
+connection the install lands on the remote side, which is where this one has to be: it
+starts a process in the project. The extension carries `watch.rb` with it, so once
+installed it needs nothing of this checkout.
+
 **Renaming the machine broke the records that were already written.** A project written
 before the rename holds `machine: none`, and that composition no longer exists — the build
 stops and says so, listing the ones that do, which is the behaviour a record naming a
