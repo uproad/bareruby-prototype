@@ -1,0 +1,2 @@
+sysbus ReadDoubleWord 0x40020000
+sysbus ReadDoubleWord 0x40020020

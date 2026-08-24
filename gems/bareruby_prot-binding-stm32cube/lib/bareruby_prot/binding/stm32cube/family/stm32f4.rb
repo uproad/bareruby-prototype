@@ -38,6 +38,8 @@ module BareRubyProt
         stm32f4xx_hal_gpio.c
         stm32f4xx_hal_uart.c
         stm32f4xx_hal_i2c.c
+        stm32f4xx_hal_tim.c
+        stm32f4xx_hal_tim_ex.c
       ].freeze
 
       HAL_HEADER = "stm32f4xx_hal.h"
@@ -83,6 +85,7 @@ module BareRubyProt
           #define HAL_RCC_MODULE_ENABLED
           #define HAL_I2C_MODULE_ENABLED
           #define HAL_UART_MODULE_ENABLED
+          #define HAL_TIM_MODULE_ENABLED
 
           #define HSE_VALUE #{hse}U
           #define HSE_STARTUP_TIMEOUT 100U
@@ -125,6 +128,10 @@ module BareRubyProt
           #endif
           #ifdef HAL_UART_MODULE_ENABLED
           #include "stm32f4xx_hal_uart.h"
+          #endif
+          #ifdef HAL_TIM_MODULE_ENABLED
+          #include "stm32f4xx_hal_tim.h"
+          #include "stm32f4xx_hal_tim_ex.h"
           #endif
 
           #define assert_param(expr) ((void)0U)

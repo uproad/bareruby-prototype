@@ -337,6 +337,74 @@ module BareRubyProt
       }
     CPP
 
+    PWM = <<~CPP
+      #include "bareruby_binding.h"
+      #include "bareruby_board.h"
+
+      /* The Pico binding's design, mirrored: the board hands over a timer already
+         prescaled to tick at 1 MHz, so a period is its length in microseconds and a
+         pulse width is the compare value itself. Which timer and which channel answer
+         a pin is the board's table; the struct's slice field carries the channel the
+         way the Pico's carries its slice. */
+
+      void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
+          uint32_t channel = 0;
+          TIM_HandleTypeDef *timer = bareruby_board_pwm(pin, &channel);
+          self->pin = pin;
+          self->slice = (int32_t)channel;
+
+          /* Stop first: it settles the HAL's channel state whether or not this channel
+             was started by an earlier handle, so the start below is always legal. */
+          HAL_TIM_PWM_Stop(timer, channel);
+          TIM_OC_InitTypeDef compare = {0};
+          compare.OCMode = TIM_OCMODE_PWM1;
+          compare.Pulse = 0;
+          compare.OCPolarity = TIM_OCPOLARITY_HIGH;
+          compare.OCFastMode = TIM_OCFAST_DISABLE;
+          if (HAL_TIM_PWM_ConfigChannel(timer, &compare, channel) != HAL_OK) {
+              bareruby_board_fault();
+          }
+          if (HAL_TIM_PWM_Start(timer, channel) != HAL_OK) {
+              bareruby_board_fault();
+          }
+          bareruby_pwm_apply_frequency(self, frequency);
+          bareruby_pwm_apply_duty(self, duty);
+      }
+
+      void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          uint32_t channel = 0;
+          TIM_HandleTypeDef *timer = bareruby_board_pwm(self->pin, &channel);
+          self->frequency = frequency;
+          if (frequency <= 0) {
+              /* The counter is stopped directly: __HAL_TIM_DISABLE declines while any
+                 channel is enabled, and declining is not what asking for 0 Hz means. */
+              CLEAR_BIT(timer->Instance->CR1, TIM_CR1_CEN);
+              return;
+          }
+          __HAL_TIM_SET_AUTORELOAD(timer, (1000000u / (uint32_t)frequency) - 1u);
+          __HAL_TIM_ENABLE(timer);
+      }
+
+      void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
+          bareruby_pwm_apply_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
+      }
+
+      void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
+          uint32_t channel = 0;
+          TIM_HandleTypeDef *timer = bareruby_board_pwm(self->pin, &channel);
+          uint32_t period = __HAL_TIM_GET_AUTORELOAD(timer) + 1u;
+          /* PWM1 holds the pin active while the counter is under the compare value, so
+             the full period as a compare value is what 100 per cent asks for. */
+          __HAL_TIM_SET_COMPARE(timer, channel, period * (uint32_t)duty / 100u);
+      }
+
+      void bareruby_pwm_apply_pulse_width_us(bareruby_pwm_t *self, int32_t pulse_width_us) {
+          uint32_t channel = 0;
+          TIM_HandleTypeDef *timer = bareruby_board_pwm(self->pin, &channel);
+          __HAL_TIM_SET_COMPARE(timer, channel, (uint32_t)pulse_width_us);
+      }
+    CPP
+
     PERIPHERAL = <<~CPP
       #include "bareruby_binding.h"
 
@@ -755,6 +823,7 @@ module BareRubyProt
     I2C_FILE = "bareruby_binding_i2c_stm32.cpp"
     I2C_READ_FILE = "bareruby_binding_i2c_read_stm32.cpp"
     ONBOARD_LED_FILE = "bareruby_binding_onboard_led_stm32.cpp"
+    PWM_FILE = "bareruby_binding_pwm_stm32.cpp"
 
     FILES = {
       GPIO_FILE => GPIO,
@@ -764,14 +833,15 @@ module BareRubyProt
       UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
-      ONBOARD_LED_FILE => ONBOARD_LED
+      ONBOARD_LED_FILE => ONBOARD_LED,
+      PWM_FILE => PWM
     }.freeze
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the
     # peripheral's word and the file is this side's, so neither has to know the other.
     UNITS = { onboard_led: ONBOARD_LED_FILE, gpio: GPIO_FILE, uart: UART_FILE,
               uart_receive: UART_RECEIVE_FILE, uart_interrupt: UART_INTERRUPT_FILE,
-              i2c: I2C_FILE, i2c_read: I2C_READ_FILE }.freeze
+              i2c: I2C_FILE, i2c_read: I2C_READ_FILE, pwm: PWM_FILE }.freeze
 
     # One file answers every machine, so what remains machine-bound is refusal: a board
     # whose manifest carries no LED refuses the OnboardLED unit here, before any C

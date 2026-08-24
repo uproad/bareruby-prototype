@@ -55,6 +55,6 @@ samples/ の全 38 本のうち **19 本がテスト済み、19 本が未テス�
 | samples/picoruby_interface.rb | 同上 | 同上 |
 | samples/uart_format.rb | 7E1 についてホストと STM32 のバインディングが不一致(エミュレート側だけ "7E1 ready" と言う) | バインディング側の問題として別途 |
 | samples/uart_flow_control.rb | STM32 ではフロー制御を設計として拒否しており、ホストと食い違うのが正しい | テスト対象外(意図的) |
-| samples/peripheral_answers.rb | STM32 向けにビルドできない(バインディングに PWM ユニットがない) | バインディングに PWM が入れば |
+| samples/peripheral_answers.rb | STM32 向けにビルド可能になった(PWM ユニット実装済み、戻り値は [checks/stm32/pwm/](stm32/pwm/) の `method_answers` が担保)。残る食い違いは、ホストが `uart.puts` を stderr のトレースで答えて本文を stdout に出さないこと("chained" 行が食い違う) | ホストバインディング側の問題として別途(uart_format と同類) |
 | samples/require_helper.rb | require.rb が読み込むライブラリで、プログラムではない | 対象外(require.rb 経由で実質カバー) |
 | samples/require_lib.rb | 同上 | 対象外(require.rb 経由で実質カバー) |

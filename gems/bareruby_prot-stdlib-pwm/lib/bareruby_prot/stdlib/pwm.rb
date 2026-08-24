@@ -7,9 +7,9 @@ require "bareruby_prot/peripheral"
 # generated C++ must declare, and which translation unit a binding has to supply once it
 # is reached.
 #
-# **Not every binding has one.** A NUCLEO board reached through the STM32Cube HAL answers
-# no PWM call, and says so by having no file for this key rather than by an entry that
-# leads nowhere.
+# **Not every binding needs one.** A binding that answers no PWM call says so by having
+# no file for this key rather than by an entry that leads nowhere — which was the
+# STM32Cube binding's answer until it grew a timer table.
 module BareRubyProt
   Peripheral.register(
     :PWM,
