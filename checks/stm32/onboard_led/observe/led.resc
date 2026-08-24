@@ -1,0 +1,3 @@
+sysbus.gpioPortA.led State
+sysbus ReadDoubleWord 0x40020000
+sysbus ReadDoubleWord 0x40020014
