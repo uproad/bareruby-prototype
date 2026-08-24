@@ -16,6 +16,10 @@
 # to take one step, or how fast to play — so the display drives the run rather than
 # waiting for it to be over. Virtual time is what a wait costs; playing is sleeping for
 # as much real time as that wait was worth, divided by the speed.
+#
+# **A step is one instruction**, which is what the clock counts in. Held, the run stops
+# between two of them and moves on when a step is asked for; playing, it is left alone
+# and the frames come out at the waits.
 
 require "json"
 require "stringio"
@@ -63,24 +67,33 @@ class Watching
     @paid = 0
   end
 
+  # Playing, a frame goes out at every wait and the clock is paid for. Held, this is not
+  # where anything happens — `at_instruction` has already stopped between two of them.
   def at_wait(machine)
     orders
-    hold(machine) unless @live
-    play(machine) if @live
+    return unless @live
+
+    play(machine)
     frame(machine)
   end
 
-  private
+  # Between two instructions. **This is what a step is**, so it is where a held run waits
+  # to be told to take one — and where it does nothing at all while it is playing.
+  def at_instruction(machine)
+    return if @live
 
-  # Held: nothing moves until a step is asked for, or until playing resumes.
-  def hold(machine)
     until @live || @steps.positive?
       sleep(IDLE)
       orders
     end
-    @steps -= 1 if @steps.positive?
     @paid = machine.clock.microseconds
+    return if @live
+
+    @steps -= 1
+    frame(machine)
   end
+
+  private
 
   # Playing: a wait that cost 500 virtual milliseconds costs half a second of somebody's
   # attention at 1.0, a twentieth of one at 10.0.
@@ -131,6 +144,7 @@ def watched(artifact, seconds, input)
   watching = Watching.new(said)
   receiving(input) do |wire|
     run = BareRubyProt::Simulator::Run.new(artifact, seconds: seconds, out: said, input: wire)
+    run.while_stepping { watching.at_instruction(run.machine) }
     run.start { |machine| watching.at_wait(machine) }
     watching.finished(run.machine)
   end

@@ -43,6 +43,10 @@ module BareRubyProt
 
       def status = @system.status
 
+      # What to do between one instruction and the next — a step, in the unit the clock
+      # counts in. See `Binding#while_stepping`.
+      def while_stepping(&watching) = @binding.while_stepping(&watching)
+
       # How many instructions were interpreted. What a run cost, in the only unit this
       # side has one in.
       def instructions = @binding.instructions

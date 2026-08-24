@@ -41,6 +41,7 @@ module BareRubyProt
         @next_trap = TRAPS
         @scratch = SCRATCH
         @stopped = false
+        @stepping = nil
         @instructions = 0
         @program.load(@memory)
       end
@@ -60,6 +61,12 @@ module BareRubyProt
       end
 
       def stop = @stopped = true
+
+      # **What to do between one instruction and the next.** A step is an instruction —
+      # that is what the clock counts — so anything that wants to move one at a time has
+      # to be let in here. Nothing is given when nothing asked, and the check that costs
+      # is one `nil` per instruction.
+      def while_stepping(&watching) = @stepping = watching
 
       def stopped? = @stopped
 
@@ -125,6 +132,7 @@ module BareRubyProt
       def step
         @instructions += 1
         @clock.advance(Clock::INSTRUCTION)
+        @stepping&.call(self)
         handler = @traps[@cpu.rip]
         return @cpu.step unless handler
 

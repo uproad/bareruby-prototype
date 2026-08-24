@@ -1714,14 +1714,19 @@ worth 500 ms costs half a second at `1×` and a twentieth of one at `10×`, meas
 virtual seconds of `samples/blink.rb` take 3.7 s of wall clock at `1×` and 0.8 s at `10×`,
 build included.
 
-**A step is a wait, not a clock tick.** The design asks for a step period, 100 MHz to
-start with, and this cannot answer that: virtual time here advances one microsecond per
-instruction, so ten nanoseconds is less than the smallest thing that happens. Stepping
-moves to the next wait instead. Making the tick real would mean an instruction costing
-10 ns, and at the 306,000 instructions a second this interprets, one second of that is
-**330 times more than it can do** — a second of virtual time would take five and a half
-minutes. The figure to settle is what a step should be worth, not whether the interpreter
-can be made to keep up.
+**A step is an instruction**, which is what the clock counts in — one microsecond of
+virtual time, this machine's instruction clock. Held, the run stops between two of them
+and moves on when one is asked for: `us` reads 500028, 500029, 500030 as the button is
+pressed. Reaching in that far needed a hook the interpreter calls between instructions,
+and **it costs nothing measurable** — `samples/gpio_pico_loop.rb`, which is three million
+instructions and no waits at all, runs in the same 8 seconds with the hook in place as
+without it, because what a run that nobody is steering pays is one `nil` test per
+instruction.
+
+A step period of 100 MHz was asked for first, and virtual time cannot be divided that
+finely here: ten nanoseconds is a hundredth of the smallest thing that happens. Tying the
+step to the instruction clock is what settled it, and the period follows whatever that
+clock is set to.
 
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
