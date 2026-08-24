@@ -549,7 +549,18 @@ What the program printed goes to `stdout.txt` and what its serial ports sent goe
 `uart.txt`. `./checks/host.sh` runs every sample both ways and diffs the first against
 the executed run. The machine itself — pins, ports, duty cycles, the on-board LED — is read
 through the gem's own [`API.md`](gems/bareruby_prot-simulator/API.md), which is what a
-display or a check reaches for.
+check reaches for.
+
+**And what a person reaches for is [`vscode/`](vscode/README.md)**, which shows the same
+readings as a panel: the pins as lamps, the ports as their buffers, and a slider along the
+run so any moment in it can be looked at. Its Ruby half stands on its own — one line of
+JSON every time the program waits — so watching a blink blink needs no editor:
+
+```sh
+ruby vscode/watch.rb samples/blink.rb 3
+{"ms":500,"gpio":{"25":{"pin":25,"level":1,"changes":1,...}},...}
+{"ms":1000,"gpio":{"25":{"pin":25,"level":0,"changes":2,...}},...}
+```
 
 ### NUCLEO-F446RE, through the STM32Cube HAL
 

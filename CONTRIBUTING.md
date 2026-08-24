@@ -15,6 +15,7 @@ ref.rb                    the default program `bareruby compile` takes
 samples/                  the programs each milestone was proved with
 reserved/                 notes for bindings that do not exist yet — ESP-IDF, UEFI, WASI
 config/                   target.yml.sample, and target.yml if this desk made one
+vscode/                   the panel that shows what the hosted machine did, and what feeds it
 gems/
 ├── bareruby_prot-compiler/          the first stage: every pass, the IRs, the runtime
 ├── bareruby_prot/                   everything after it: the executable, target.yml, flashing
@@ -44,6 +45,11 @@ on no other gem here and nothing here depends on it — the host binding looks f
 way the STM32 one looks for Renode, and a desk without it has a target that builds and
 does not emulate. What it answers is in its own
 [`API.md`](gems/bareruby_prot-simulator/API.md).
+
+**[`vscode/`](vscode/README.md) is a reader of that**, and the only one that is not Ruby:
+a panel that shows the pins, ports and waves a run left. It reaches them through
+`Machine#snapshot` and a line of JSON per wait, so nothing in the gem knows a display
+exists.
 
 **What crosses that line is a binding, never the compiler.** A binding is written in the
 words of what it calls on one side and starts a second stage on the other, so the gem that

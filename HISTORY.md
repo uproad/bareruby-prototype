@@ -1642,3 +1642,44 @@ nobody, the harness hands the verb a stub in Renode's place and makes the one re
 itself on the transformed script, sensor attached. The complete
 `checks/stm32/i2c/check.sh f446` run passed 12/12 in 208 seconds under Renode. It was
 built but not hardware-flashed.
+
+### Showing what the machine did
+
+The simulator answers with objects, and nothing about an object is visible.
+[`vscode/`](vscode/README.md) is the other half: a panel that draws them — the pins as
+lamps, the serial ports as their buffers, the square waves as their duty, and the
+on-board LED as itself.
+
+**The channel is one line of JSON per wait.** `Machine#snapshot` renders the same
+readings the accessors answer as plain data, and `vscode/watch.rb` builds a program,
+interprets it, and writes a line every time the program waits — which is every time the
+machine can have changed. The last line is marked `"over":true`. **Nothing in the gem
+knows a display exists**, and nothing in the panel knows what a peripheral is: it draws
+what a frame says, and a frame is a Hash.
+
+**A blink looks like a blink.** Virtual time makes a three-second run finish in a fraction
+of a second, so every frame of it arrives at once; the panel keeps them all and puts a
+slider along the run, which is what makes it watchable rather than a single final state.
+How many frames there are is a fact about the program rather than about the display —
+`blink` leaves 7 over three virtual seconds, `servo` 9, `logger` 31, `tenji` 259 and
+`adc` 298, while `features`, which never waits, leaves the one that says it is over.
+
+Two things came out of writing it, and both went back into the first half.
+
+- **The indicator was there before the program asked for it.** Every other peripheral
+  appears when a program opens one, and `machine.onboard_led` answered an unlit LED from
+  the start — so every panel had an On-board LED section whether or not the program had
+  ever met one. It is `nil` until an `OnboardLED` has run, like the rest.
+- **Bytes had to become readable.** A snapshot crosses into something that is not Ruby,
+  and what a port carries is bytes rather than characters. `Printable` spells what is not
+  a printable character as `\xNN`, the way C does, so `sent` is a string a panel can hold.
+
+What it cost: 436 lines, of which the panel is 188, the extension 71 and the Ruby half 71.
+**There is no build step** — plain JavaScript, loaded as it is. A throwaway has no business
+growing an npm toolchain, and nothing here is large enough to want one.
+
+**It was not opened in an editor here.** The frames are real, and the panel's own script
+was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
+builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus
+at 400 kHz. But "it works as an extension" needs somebody to press F5, and nobody has.
+It is written up as built, not verified.
