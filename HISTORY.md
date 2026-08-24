@@ -1706,3 +1706,33 @@ heartbeat 0.1 where a hand-run once held 0.1 ± 0.05. A byte fed mid-wait shows
 pins as: the delay itself costs its 500 ms, the overdue `asleep_ms` after it costs 0
 and never drains, the handler stays silent to the end. 10/10 in 337 seconds. All three
 suites were built but not hardware-flashed.
+
+## The STM32 binding grows a PWM unit, and the checks that hold it
+
+The unit mirrors the Pico binding's design: the board hands over a timer already
+prescaled to tick at one microsecond, so a period is its length in microseconds and a
+pulse width is the compare value itself. Which timer answers a pin is a new table in
+the board manifest — the program only ever says the pin, and a pin on no row is
+refused. The NUCLEO-F446RE's table wires PA5 (TIM2 channel 1, the LD2 wire), PA15
+(same channel — where the Pico-numbered samples land) and PC7 (TIM3 channel 2, Arduino
+D9); the other two boards carry matching rows, the devices record their timer lists,
+and the HAL grew its TIM sources. samples/peripheral_answers.rb and samples/servo.rb
+build for STM32 now; the host diff for the former stays out — the host binding logs
+uart.puts as a trace instead of writing the text, a disagreement that was invisible
+while the STM32 build was refused.
+
+Eight checks in checks/stm32/pwm/ hold it to fixed answers: the four calls answer
+their arithmetic (50, 50, 50.0, 7.5); 50 Hz lands as PSC 83 and ARR 19999 with the
+counter running, through frequency: and period_us alike; a quarter duty is compare
+value 5000 in PWM mode 1, enabled; 1500 µs is compare value 1500 through the TIM3
+row; the pin lands in AF1 with the reset and USART2 bits preserved; the ends of the
+duty range land as no pulse and ARR+1; and a pin off the table is refused. The one
+that needed the emulator to be more than a register file passed too: the pinned
+STM32_Timer drives its compare output through the GPIO to the LED model with real
+PWM-mode-1 polarity, so the LED tester holds duty_wave to 0.3 — the model's one gap
+is CCMR1's OC1PE preload bit, written by the HAL and read back zero, recorded the
+way GPIO's OTYPER is. What an inexpressible frequency should do is still an open
+design question, kept in the testcase as the unimplemented frequency_bounds. The
+suite passed 8/8 in 72 seconds under Renode, and the emulation harness still answers
+19/19 samples agreeing with the host on all three boards. It was built but not
+hardware-flashed.
