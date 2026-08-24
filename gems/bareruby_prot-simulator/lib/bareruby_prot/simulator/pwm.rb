@@ -17,6 +17,13 @@ module BareRubyProt
         @duty = duty
       end
 
+      # What this pin is being driven as, as plain data. Both spellings of each pair are
+      # here, because reading back the one that was not used is the point of keeping them.
+      def snapshot
+        { pin: @pin, slice: @slice, frequency: @frequency, duty: @duty,
+          period_us: period_us, pulse_width_us: pulse_width_us }
+      end
+
       def frequency=(hertz)
         @frequency = hertz
       end

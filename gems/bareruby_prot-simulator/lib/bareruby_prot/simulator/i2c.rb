@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "printable"
+
 module BareRubyProt
   module Simulator
     # One two-wire bus. There is no device on it, so a read answers whatever was put here
@@ -7,6 +9,8 @@ module BareRubyProt
     # started with. Every write is kept, addressed, because what a program sent a device
     # is the whole of what a bus with no device on it can be checked against.
     class I2c
+      include Printable
+
       Transfer = Data.define(:address, :bytes)
 
       attr_reader :unit, :frequency, :written
@@ -18,6 +22,14 @@ module BareRubyProt
         @written = []
         @answers = +""
         @wire = nil
+      end
+
+      # What this bus is, as plain data. Every transfer is kept, so what a program sent a
+      # device is what a display shows.
+      def snapshot
+        { unit: @unit, frequency: @frequency,
+          written: @written.map { |sent| { address: sent.address,
+                                           bytes: printable(sent.bytes) } } }
       end
 
       # What the next reads take their bytes from.

@@ -51,7 +51,7 @@ module BareRubyProt
         @pwm = {}
         @adc = {}
         @i2c = {}
-        @onboard_led = OnboardLed.new
+        @onboard_led = nil
         @held = {}
         @pointers = {}
         @watching = nil
@@ -70,6 +70,9 @@ module BareRubyProt
 
       def i2c(unit = nil) = unit ? @i2c[unit] : @i2c
 
+      # The indicator, once the program has opened one. Like every other peripheral here,
+      # it does not exist until it has been asked for — a machine has one, but a program
+      # that never lights it has not met it.
       def onboard_led = @onboard_led
 
       # Moving a pin from outside, which is the only way an input ever changes: nothing
@@ -91,6 +94,17 @@ module BareRubyProt
       # the program is running rather than only before it starts or after it has stopped.
       def while_waiting(&watching) = @watching = watching
 
+      # **The whole machine, as plain data.** The readers above answer objects, which is
+      # what Ruby wants; this answers the same readings in a shape that can be handed to
+      # something that is not Ruby — a display in another process, a file, a check written
+      # elsewhere. Nothing here knows about JSON: turning this into bytes belongs to
+      # whoever is doing the handing.
+      def snapshot
+        { ms: @clock.ticks_ms,
+          gpio: keyed(@gpio), uart: keyed(@uart), pwm: keyed(@pwm),
+          adc: keyed(@adc), i2c: keyed(@i2c), onboard_led: @onboard_led&.snapshot }
+      end
+
       # ---- what the program calls -----------------------------------------------
 
       def calls
@@ -98,6 +112,10 @@ module BareRubyProt
       end
 
       private
+
+      # A table of peripherals, each answering for itself. The keys stay what the program
+      # opened them as.
+      def keyed(peripherals) = peripherals.transform_values(&:snapshot)
 
       def wait
         {
@@ -398,13 +416,14 @@ module BareRubyProt
       # ---- the indicator --------------------------------------------------------
 
       def indicator_opened(binding)
-        hold(binding.argument(0), @onboard_led)
+        @onboard_led = hold(binding.argument(0), OnboardLed.new)
         store(binding, binding.argument(0), [@onboard_led.level])
       end
 
       def indicator_written(binding)
-        @onboard_led.level = binding.signed_argument(1)
-        store(binding, binding.argument(0), [@onboard_led.level])
+        indicator = held(binding)
+        indicator.level = binding.signed_argument(1)
+        store(binding, binding.argument(0), [indicator.level])
       end
     end
   end

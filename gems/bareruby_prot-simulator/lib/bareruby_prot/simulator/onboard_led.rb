@@ -12,6 +12,9 @@ module BareRubyProt
         @changes = 0
       end
 
+      # What the indicator is, as plain data.
+      def snapshot = { level: @level, changes: @changes }
+
       def on? = @level == 1
 
       def level=(value)
