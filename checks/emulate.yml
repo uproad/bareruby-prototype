@@ -27,8 +27,11 @@
 #     checks/stm32/gpio/ presses an emulated B1 mid-run — but wiring a press into
 #     this host diff is a later step.
 #   - blink, heartbeat, servo, asleep, gpio_pico_loop, tenji, tenji_int, avs, adc:
-#     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
-#     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
+#     loop forever and say nothing on the UART. The duty-cycle assertions are held
+#     now by checks/stm32/sleep/ (blink_duty, heartbeat_duty — replacing the old
+#     hand-run 0.1 ± 0.05 record) — the host diff here stays out of it by design.
+#     asleep and adc also use the ADC, which the STM32 binding does not carry yet
+#     (checks/stm32/adc/testcase.md keeps that record).
 #   - i2c, picoruby_interface: read I2C with no device behind it; the host stub
 #     answers, the emulated bus does not. The emulated bus is held instead by
 #     checks/stm32/i2c/, whose harness attaches a C# check sensor — the host diff
