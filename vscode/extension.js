@@ -27,7 +27,7 @@ function watch(context) {
     vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true }
   );
-  panel.webview.html = page(context);
+  panel.webview.html = page(context, `${path.basename(root)}/${source}`);
 
   const seconds = vscode.workspace.getConfiguration("bareruby").get("seconds", 3);
   // Started in the project rather than beside this file: the working directory is what
@@ -36,6 +36,11 @@ function watch(context) {
   const watcher = path.join(context.extensionPath, "watch.rb");
   const run = spawn("bundle", ["exec", "ruby", watcher, source, String(seconds)], { cwd: root });
   feed(run, panel);
+  // The other direction: play, hold, step and speed go back as a line of JSON, which is
+  // what `watch.rb` reads between one wait and the next.
+  panel.webview.onDidReceiveMessage((order) => {
+    if (!run.killed) run.stdin.write(`${JSON.stringify(order)}\n`);
+  });
   panel.onDidDispose(() => run.kill());
 }
 
@@ -74,10 +79,13 @@ function feed(run, panel) {
   });
 }
 
-function page(context) {
+function page(context, program) {
   const file = path.join(context.extensionPath, "media", "panel.html");
   const nonce = String(Math.random()).slice(2);
-  return fs.readFileSync(file, "utf8").replace(/\{\{nonce\}\}/g, nonce);
+  return fs
+    .readFileSync(file, "utf8")
+    .replace(/\{\{nonce\}\}/g, nonce)
+    .replace(/\{\{program\}\}/g, program);
 }
 
 module.exports = { activate, deactivate() {} };

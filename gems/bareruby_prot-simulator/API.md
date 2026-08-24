@@ -90,7 +90,7 @@ process, a file, a check written elsewhere.
 
 ```ruby
 machine.snapshot
-# => { ms: 500,
+# => { us: 500_000,
 #      gpio: { 25 => { pin: 25, level: 1, changes: 6, direction: :out, pull: :none,
 #                      open_drain: false, watching: false } },
 #      uart: { 0 => { unit: 0, baudrate: 9600, ..., sent: "ready\\x0d\\x0a",

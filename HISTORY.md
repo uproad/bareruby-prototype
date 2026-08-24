@@ -1698,6 +1698,31 @@ missing composition has always had. Watching an existing project meant editing o
 its `config/target.yml` first. Nothing warns about it ahead of time and nothing migrates
 it; the cost of the rename is one line per project already in existence.
 
+**The panel became a machine rather than a table.** The first one listed what each
+peripheral answered; the design it was measured against draws the machine — a board on
+end, notched, fifty GPIO down its sides, the indicator under the notch. A pin says two
+things at once: its ring is what claimed it (green out, red in, orange ADC, blue DAC, cyan
+I2C, violet UART, yellow PWM) and its fill is what it is at, black through to green in a
+straight line. What a converter or a duty cycle reads goes outside the board beside its
+pin. **Two peripherals cannot be drawn there**: an I2C unit is opened by number and never
+says which pins it took, and nothing reaches a DAC yet.
+
+**And it became a transport rather than a slider.** Frames used to arrive as fast as the
+interpreter could make them; now `watch.rb` reads orders on stdin between one wait and the
+next — play, hold, one step, a speed — and playing pays real time for virtual time. A wait
+worth 500 ms costs half a second at `1×` and a twentieth of one at `10×`, measured: three
+virtual seconds of `samples/blink.rb` take 3.7 s of wall clock at `1×` and 0.8 s at `10×`,
+build included.
+
+**A step is a wait, not a clock tick.** The design asks for a step period, 100 MHz to
+start with, and this cannot answer that: virtual time here advances one microsecond per
+instruction, so ten nanoseconds is less than the smallest thing that happens. Stepping
+moves to the next wait instead. Making the tick real would mean an instruction costing
+10 ns, and at the 306,000 instructions a second this interprets, one second of that is
+**330 times more than it can do** — a second of virtual time would take five and a half
+minutes. The figure to settle is what a step should be worth, not whether the interpreter
+can be made to keep up.
+
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
 builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus

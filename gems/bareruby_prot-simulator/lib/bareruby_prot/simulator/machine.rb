@@ -100,7 +100,7 @@ module BareRubyProt
       # elsewhere. Nothing here knows about JSON: turning this into bytes belongs to
       # whoever is doing the handing.
       def snapshot
-        { ms: @clock.ticks_ms,
+        { us: @clock.microseconds,
           gpio: keyed(@gpio), uart: keyed(@uart), pwm: keyed(@pwm),
           adc: keyed(@adc), i2c: keyed(@i2c), onboard_led: @onboard_led&.snapshot }
       end

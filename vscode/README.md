@@ -78,22 +78,39 @@ code --extensionDevelopmentPath=~/ruby/bareruby-prototype/vscode ~/ruby/bareruby
 
 ## What the panel shows
 
-Top to bottom:
+**The machine, drawn as one.** A board stood on end, notched at the top, with the
+indicator under the notch and fifty GPIO down its sides — 0 to 24 on the left, 49 down to
+25 on the right, which is where a chip puts its numbers. Every pin is there whether or not
+the program touched it.
 
-- **A slider and the virtual clock.** Every frame the run produced is kept, so dragging
-  the slider moves through the run and the readings below follow. **That is the only
-  control there is** — the panel watches, it does not touch anything
-- **The peripherals the program opened**, and only those. A program that never opens a
-  `GPIO` has no Pins section; one that only lights the indicator has only that. `changes`
-  beside a pin is how many times it moved, which is a blink counted
-- **What the program printed** — its `puts`, at the bottom, as it stood at that frame
+**A pin says two things at once.**
 
-A frame is a wait, so **a program that never waits leaves one frame** and the slider stays
-put: everything happened between the start and the end. `samples/blink.rb` leaves 7 over
-three virtual seconds, `adc` 298.
+| | |
+| --- | --- |
+| its **ring** | what it is being used as. Thin and grey when nothing has claimed it; thick and coloured once something has — green `GPIO OUT`, red `GPIO IN`, orange `ADC`, blue `DAC`, cyan `I2C`, violet `UART`, yellow `PWM` |
+| its **fill** | what it is at. Black at nothing and green at everything, straight through the middle — so a digital pin is one or the other, and a duty cycle or a reading is somewhere between |
+
+`ADC`, `DAC` and `PWM` put the figure itself outside the board, beside the pin: `1.83V`,
+`50%`.
+
+**The clock and the transport** sit to the right. The clock is virtual time to the
+microsecond. `▶` plays, and playing means paying real time for virtual time — a wait worth
+500 ms costs half a second at `1×` and a twentieth of one at `10×`. `□` holds, `⟩` takes
+one step, `⟨` looks back at the frame before. The slider walks the whole run.
+
+**Below the board**: what the serial ports carry, and then what the program printed, one
+numbered line each.
+
+A frame is a wait, so **a program that never waits leaves one frame**: everything happened
+between the start and the end. `samples/blink.rb` leaves 7 over three virtual seconds,
+`adc` 298.
 
 If the run said anything on the way out — no simulator in the bundle, no `bundle` on the
 path, a program that would not build — it is in a red box at the top instead of in a log.
+
+**What is not drawn**: an I2C unit is opened by number and never says which pins it took,
+so a bus colours nothing. Nothing here is a `DAC` either — the colour is in the legend
+because the mode exists, not because a program can reach one yet.
 
 ## What is in here
 
