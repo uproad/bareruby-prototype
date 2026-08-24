@@ -1736,3 +1736,37 @@ design question, kept in the testcase as the unimplemented frequency_bounds. The
 suite passed 8/8 in 72 seconds under Renode, and the emulation harness still answers
 19/19 samples agreeing with the host on all three boards. It was built but not
 hardware-flashed.
+
+## The STM32 binding grows an ADC unit, and the checks that hold it
+
+The unit mirrors the Pico binding's design: the pin is wired analog on first reach,
+the channel is selected per read, and any number of ADC objects share the board's one
+converter. Which ADC1 channel reads a pin is a new `adc:` table in the board manifest
+— the same answer PWM's table gives about timers: the program only ever says the pin,
+and a pin on no row is refused at the table's default case, which is also what
+refuses the range and the bonded-but-not-analog cases. The NUCLEO-F446RE's table
+carries the Arduino header's A0–A5 and deliberately not PA2, PA3 or PA5, whose
+channels exist but whose wires stdout and LD2 stand on. The HAL grew its ADC sources
+— adc and adc_ex both, the former referencing the latter's weak callbacks — and
+`read`/`read_voltage` land on one call answering Q16.16 volts by the pico_sdk
+formula, sampling fixed at 480 cycles. samples/adc.rb, asleep.rb, avs.rb, tenji.rb
+and tenji_int.rb build for STM32 now; their Pico pin numbers sit on no row of this
+board's adc or pwm tables, so a run stops at bareruby_board_fault — builds, not
+verified runs, and the records say which.
+
+Eight checks in checks/stm32/adc/ hold the unit to fixed answers, against a converter
+of this repository's own: the pinned Renode 1.16.1 models no F4 ADC — its STM32
+converters are all the F0/L0/G0 register layout — so the suite compiles its own C#
+model at run time the way the I2C check sensor is compiled, spanning ADC1 through the
+common registers and answering mV * 4095 / 3300 in integer arithmetic, which settles
+the halfway question: 1650 mV is 0x7FF. Both ends and the middle of the 12-bit range
+arrive raw (0, 4095, 2047) with a mid-run voltage change seen by the next read; the
+byte-edge values 255, 256 and 3840 arrive exact; 1650 mV reads back as 1.64958
+through read and read_voltage alike; six pins land on six distinct channels across
+three ports; initialization leaves PC0's MODER at analog `11` and the converter's
+SQR3/SMPR2/CR2/CCR holding channel 4, 480 cycles, EOCS with ADON down, and the /4
+prescaler; and the two refusals say their marker and nothing more. The suite passed
+8/8 in 94 seconds under Renode, every prior suite still passes (gpio 7/7, pwm 8/8,
+sleep 10/10, clock 5/5, uart 33/33, i2c 12/12, onboard_led 4/4), and the emulation
+harness still answers 19/19 samples agreeing with the host on all three boards. It
+was built but not hardware-flashed.
