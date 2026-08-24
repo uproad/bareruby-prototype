@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+<title>BareRuby machine</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground); background: var(--vscode-editor-background);
+    margin: 0; padding: 12px 16px;
+  }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .6;
+    margin: 18px 0 8px; font-weight: 600;
+  }
+  #when { display: flex; align-items: center; gap: 12px; }
+  #scrub { flex: 1; accent-color: var(--vscode-textLink-foreground); }
+  #clock { font-variant-numeric: tabular-nums; min-width: 7ch; text-align: right; }
+  #over { opacity: .6; font-size: 11px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pin {
+    border: 1px solid var(--vscode-panel-border); border-radius: 4px;
+    padding: 6px 10px; min-width: 78px;
+  }
+  .pin .name { font-weight: 600; }
+  .pin .facts { opacity: .6; font-size: 11px; margin-top: 2px; }
+  .lamp {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-right: 6px; vertical-align: middle;
+    background: var(--vscode-panel-border);
+  }
+  .lit { background: var(--vscode-charts-yellow, #d7a800); box-shadow: 0 0 7px var(--vscode-charts-yellow, #d7a800); }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 2px 10px 2px 0; vertical-align: top; }
+  td.key { opacity: .6; white-space: nowrap; width: 1%; }
+  pre {
+    margin: 4px 0 0; padding: 7px 9px; white-space: pre-wrap; word-break: break-all;
+    background: var(--vscode-textCodeBlock-background); border-radius: 4px;
+    font-family: var(--vscode-editor-font-family); font-size: 12px; max-height: 11em;
+    overflow: auto;
+  }
+  pre:empty::after { content: "—"; opacity: .4; }
+  .bar { height: 5px; border-radius: 3px; background: var(--vscode-panel-border); margin-top: 5px; }
+  .bar > div { height: 100%; border-radius: 3px; background: var(--vscode-textLink-foreground); }
+  .none { opacity: .4; }
+</style>
+</head>
+<body>
+
+<div id="when">
+  <input type="range" id="scrub" min="0" max="0" value="0" disabled>
+  <span id="clock">0 ms</span>
+  <span id="over"></span>
+</div>
+
+<div id="machine"></div>
+
+<h2>What the program printed</h2>
+<pre id="said"></pre>
+
+<script nonce="{{nonce}}">
+(function () {
+  const frames = [];
+  const scrub = document.getElementById("scrub");
+  const clock = document.getElementById("clock");
+  const over = document.getElementById("over");
+  const machine = document.getElementById("machine");
+  const said = document.getElementById("said");
+
+  // A frame arrives every time the program waited. While the reader has not scrubbed
+  // back, the newest one is shown; once they have, it stays where they left it.
+  window.addEventListener("message", (event) => {
+    const following = scrub.value === scrub.max;
+    frames.push(event.data);
+    scrub.max = String(frames.length - 1);
+    scrub.disabled = frames.length < 2;
+    if (following) scrub.value = scrub.max;
+    draw(frames[Number(scrub.value)]);
+  });
+
+  scrub.addEventListener("input", () => draw(frames[Number(scrub.value)]));
+
+  function draw(frame) {
+    if (!frame) return;
+    clock.textContent = frame.ms + " ms";
+    over.textContent = frame.over ? "run over" : "";
+    said.textContent = frame.said;
+    machine.innerHTML =
+      pins(frame.gpio) + indicator(frame.onboard_led) + ports(frame.uart) +
+      waves(frame.pwm) + readings(frame.adc) + buses(frame.i2c);
+  }
+
+  function section(title, body) {
+    return body ? "<h2>" + title + "</h2>" + body : "";
+  }
+
+  function pins(gpio) {
+    const found = Object.values(gpio);
+    if (found.length === 0) return "";
+    const cards = found.map((pin) =>
+      '<div class="pin"><div class="name"><span class="lamp' +
+      (pin.level ? " lit" : "") + '"></span>GP' + pin.pin + "</div>" +
+      '<div class="facts">' + pin.direction +
+      (pin.pull === "none" ? "" : " · " + pin.pull) +
+      " · " + pin.changes + " changes" +
+      (pin.watching ? " · irq" : "") + "</div></div>"
+    );
+    return section("Pins", '<div class="row">' + cards.join("") + "</div>");
+  }
+
+  function indicator(led) {
+    if (!led) return "";
+    return section("On-board LED",
+      '<div class="row"><div class="pin"><div class="name"><span class="lamp' +
+      (led.level ? " lit" : "") + '"></span>' + (led.level ? "on" : "off") + "</div>" +
+      '<div class="facts">' + led.changes + " changes</div></div></div>");
+  }
+
+  function ports(uart) {
+    const found = Object.values(uart);
+    if (found.length === 0) return "";
+    return section("Serial ports", found.map((port) =>
+      table([
+        ["unit", port.unit + " · " + port.baudrate + " baud · " + port.data_bits +
+          (port.parity === "none" ? "N" : port.parity === "even" ? "E" : "O") + port.stop_bits +
+          (port.flow_control ? " · RTS/CTS" : "") + (port.watching ? " · irq" : "")],
+        ["pins", "txd " + port.txd_pin + " · rxd " + port.rxd_pin],
+        ["line ends", port.line_ending],
+        ["sent", '<pre>' + port.sent + "</pre>"],
+        ["waiting", port.pending + " byte" + (port.pending === 1 ? "" : "s") +
+          (port.pending ? "<pre>" + port.waiting + "</pre>" : "")]
+      ])
+    ).join(""));
+  }
+
+  function waves(pwm) {
+    const found = Object.values(pwm);
+    if (found.length === 0) return "";
+    return section("Square waves", found.map((wave) =>
+      table([
+        ["pin", "GP" + wave.pin + " · slice " + wave.slice],
+        ["frequency", wave.frequency + " Hz · " + wave.period_us + " us period"],
+        ["duty", wave.duty + "% · " + wave.pulse_width_us + " us high" +
+          '<div class="bar"><div style="width:' + Math.min(100, wave.duty) + '%"></div></div>']
+      ])
+    ).join(""));
+  }
+
+  function readings(adc) {
+    const found = Object.values(adc);
+    if (found.length === 0) return "";
+    return section("Analog inputs", found.map((input) =>
+      table([
+        ["pin", "GP" + input.pin + " · channel " + input.channel],
+        ["reading", input.raw +
+          '<div class="bar"><div style="width:' + (input.raw / 4095 * 100) + '%"></div></div>'],
+        ["read", input.reads + " times"]
+      ])
+    ).join(""));
+  }
+
+  function buses(i2c) {
+    const found = Object.values(i2c);
+    if (found.length === 0) return "";
+    return section("Two-wire buses", found.map((bus) =>
+      table([
+        ["unit", bus.unit + " · " + bus.frequency + " Hz"],
+        ["sent", bus.written.length === 0
+          ? '<span class="none">nothing yet</span>'
+          : "<pre>" + bus.written.map((one) =>
+              "0x" + one.address.toString(16).padStart(2, "0") + "  " + one.bytes
+            ).join("\n") + "</pre>"]
+      ])
+    ).join(""));
+  }
+
+  function table(rows) {
+    return "<table>" + rows.map((row) =>
+      '<tr><td class="key">' + row[0] + "</td><td>" + row[1] + "</td></tr>"
+    ).join("") + "</table>";
+  }
+})();
+</script>
+</body>
+</html>
