@@ -23,7 +23,9 @@
 #     line ending itself, and uart.txt is LF-normalized. What it tests is held instead
 #     by checks/stm32/uart/ — line_ending_tx captures the TX bytes as hex, gets_crlf
 #     holds the RX side — so the host diff here stays out of it by design.
-#   - logger: waits on a button, not the UART — a GPIO edge is a later harness step.
+#   - logger: waits on a button, not the UART. The edge exists now — the harness of
+#     checks/stm32/gpio/ presses an emulated B1 mid-run — but wiring a press into
+#     this host diff is a later step.
 #   - blink, heartbeat, servo, asleep, gpio_pico_loop, tenji, tenji_int, avs, adc:
 #     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
 #     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
@@ -37,7 +39,9 @@
 #   - uart_flow_control: flow control is refused on STM32 by design, so host and
 #     board are meant to disagree.
 #   - peripheral_answers: does not build for STM32 — the binding carries no PWM unit.
-#   - interrupt: produces no output and needs a GPIO edge.
+#   - interrupt: produces no output and needs a GPIO edge. The edge-to-handler path
+#     it exercises is held instead by checks/stm32/gpio/ (irq_falling) — the host
+#     diff here stays out of it by design.
 #   - require_helper, require_lib: libraries require.rb carries, not programs.
 
 checks:

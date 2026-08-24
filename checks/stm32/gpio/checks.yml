@@ -1,0 +1,12 @@
+checks:
+  - name: write_read_back
+  - name: led_wire
+    observe: observe/led.resc
+  - name: input_level
+    press: true
+  - name: irq_falling
+    press: true
+  - name: config_registers
+    observe: observe/config.resc
+  - name: invalid_pin
+  - name: missing_port
