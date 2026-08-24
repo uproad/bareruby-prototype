@@ -1,5 +1,5 @@
 const vscode = require("vscode");
-const { spawn } = require("child_process");
+const { execSync, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -13,28 +13,24 @@ function activate(context) {
 }
 
 function watch(context) {
-  const folder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
-  if (!folder) {
-    vscode.window.showErrorMessage("BareRuby: open the repository first.");
+  const found = project();
+  if (!found) {
+    vscode.window.showErrorMessage(
+      "BareRuby: no Gemfile above the file you are looking at, so there is no project to watch."
+    );
     return;
   }
-  const root = folder.uri.fsPath;
-  const source = watched(root);
 
   const panel = vscode.window.createWebviewPanel(
     "bareruby.machine",
-    `BareRuby — ${source}`,
+    `BareRuby — ${found.source}`,
     vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: true }
   );
-  panel.webview.html = page(context, `${path.basename(root)}/${source}`);
+  panel.webview.html = page(context, `${path.basename(found.root)}/${found.source}`);
 
   const seconds = vscode.workspace.getConfiguration("bareruby").get("seconds", 3);
-  // Started in the project rather than beside this file: the working directory is what
-  // says which `config/target.yml` is read and whose bundle the gems come out of, and
-  // `watch.rb` is handed over by its full path because it lives with the extension.
-  const watcher = path.join(context.extensionPath, "watch.rb");
-  const run = spawn("bundle", ["exec", "ruby", watcher, source, String(seconds)], { cwd: root });
+  const run = started(context, found, seconds);
   feed(run, panel);
   // The other direction: play, hold, step and speed go back as a line of JSON, which is
   // what `watch.rb` reads between one wait and the next.
@@ -44,15 +40,64 @@ function watch(context) {
   panel.onDidDispose(() => run.kill());
 }
 
-// The program the reader is looking at, if it is one; what a project is written around
-// otherwise. A path relative to the root is what `watch.rb` takes, because that is what
-// every verb takes.
-function watched(root) {
+// **A project starts where its Gemfile is** — that is what bundler answers, and what
+// every verb here reads its record from. The folder the editor happens to have open is
+// not that: somebody with their home directory open is not working on their home
+// directory. So the file in front of the reader is what the search starts from.
+function project() {
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.uri.fsPath.endsWith(".rb")) {
-    return path.relative(root, editor.document.uri.fsPath);
+    const root = rooted(path.dirname(editor.document.uri.fsPath));
+    if (root) return { root, source: path.relative(root, editor.document.uri.fsPath) };
   }
-  return "app/main.rb";
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    const root = rooted(folder.uri.fsPath);
+    if (root) return { root, source: "app/main.rb" };
+  }
+  return null;
+}
+
+function rooted(at) {
+  for (;;) {
+    if (fs.existsSync(path.join(at, "Gemfile"))) return at;
+
+    const above = path.dirname(at);
+    if (above === at) return null;
+    at = above;
+  }
+}
+
+function started(context, found, seconds) {
+  const watcher = path.join(context.extensionPath, "watch.rb");
+  return spawn("bundle", ["exec", "ruby", watcher, found.source, String(seconds)], {
+    cwd: found.root,
+    env: { ...process.env, PATH: reachable() }
+  });
+}
+
+// **`bundle` is usually not a file the editor can find.** A desk that manages its Ruby
+// versions puts a shim on the path from a shell profile, and an extension host started
+// before any profile was read has none of it — which is `spawn bundle EACCES` rather than
+// anything about Ruby.
+//
+// So the path is asked for once, of the same shell a terminal on this desk would be. The
+// shell is interactive because that is the file the profile is usually in; what it says
+// about job control on the way is not interesting and is dropped.
+let known = null;
+
+function reachable() {
+  if (known) return known;
+
+  try {
+    const asked = execSync('bash -ic \'printf %s "$PATH"\'', {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    known = asked || process.env.PATH;
+  } catch {
+    known = process.env.PATH;
+  }
+  return known;
 }
 
 // One line is one frame. A read can end mid-line, so what is left over waits for the
@@ -69,11 +114,7 @@ function feed(run, panel) {
   // Anything the run says on the way out goes to the panel rather than to a log: a blank
   // panel whose reason is somewhere else is the one thing this must not be.
   run.stderr.on("data", (chunk) => panel.webview.postMessage({ trouble: chunk.toString() }));
-  run.on("error", (failure) =>
-    panel.webview.postMessage({
-      trouble: `${failure.message}\n\nIs \`bundle\` on the path this editor was started with?`
-    })
-  );
+  run.on("error", (failure) => panel.webview.postMessage({ trouble: failure.message }));
   run.on("close", (status) => {
     if (status) panel.webview.postMessage({ trouble: `\nThe run ended with status ${status}.` });
   });

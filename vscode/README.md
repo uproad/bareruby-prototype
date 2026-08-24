@@ -25,6 +25,11 @@ the only thing it needs is the simulator in its bundle:
 `bundle install`, and the project is ready. Without it, `watch.rb` says so and stops —
 nothing else here has to change, and no board has to be attached.
 
+**Which project is worked out from the file in front of you**, by looking upward for a
+Gemfile — the same question bundler answers, and the same root every verb reads its record
+from. The folder the editor happens to have open is not it: somebody with their home
+directory open is not working on their home directory.
+
 ## Running it
 
 Two halves, and the Ruby one is useful on its own. **Run it from the project**, because
@@ -68,6 +73,11 @@ default.
 
 **The extension carries `watch.rb` with it**, so once it is installed this checkout does
 not have to be anywhere: the project's bundle is what the run reaches for.
+
+**It asks a shell where `bundle` is**, once, and remembers. A desk that manages its Ruby
+versions puts a shim on the path from a shell profile, and an editor started before any
+profile was read has none of it — which arrives as `spawn bundle EACCES` rather than as
+anything about Ruby.
 
 **Changing `extension.js` needs the extension host restarted, not just the window
 reloaded.** The panel is read off disk every time it opens, so the look changes on a

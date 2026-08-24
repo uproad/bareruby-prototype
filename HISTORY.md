@@ -1746,6 +1746,27 @@ out of that would have been inventing one. The bus stays uncoloured until the cl
 its pins, in a change of its own. `DAC` is reserved the same way — ESP32
 has one, nothing here reaches it.
 
+**Opening it in an editor found two things nothing else would have.**
+
+**Where a project starts is not where the editor is open.** The extension took the
+workspace folder as the root, which is right only when somebody opens exactly the project
+they are working on. Open a home directory and the root is the home directory: the title
+read `uproad/…`, the build ran in the wrong place, and nothing was found. **The root is
+where the Gemfile is** — the same question bundler answers and the same one every verb
+here asks — so the file in front of the reader is what the search now starts from, upward.
+
+**`bundle` is usually not a file the editor can find.** A desk that manages its Ruby
+versions puts a shim on the path from a shell profile, and this one has it in `.bashrc`,
+which a login shell does not read and an extension host has never read at all. What came
+back was `spawn bundle EACCES`, which says nothing about Ruby. The path is now asked of an
+interactive shell once and remembered; the run itself is still spawned directly, so
+nothing is quoted through a shell.
+
+**And a third, in the project rather than in the extension.** A project that reads these
+gems from git pins a revision, and `bundle update <gem>` left it where it was — the
+version had not changed, so nothing looked newer. Only a plain `bundle update` moved it.
+A project watching a branch has to be told to catch up with it.
+
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
 builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus
