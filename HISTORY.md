@@ -1650,6 +1650,12 @@ The simulator answers with objects, and nothing about an object is visible.
 lamps, the serial ports as their buffers, the square waves as their duty, and the
 on-board LED as itself.
 
+**It watches a project, not this checkout.** The working directory is whichever project
+is being watched: its `config/target.yml` is the record that is read, its bundle is where
+the gems come from, and the command is reached as `bundle exec bareruby`. The extension
+hands `watch.rb` over by its full path and starts it there, so pointing an editor at a
+project and at this extension are two different paths on the command line.
+
 **The channel is one line of JSON per wait.** `Machine#snapshot` renders the same
 readings the accessors answer as plain data, and `vscode/watch.rb` builds a program,
 interprets it, and writes a line every time the program waits — which is every time the

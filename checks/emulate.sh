@@ -21,10 +21,10 @@ RUBY=${RUBY:-ruby}
 RECORD=config/target.yml
 
 ORACLE=$("$RUBY" -ryaml -e '
-  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["machine"] == "host" }
+  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["binding"] == "host" }
   puts entry ? entry["name"] : ""' "$RECORD")
 [ -n "$ORACLE" ] || {
-    echo "checks: $RECORD records no entry whose machine is host, and that build is the oracle." >&2
+    echo "checks: $RECORD records no entry whose binding is host, and that build is the oracle." >&2
     exit 2
 }
 mapfile -t BOARDS < <("$RUBY" -ryaml -e '

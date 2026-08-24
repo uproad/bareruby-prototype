@@ -30,19 +30,24 @@ function watch(context) {
   panel.webview.html = page(context);
 
   const seconds = vscode.workspace.getConfiguration("bareruby").get("seconds", 3);
-  const run = spawn("ruby", ["vscode/watch.rb", source, String(seconds)], { cwd: root });
+  // Started in the project rather than beside this file: the working directory is what
+  // says which `config/target.yml` is read and whose bundle the gems come out of, and
+  // `watch.rb` is handed over by its full path because it lives with the extension.
+  const watcher = path.join(context.extensionPath, "watch.rb");
+  const run = spawn("bundle", ["exec", "ruby", watcher, source, String(seconds)], { cwd: root });
   feed(run, panel);
   panel.onDidDispose(() => run.kill());
 }
 
-// The program the reader is looking at, if it is one; the blink otherwise. A path
-// relative to the root is what `watch.rb` takes, because that is what every verb takes.
+// The program the reader is looking at, if it is one; what a project is written around
+// otherwise. A path relative to the root is what `watch.rb` takes, because that is what
+// every verb takes.
 function watched(root) {
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.uri.fsPath.endsWith(".rb")) {
     return path.relative(root, editor.document.uri.fsPath);
   }
-  return "samples/blink.rb";
+  return "app/main.rb";
 }
 
 // One line is one frame. A read can end mid-line, so what is left over waits for the

@@ -553,11 +553,14 @@ check reaches for.
 
 **And what a person reaches for is [`vscode/`](vscode/README.md)**, which shows the same
 readings as a panel: the pins as lamps, the ports as their buffers, and a slider along the
-run so any moment in it can be looked at. Its Ruby half stands on its own — one line of
-JSON every time the program waits — so watching a blink blink needs no editor:
+run so any moment in it can be looked at. **It watches a project rather than this
+checkout** — anything `bareruby new` wrote, once `bareruby_prot-simulator` is in its
+Gemfile. Its Ruby half stands on its own, one line of JSON every time the program waits,
+so watching a blink blink needs no editor:
 
 ```sh
-ruby vscode/watch.rb samples/blink.rb 3
+cd ~/ruby/my-project
+bundle exec ruby ~/ruby/bareruby-prototype/vscode/watch.rb app/main.rb 3
 {"ms":500,"gpio":{"25":{"pin":25,"level":1,"changes":1,...}},...}
 {"ms":1000,"gpio":{"25":{"pin":25,"level":0,"changes":2,...}},...}
 ```
