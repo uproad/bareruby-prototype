@@ -28,7 +28,9 @@
 #     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
 #     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
 #   - i2c, picoruby_interface: read I2C with no device behind it; the host stub
-#     answers, the emulated bus does not. Needs an I2C device model.
+#     answers, the emulated bus does not. The emulated bus is held instead by
+#     checks/stm32/i2c/, whose harness attaches a C# check sensor — the host diff
+#     here stays out of it by design.
 #   - uart_format: the emulated run says "7E1 ready" and the host says nothing — the
 #     two bindings disagree about 7E1, which is a question for the bindings, not for
 #     this list.

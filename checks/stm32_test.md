@@ -51,8 +51,8 @@ samples/ の全 38 本のうち **19 本がテスト済み、19 本が未テス�
 | samples/avs.rb | 同上 | v3 |
 | samples/adc.rb | 同上 | v3 |
 | samples/interrupt.rb | 出力がなく、GPIO エッジの注入が必要 | v3 相当のハーネス拡張 |
-| samples/i2c.rb | I2C の先にデバイスがいない(ホストのスタブは答えるが、エミュレートのバスは答えない) | I2C デバイスモデルの追加 |
-| samples/picoruby_interface.rb | 同上 | I2C デバイスモデルの追加 |
+| samples/i2c.rb | I2C の先にデバイスがいない(ホストのスタブは答えるが、エミュレートのバスは答えない)。エミュレートのバス側は checks/stm32/i2c/ が C# チェックセンサーを接続して固定回答で保持 | このホスト突き合わせは対象外(意図的) |
+| samples/picoruby_interface.rb | 同上 | 同上 |
 | samples/uart_format.rb | 7E1 についてホストと STM32 のバインディングが不一致(エミュレート側だけ "7E1 ready" と言う) | バインディング側の問題として別途 |
 | samples/uart_flow_control.rb | STM32 ではフロー制御を設計として拒否しており、ホストと食い違うのが正しい | テスト対象外(意図的) |
 | samples/peripheral_answers.rb | STM32 向けにビルドできない(バインディングに PWM ユニットがない) | バインディングに PWM が入れば |

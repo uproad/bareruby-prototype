@@ -1,0 +1,20 @@
+checks:
+  - name: write_result
+  - name: write_echo
+  - name: read_single
+    capture: hex
+  - name: read_multi
+    capture: hex
+  - name: read_register
+    capture: hex
+  - name: payload_shapes
+    capture: hex
+  - name: write_all_byte_values
+  - name: read_pattern
+    capture: hex
+  - name: frequency_registers
+    observe: observe/frequency.resc
+  - name: frequency_fast
+    observe: observe/frequency.resc
+  - name: invalid_address
+  - name: missing_device
