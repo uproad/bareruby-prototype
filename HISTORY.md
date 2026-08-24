@@ -1755,6 +1755,13 @@ read `uproad/…`, the build ran in the wrong place, and nothing was found. **Th
 where the Gemfile is** — the same question bundler answers and the same one every verb
 here asks — so the file in front of the reader is what the search now starts from, upward.
 
+**And the file in front of the reader is any file.** Fixing the root first, the search was
+started only from a `.rb` and fell back to the workspace folder otherwise — so reading the
+project's own `Gemfile` and asking for the panel said there was no Gemfile anywhere.
+Somebody with a `Gemfile` open is standing in a project as surely as somebody with a
+program open; what is watched is the program in front of them when there is one, and what
+the project is written around when there is not.
+
 **`bundle` is usually not a file the editor can find.** A desk that manages its Ruby
 versions puts a shim on the path from a shell profile, and this one has it in `.bashrc`,
 which a login shell does not read and an extension host has never read at all. What came

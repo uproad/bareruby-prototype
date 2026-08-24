@@ -25,10 +25,12 @@ the only thing it needs is the simulator in its bundle:
 `bundle install`, and the project is ready. Without it, `watch.rb` says so and stops —
 nothing else here has to change, and no board has to be attached.
 
-**Which project is worked out from the file in front of you**, by looking upward for a
-Gemfile — the same question bundler answers, and the same root every verb reads its record
-from. The folder the editor happens to have open is not it: somebody with their home
-directory open is not working on their home directory.
+**Which project is worked out from the file in front of you** — any file, not only a
+`.rb` — by looking upward for a Gemfile. That is the same question bundler answers and the
+same root every verb reads its record from. The folder the editor happens to have open is
+not it: somebody with their home directory open is not working on their home directory.
+With a `.rb` in front of you that program is watched; with anything else, `app/main.rb`
+is.
 
 ## Running it
 

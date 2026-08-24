@@ -13,10 +13,12 @@ function activate(context) {
 }
 
 function watch(context) {
-  const found = project();
+  const from = looking();
+  const found = from && project(from);
   if (!found) {
     vscode.window.showErrorMessage(
-      "BareRuby: no Gemfile above the file you are looking at, so there is no project to watch."
+      `BareRuby: no Gemfile at or above ${from || "anywhere this window is open"}, so there is` +
+      " no project to watch. Open a file inside one first."
     );
     return;
   }
@@ -40,21 +42,27 @@ function watch(context) {
   panel.onDidDispose(() => run.kill());
 }
 
-// **A project starts where its Gemfile is** — that is what bundler answers, and what
-// every verb here reads its record from. The folder the editor happens to have open is
-// not that: somebody with their home directory open is not working on their home
-// directory. So the file in front of the reader is what the search starts from.
-function project() {
+// **Where the reader is**, which is a file rather than a folder — any file. Somebody with
+// a `Gemfile` in front of them is standing in a project as surely as somebody with a `.rb`
+// in front of them, and the folder the window happens to be open at says nothing either
+// way: a home directory is not a project.
+function looking() {
   const editor = vscode.window.activeTextEditor;
-  if (editor && editor.document.uri.fsPath.endsWith(".rb")) {
-    const root = rooted(path.dirname(editor.document.uri.fsPath));
-    if (root) return { root, source: path.relative(root, editor.document.uri.fsPath) };
-  }
-  for (const folder of vscode.workspace.workspaceFolders || []) {
-    const root = rooted(folder.uri.fsPath);
-    if (root) return { root, source: "app/main.rb" };
-  }
-  return null;
+  if (editor) return editor.document.uri.fsPath;
+
+  const folder = (vscode.workspace.workspaceFolders || [])[0];
+  return folder && folder.uri.fsPath;
+}
+
+// **A project starts where its Gemfile is** — that is what bundler answers, and what every
+// verb here reads its record from. What to run is the file in front of the reader when
+// that is a program, and what a project is written around when it is not.
+function project(from) {
+  const root = rooted(fs.statSync(from).isDirectory() ? from : path.dirname(from));
+  if (!root) return null;
+
+  const source = from.endsWith(".rb") ? path.relative(root, from) : "app/main.rb";
+  return { root, source };
 }
 
 function rooted(at) {
