@@ -1,0 +1,2 @@
+sysbus ReadDoubleWord 0x40020800
+sysbus ReadDoubleWord 0x4002080C
