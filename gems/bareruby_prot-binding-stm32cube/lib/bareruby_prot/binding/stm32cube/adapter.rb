@@ -57,6 +57,11 @@ module BareRubyProt
           UART_HandleTypeDef *bareruby_board_uart(int32_t id);
           I2C_HandleTypeDef *bareruby_board_i2c(int32_t id);
 
+          /* The timer behind a PWM pin, wired and ticking at one microsecond, with the
+           * capture/compare channel answered through the pointer; a fault for a pin
+           * this board offers no timer on. */
+          TIM_HandleTypeDef *bareruby_board_pwm(int32_t pin, uint32_t *channel);
+
           void bareruby_board_delay_us(uint32_t microseconds);
           #{stdout_define}#{led_declarations}
           #ifdef __cplusplus
@@ -87,6 +92,7 @@ module BareRubyProt
         sections = [source_head, fault_text, clock_text, start_text, gpio_text]
         sections << uart_text unless @board.uarts.empty?
         sections << i2c_text unless @board.i2cs.empty?
+        sections << pwm_text unless @board.pwms.empty?
         sections << led_text if @board.led
         sections << @family.delay_text
         sections.join("\n")
@@ -270,6 +276,71 @@ module BareRubyProt
                   }
           C
         end.join("\n")
+      end
+
+      # F4 timers sit on either APB bus, and each bus feeds its timers at twice its own
+      # rate whenever it is divided. Every timer is prescaled here to tick at 1 MHz —
+      # the Pico binding's design — so a period is its length in microseconds and a
+      # pulse width is the compare value itself.
+      def pwm_text
+        instances = @board.pwms.map(&:instance).uniq
+        handles = instances.map { |instance| pwm_handle(instance) }
+        cases = @board.pwms.map { |one| pwm_case(one) }
+        <<~C
+          #{handles.join("\n")}
+          TIM_HandleTypeDef *bareruby_board_pwm(int32_t pin, uint32_t *channel) {
+              switch (pin) {
+          #{cases.join("\n")}
+              default: bareruby_board_fault(); return NULL;
+              }
+          }
+
+        C
+      end
+
+      def pwm_handle(instance)
+        clock = @family.clock(@board)
+        divided = instance.match?(/\ATIM(1|8|9|10|11)\z/) ? clock.apb2 : clock.apb1
+        timer_clock = divided == clock.hclk ? divided : divided * 2
+        <<~C
+          static TIM_HandleTypeDef bareruby_board_pwm_#{instance}_handle;
+
+          static TIM_HandleTypeDef *bareruby_board_pwm_#{instance}(void) {
+              TIM_HandleTypeDef *timer = &bareruby_board_pwm_#{instance}_handle;
+              if (timer->Instance == NULL) {
+                  __HAL_RCC_#{instance}_CLK_ENABLE();
+                  timer->Instance = #{instance};
+                  /* #{timer_clock / 1_000_000} MHz timer clock down to 1 MHz ticks. */
+                  timer->Init.Prescaler = #{timer_clock / 1_000_000 - 1}U;
+                  timer->Init.CounterMode = TIM_COUNTERMODE_UP;
+                  timer->Init.Period = 999U;
+                  timer->Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+                  timer->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+                  if (HAL_TIM_PWM_Init(timer) != HAL_OK) {
+                      bareruby_board_fault();
+                  }
+              }
+              return timer;
+          }
+        C
+      end
+
+      def pwm_case(one)
+        <<~C.chomp
+              case #{index_of(one.pin.port) * 16 + one.pin.index}: /* #{one.pin.name}: #{one.instance}_CH#{one.channel}, AF#{one.af} */
+                  {
+                      __HAL_RCC_GPIO#{one.pin.port}_CLK_ENABLE();
+                      GPIO_InitTypeDef wire = {0};
+                      wire.Pin = GPIO_PIN_#{one.pin.index};
+                      wire.Mode = GPIO_MODE_AF_PP;
+                      wire.Pull = GPIO_NOPULL;
+                      wire.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+                      wire.Alternate = #{one.af}U;
+                      HAL_GPIO_Init(GPIO#{one.pin.port}, &wire);
+                  }
+                  *channel = TIM_CHANNEL_#{one.channel};
+                  return bareruby_board_pwm_#{one.instance}();
+        C
       end
 
       def led_text

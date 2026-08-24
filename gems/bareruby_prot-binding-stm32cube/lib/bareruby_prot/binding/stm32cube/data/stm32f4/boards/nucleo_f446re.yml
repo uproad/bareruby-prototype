@@ -33,6 +33,14 @@ i2c:
     instance: I2C1
     scl: { pin: PB8, af: 4 }
     sda: { pin: PB9, af: 4 }
+pwm:
+  # Which timer answers a pin is silicon fact, recorded here so a program only ever
+  # says the pin. PA15 is what the Pico-numbered samples (pin 15) land on; PA5 shares
+  # the LD2 wire, which is what makes its duty observable in the emulator; PC7 is
+  # Arduino D9, the classic servo header.
+  - { pin: PA5, instance: TIM2, channel: 1, af: 1 }
+  - { pin: PA15, instance: TIM2, channel: 1, af: 1 }
+  - { pin: PC7, instance: TIM3, channel: 2, af: 2 }
 probe:
   openocd:
     interface: stlink
