@@ -1506,8 +1506,11 @@ reach with; here every peripheral is an object, so the caller reaches it directl
 receive side is **not** among them any more — `--input=` feeds an emulated UART, and a
 simulated run is fed through the same flag from the same files.
 
-- **I2C reads answer.** `samples/i2c.rb` and `samples/picoruby_interface.rb` are on the
-  list rather than waiting for a device model: what a bus answers is what was put in it.
+- **I2C reads answer without a device model.** `samples/i2c.rb` and
+  `samples/picoruby_interface.rb` are on this list because what a bus answers is whatever
+  this side put in it. The emulated bus has a device behind it too now — a C# sensor
+  written for Renode, held by `checks/stm32/i2c/` — which is the difference: there, a
+  device is a part somebody wrote; here it is an object that was already there.
 - **A pin can be moved.** `logger` and `interrupt` wait on a GPIO edge, which the emulated
   list records as a later harness step. Here a wait is where the caller gets its turn, so
   giving one is a line — which is what the paragraph below does.
