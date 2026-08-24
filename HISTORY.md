@@ -1639,3 +1639,32 @@ nobody, the harness hands the verb a stub in Renode's place and makes the one re
 itself on the transformed script, sensor attached. The complete
 `checks/stm32/i2c/check.sh f446` run passed 12/12 in 208 seconds under Renode. It was
 built but not hardware-flashed.
+
+## The STM32 GPIO binding has its own fixed-answer check
+
+`checks/stm32/gpio/` holds the GPIO binding to fixed answers with the same stub-Renode
+harness as the I2C suite. Outputs needed no counterpart — the emulated machine already
+wires PA5 to an LED model, the board's LD2 — but inputs needed a hand on a pin, so the
+harness attaches Renode's button model to PC13, the board's B1, and presses it mid-run:
+a press only lands once the emulation runs again, so the transformed script splits the
+run in two and presses between the slices. Seven checks pass. `write` answers 0 and the
+driven state reads back through IDR, with `high?` and `low?` agreeing. A write reaches
+the LED model itself — `True`, with MODER holding its reset value and the USART2 pins
+around the one changed bit (`0xA80004A0`) and ODR at `0x00000020`. An externally driven
+level reaches `read` on both sides of the press, and a falling edge reaches the
+realtime handler through EXTI and the NVIC, not before the press — the handler only
+raises PA5, its own handle made inside the block, and the main loop does the talking.
+Direction lands in MODER (`0x00000005`) and the pulls in PUPDR (`0x00000090`) on
+all-zero-reset port C, with `HIGH_Z` landing as input with no pull. A pin outside the
+range and a pin on a port the F446RE does not bond out (PE0) are refused through two
+different fault paths.
+
+Two model limits bound the claims. Renode 1.16.1's STM32_GPIOPort leaves OTYPER a
+tagged register — writes dropped, reads zero — so the open-drain pin proves only that
+its init path holds and the register's reflection joins the hardware list. And the
+machine has no SYSCFG, every port's pin N wired straight to EXTI line N, so the
+interrupt check proves the edge reaches the handler while EXTICR's port selection stays
+on hardware. One API gap is recorded rather than tested: the stdlib registers
+`EDGE_FALL` only, and the rising path waits for an `EDGE_RISE` constant to say so. The
+complete `checks/stm32/gpio/check.sh f446` run passed 7/7 in 57 seconds under Renode.
+It was built but not hardware-flashed.
