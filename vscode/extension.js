@@ -31,8 +31,7 @@ function watch(context) {
   );
   panel.webview.html = page(context, `${path.basename(found.root)}/${found.source}`);
 
-  const seconds = vscode.workspace.getConfiguration("bareruby").get("seconds", 3);
-  const run = started(context, found, seconds);
+  const run = started(context, found);
   feed(run, panel);
   // The other direction: play, hold, step and speed go back as a line of JSON, which is
   // what `watch.rb` reads between one wait and the next.
@@ -75,9 +74,12 @@ function rooted(at) {
   }
 }
 
-function started(context, found, seconds) {
+// **No length is given, so the run does not end.** A loop that keeps going is the thing
+// being watched; cutting it off after some number of seconds would answer a question
+// nobody asked. It stops when the panel is closed, and holds when somebody says so.
+function started(context, found) {
   const watcher = path.join(context.extensionPath, "watch.rb");
-  return spawn("bundle", ["exec", "ruby", watcher, found.source, String(seconds)], {
+  return spawn("bundle", ["exec", "ruby", watcher, found.source], {
     cwd: found.root,
     env: { ...process.env, PATH: reachable() }
   });

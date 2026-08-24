@@ -169,6 +169,10 @@
   // answers with no pins at all; nothing reaches a converter going the other way.
   const KEPT = ["dac", "i2c"];
   const PINS = 50;
+  // How many frames to keep behind the slider. A run that is never over would otherwise
+  // fill a window that is never closed; what falls off the front is far enough back that
+  // nobody was looking at it.
+  const KEPT = 3000;
   const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0];
   // What a full-scale reading is worth in volts. The converter is twelve bits.
   const REFERENCE = 3.3;
@@ -188,6 +192,7 @@
 
     const following = scrub.value === scrub.max;
     frames.push(frame);
+    if (frames.length > KEPT) frames.shift();
     scrub.max = String(frames.length - 1);
     scrub.disabled = frames.length < 2;
     if (following) scrub.value = scrub.max;

@@ -6,6 +6,10 @@
 #
 #     bundle exec ruby /path/to/vscode/watch.rb app/main.rb [SECONDS] [INPUT]
 #
+# **With no seconds it runs until it is stopped**, which is what watching is for: a loop
+# that does not end is the thing being looked at, and a display that cuts it off after
+# three seconds is answering a question nobody asked.
+#
 # **It runs in a project rather than in a checkout.** The working directory is whichever
 # project is being watched, its `config/target.yml` is the record that is read, and its
 # bundle is where the gems come from — which is why this is started through `bundle exec`
@@ -39,6 +43,11 @@ RECORD = "config/target.yml"
 # button does not feel stuck, long enough that holding costs nothing.
 IDLE = 0.02
 
+# How much virtual time may pass between frames while playing. **A program that never
+# waits would otherwise show nothing** — the frames come out at the waits, and it has
+# none — so the interpreter is asked between instructions as well, and answers this often.
+FRAME = 20_000
+
 # Which entry the hosted build is recorded under. **The binding is what identifies it** —
 # it reaches one machine and one only — while `--target=` takes the entry's name, and what
 # a desk calls its own machine is its own business.
@@ -65,22 +74,22 @@ class Watching
     @steps = 0
     @speed = 1.0
     @paid = 0
+    @framed = 0
   end
 
-  # Playing, a frame goes out at every wait and the clock is paid for. Held, this is not
-  # where anything happens — `at_instruction` has already stopped between two of them.
+  # Playing, a wait is where the clock is paid for: virtual time that has passed costs
+  # real time to somebody watching. Held, this is not where anything happens —
+  # `at_instruction` has already stopped between two of them.
   def at_wait(machine)
     orders
-    return unless @live
-
-    play(machine)
-    frame(machine)
+    play(machine) if @live
   end
 
   # Between two instructions. **This is what a step is**, so it is where a held run waits
-  # to be told to take one — and where it does nothing at all while it is playing.
+  # to be told to take one. Playing, it is where the frames come from — often enough to
+  # watch, rarely enough to cost nothing, and not tied to whether the program ever waits.
   def at_instruction(machine)
-    return if @live
+    return played(machine) if @live
 
     until @live || @steps.positive?
       sleep(IDLE)
@@ -90,6 +99,14 @@ class Watching
     return if @live
 
     @steps -= 1
+    frame(machine)
+  end
+
+  def played(machine)
+    now = machine.clock.microseconds
+    return if now - @framed < FRAME
+
+    @framed = now
     frame(machine)
   end
 
@@ -159,5 +176,5 @@ def receiving(input)
 end
 
 source = ARGV[0] || "app/main.rb"
-seconds = Integer(ARGV[1] || 3)
+seconds = ARGV[1].nil? || ARGV[1].empty? ? nil : Integer(ARGV[1])
 watched(built(hosted, source), seconds, ARGV[2])

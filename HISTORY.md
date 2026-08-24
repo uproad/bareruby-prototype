@@ -1746,7 +1746,7 @@ out of that would have been inventing one. The bus stays uncoloured until the cl
 its pins, in a change of its own. `DAC` is reserved the same way — ESP32
 has one, nothing here reaches it.
 
-**Opening it in an editor found two things nothing else would have.**
+**Opening it in an editor found four things nothing else would have.**
 
 **Where a project starts is not where the editor is open.** The extension took the
 workspace folder as the root, which is right only when somebody opens exactly the project
@@ -1773,6 +1773,21 @@ nothing is quoted through a shell.
 gems from git pins a revision, and `bundle update <gem>` left it where it was — the
 version had not changed, so nothing looked newer. Only a plain `bundle update` moved it.
 A project watching a branch has to be told to catch up with it.
+
+**The fourth was the design, not a bug.** The panel took the length of a run from the
+emulated side — three virtual seconds, which is what `emulate` gives a firmware before it
+stops — and after three seconds it sat there. It looked like a hang, and the objection was
+the right one: **a loop that does not end is the thing being watched.** Seeing a pin keep
+toggling, or stop, is what this kind of debugging is; cutting the run off answers a
+question nobody asked. `Clock` now takes `nil` for a length and is never over, the
+extension names none, and the panel keeps the last few thousand frames behind its slider
+rather than all of them.
+
+That change made a second one necessary. Frames were written at the waits, so a program
+that never waits wrote none — `samples/gpio_pico_loop.rb`, twenty-six pins and no sleep,
+showed nothing at all. They are written between instructions now, at most one per
+20 virtual milliseconds, and that loop is as watchable as a blink: **8,428 changes on GP0
+in the first second**, with the pins moving as it goes.
 
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it

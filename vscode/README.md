@@ -8,9 +8,13 @@ read. This turns that into a panel: the pins as lamps, the serial ports as their
 the square waves as their duty, and a slider along the run so any moment in it can be
 looked at.
 
-**A blink looks like a blink here.** The clock is virtual, so a three-second run finishes
-in a fraction of a second and every frame of it arrives at once; the slider is what makes
-that watchable rather than a single final state.
+**It does not end.** A firmware loops forever, and watching it do that is the point —
+seeing a pin keep toggling, or stop toggling, is the whole of what this kind of debugging
+is. The run stops when the panel is closed, or holds when somebody presses `□`.
+
+**A blink looks like a blink.** Playing pays real time for virtual time, so a wait worth
+500 ms takes half a second at `1×` and a twentieth of one at `10×`, and the slider looks
+back over the last few thousand frames.
 
 ## What a project needs
 
@@ -45,10 +49,11 @@ bundle exec ruby ~/ruby/bareruby-prototype/vscode/watch.rb app/main.rb 3
 {"ms":200,"gpio":{"25":{"pin":25,"level":1,"changes":2,...}},...}
 ```
 
-It builds the program for the hosted entry, interprets what the build left, and writes
-**one line of JSON every time the program waits** — which is every time the machine can
-have changed. The last line is the run's end, marked `"over":true`. Nothing about those
-lines is specific to an editor.
+It builds the program for the hosted entry, interprets what the build left, and writes a
+line of JSON as it goes — **often enough to watch, and not tied to whether the program
+ever waits**, so a loop with nothing but pin writes in it is as visible as a blink. With
+no seconds named it runs until it is stopped; name some and it ends there, marked
+`"over":true`. Nothing about those lines is specific to an editor.
 
 A program that receives takes its bytes from a file named third:
 
@@ -70,8 +75,7 @@ code --install-extension "vscode/$(./vscode/package.sh)"
 **Developer: Reload Window** from the palette
 (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), open the project, and run **BareRuby:
 Watch this program run**. It watches the `.rb` file in front of you, or `app/main.rb` when
-that is not one. How much virtual time a run gets is `bareruby.seconds` in settings, 3 by
-default.
+that is not one, and keeps running until the panel is closed.
 
 **The extension carries `watch.rb` with it**, so once it is installed this checkout does
 not have to be anywhere: the project's bundle is what the run reaches for.
@@ -112,16 +116,17 @@ the program touched it.
 `50%`.
 
 **The clock and the transport** sit to the right. The clock is virtual time to the
-microsecond. `▶` plays, and playing means paying real time for virtual time — a wait worth
-500 ms costs half a second at `1×` and a twentieth of one at `10×`. `□` holds, `⟩` takes
-one step, `⟨` looks back at the frame before. The slider walks the whole run.
+microsecond, and it keeps going. `▶` plays, and playing means paying real time for virtual
+time — a wait worth 500 ms costs half a second at `1×` and a twentieth of one at `10×`.
+`□` holds, `⟩` takes one step (one instruction), `⟨` looks back at the frame before. The
+slider walks the last few thousand frames.
 
 **Below the board**: what the serial ports carry, and then what the program printed, one
 numbered line each.
 
-A frame is a wait, so **a program that never waits leaves one frame**: everything happened
-between the start and the end. `samples/blink.rb` leaves 7 over three virtual seconds,
-`adc` 298.
+**A program that never waits is watchable too.** Frames come out between instructions
+rather than only at waits, so `samples/gpio_pico_loop.rb` — which writes twenty-six pins
+and never sleeps — shows its pins moving, at 8,428 changes on GP0 in the first second.
 
 If the run said anything on the way out — no simulator in the bundle, no `bundle` on the
 path, a program that would not build — it is in a red box at the top instead of in a log.

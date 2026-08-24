@@ -30,7 +30,8 @@ module BareRubyProt
       end
 
       # The program from its entry point until it returns, or until the time it was given
-      # runs out. A firmware never returns, which is why the second of those exists.
+      # runs out. A firmware never returns, which is why the second of those exists — and
+      # `seconds: nil` is how to ask for neither, which a display watching a loop does.
       #
       # A block given here runs every time the program waits, holding the machine: that is
       # when a caller gets to move an input, and it is the same moment a machine would

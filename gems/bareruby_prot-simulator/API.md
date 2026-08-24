@@ -41,7 +41,7 @@ BareRubyProt::Simulator.run(artifact, seconds: 3, out: $stdout, err: $stderr, in
 | | |
 | --- | --- |
 | `artifact` | the executable a host build left, `build/<target>/bareruby_program` |
-| `seconds:` | how much **virtual** time the program is given. A firmware never returns, so a run has to be told how long to watch |
+| `seconds:` | how much **virtual** time the program is given. A firmware never returns, so a run has to be told how long to watch — or told `nil`, and then it never ends, which is what watching a loop means |
 | `out:` | where the program's own output goes — anything it `puts` |
 | `err:` | where a panic goes |
 | `input:` | an `IO` attached as the wire a serial port receives on, and as what an I2C read answers with. `$stdin` makes a run take its input the way the host build does |
@@ -199,7 +199,7 @@ is written against.
 | `ticks_ms` | milliseconds since the run began, which is what the program reads too |
 | `microseconds` | the same, unrounded |
 | `seconds` | the same, as a float |
-| `over?` | whether the run has had the time it was given |
+| `over?` | whether the run has had the time it was given. Always false when it was given none |
 
 The instruction cost is also what ends a program that never waits: a loop that only
 writes pins runs out of the time it was given rather than running until somebody stops
