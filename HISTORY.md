@@ -1684,8 +1684,18 @@ What it cost: 436 lines, of which the panel is 188, the extension 71 and the Rub
 **There is no build step** — plain JavaScript, loaded as it is. A throwaway has no business
 growing an npm toolchain, and nothing here is large enough to want one.
 
+**Renaming the machine broke the records that were already written.** A project written
+before the rename holds `machine: none`, and that composition no longer exists — the build
+stops and says so, listing the ones that do, which is the behaviour a record naming a
+missing composition has always had. Watching an existing project meant editing one line of
+its `config/target.yml` first. Nothing warns about it ahead of time and nothing migrates
+it; the cost of the rename is one line per project already in existence.
+
 **It was not opened in an editor here.** The frames are real, and the panel's own script
 was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
 builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus
-at 400 kHz. But "it works as an extension" needs somebody to press F5, and nobody has.
-It is written up as built, not verified.
+at 400 kHz. **The Ruby half was run against a real project** — one `bareruby new` wrote,
+outside this checkout, with the simulator added to its Gemfile — and the `OnboardLED`
+program it came with leaves four frames over three virtual seconds, the indicator lit,
+unlit and lit again. But "it works as an extension" needs somebody to press F5, and
+nobody has. It is written up as built, not verified.
