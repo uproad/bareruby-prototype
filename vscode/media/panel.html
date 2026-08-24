@@ -20,6 +20,13 @@
   #scrub { flex: 1; accent-color: var(--vscode-textLink-foreground); }
   #clock { font-variant-numeric: tabular-nums; min-width: 7ch; text-align: right; }
   #over { opacity: .6; font-size: 11px; }
+  #hint { opacity: .5; font-size: 11px; margin: 10px 0 0; }
+  #trouble {
+    display: none; margin: 12px 0 0; padding: 9px 11px; border-radius: 4px;
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+    white-space: pre-wrap; font-family: var(--vscode-editor-font-family); font-size: 12px;
+  }
   .row { display: flex; flex-wrap: wrap; gap: 8px; }
   .pin {
     border: 1px solid var(--vscode-panel-border); border-radius: 4px;
@@ -56,7 +63,9 @@
   <span id="over"></span>
 </div>
 
+<div id="trouble"></div>
 <div id="machine"></div>
+<p id="hint">Building and interpreting. The first frame arrives when the program first waits.</p>
 
 <h2>What the program printed</h2>
 <pre id="said"></pre>
@@ -69,12 +78,19 @@
   const over = document.getElementById("over");
   const machine = document.getElementById("machine");
   const said = document.getElementById("said");
+  const hint = document.getElementById("hint");
+  const trouble = document.getElementById("trouble");
 
   // A frame arrives every time the program waited. While the reader has not scrubbed
   // back, the newest one is shown; once they have, it stays where they left it.
   window.addEventListener("message", (event) => {
+    if (event.data.trouble !== undefined) return complain(event.data.trouble);
+
     const following = scrub.value === scrub.max;
     frames.push(event.data);
+    hint.textContent = frames.length > 1
+      ? "Drag the slider to move through the run."
+      : "One frame so far — this program waits once, or not at all.";
     scrub.max = String(frames.length - 1);
     scrub.disabled = frames.length < 2;
     if (following) scrub.value = scrub.max;
@@ -82,6 +98,14 @@
   });
 
   scrub.addEventListener("input", () => draw(frames[Number(scrub.value)]));
+
+  // Whatever the run said on the way out. Without this the panel stays blank and the
+  // reason for it is in a log nobody opened.
+  function complain(what) {
+    trouble.style.display = "block";
+    trouble.textContent += what;
+    if (frames.length === 0) hint.textContent = "Nothing ran.";
+  }
 
   function draw(frame) {
     if (!frame) return;

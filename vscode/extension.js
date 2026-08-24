@@ -61,10 +61,17 @@ function feed(run, panel) {
       if (line.length > 0) panel.webview.postMessage(JSON.parse(line));
     }
   });
-  run.stderr.on("data", (chunk) => console.error(chunk.toString()));
+  // Anything the run says on the way out goes to the panel rather than to a log: a blank
+  // panel whose reason is somewhere else is the one thing this must not be.
+  run.stderr.on("data", (chunk) => panel.webview.postMessage({ trouble: chunk.toString() }));
   run.on("error", (failure) =>
-    vscode.window.showErrorMessage(`BareRuby: ${failure.message}`)
+    panel.webview.postMessage({
+      trouble: `${failure.message}\n\nIs \`bundle\` on the path this editor was started with?`
+    })
   );
+  run.on("close", (status) => {
+    if (status) panel.webview.postMessage({ trouble: `\nThe run ended with status ${status}.` });
+  });
 }
 
 function page(context) {

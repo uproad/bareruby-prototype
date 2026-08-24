@@ -76,6 +76,25 @@ the extension and at a project as two paths:
 code --extensionDevelopmentPath=~/ruby/bareruby-prototype/vscode ~/ruby/bareruby-projects/test
 ```
 
+## What the panel shows
+
+Top to bottom:
+
+- **A slider and the virtual clock.** Every frame the run produced is kept, so dragging
+  the slider moves through the run and the readings below follow. **That is the only
+  control there is** — the panel watches, it does not touch anything
+- **The peripherals the program opened**, and only those. A program that never opens a
+  `GPIO` has no Pins section; one that only lights the indicator has only that. `changes`
+  beside a pin is how many times it moved, which is a blink counted
+- **What the program printed** — its `puts`, at the bottom, as it stood at that frame
+
+A frame is a wait, so **a program that never waits leaves one frame** and the slider stays
+put: everything happened between the start and the end. `samples/blink.rb` leaves 7 over
+three virtual seconds, `adc` 298.
+
+If the run said anything on the way out — no simulator in the bundle, no `bundle` on the
+path, a program that would not build — it is in a red box at the top instead of in a log.
+
 ## What is in here
 
 | | |
