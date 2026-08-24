@@ -71,11 +71,11 @@ be: it starts a process in the project and reads the project's files.
 code --install-extension "vscode/$(./vscode/package.sh)"
 ```
 
-`package.sh` prints what it wrote, so the version never has to be typed. Then
-**Developer: Reload Window** from the palette
-(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), open the project, and run **BareRuby:
-Watch this program run**. It watches the `.rb` file in front of you, or `app/main.rb` when
-that is not one, and keeps running until the panel is closed.
+`package.sh` prints what it wrote, so the version never has to be typed. **Then close the
+window and open it again** — see below; a reload is not enough. In the new window, open
+the project and run **BareRuby: Watch this program run** from the palette
+(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>). It watches the `.rb` file in front of
+you, or `app/main.rb` when that is not one, and keeps running until the panel is closed.
 
 **The extension carries `watch.rb` with it**, so once it is installed this checkout does
 not have to be anywhere: the project's bundle is what the run reaches for.
@@ -85,14 +85,16 @@ versions puts a shim on the path from a shell profile, and an editor started bef
 profile was read has none of it — which arrives as `spawn bundle EACCES` rather than as
 anything about Ruby.
 
-**Changing `extension.js` needs the extension host restarted, not just the window
-reloaded.** The panel is read off disk every time it opens, so the look changes on a
-reload while the code behind it does not — which shows up as `{{program}}` in the title
-and buttons that do nothing. **Developer: Restart Extension Host** is the shorter way;
-reinstalling over the same version is not enough on its own.
+**A newly installed extension needs the window closed and opened again.** Not
+**Developer: Reload Window**, which keeps the extension host it already has, and not
+**Developer: Restart Extension Host** either — under a remote connection neither has been
+enough here. The panel itself is read off disk every time it opens, so **the look changes
+while the code behind it does not**, which is a confusing way to be told nothing has
+happened: `{{program}}` sits in the title and the buttons do nothing.
 
-While changing the extension itself, packing every time is not worth it — point VS Code at
-the extension and at a project as two paths, and each new window is new code:
+Because of that, packing and installing is the slow way round while the extension itself
+is being changed. Point VS Code at the extension and at a project as two paths instead —
+**each new window is new code**, with nothing to install and nothing to restart:
 
 ```sh
 code --extensionDevelopmentPath=~/ruby/bareruby-prototype/vscode ~/ruby/bareruby-projects/test

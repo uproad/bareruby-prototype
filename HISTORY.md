@@ -1783,6 +1783,17 @@ question nobody asked. `Clock` now takes `nil` for a length and is never over, t
 extension names none, and the panel keeps the last few thousand frames behind its slider
 rather than all of them.
 
+**Getting a change in front of somebody took longer than making it.** A newly installed
+extension does not come into effect on **Developer: Reload Window**, and under this remote
+connection **Developer: Restart Extension Host** did not do it either — the window has to
+be closed and opened. What made that hard to see is that **the panel is read off disk
+every time it opens while the code behind it is not**: the look changed on every reload,
+so each fix appeared to have landed and then behaved like the old one. `{{program}}` in
+the title was the tell, and it was mistaken twice for a bug in the substitution before it
+was recognised as the old extension still running. Pointing the editor at the extension
+directory instead (`--extensionDevelopmentPath`) makes every new window new code, which is
+the way to work on it.
+
 **And it took the panel down on the way.** The frame limit was given the name a constant
 two lines above it already had, and a repeated `const` is a syntax error — so the whole
 script failed to parse and the panel drew no pins, no speed buttons and no frames. Three
