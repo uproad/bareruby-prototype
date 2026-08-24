@@ -3,7 +3,7 @@
   "publisher": "bareruby",
   "displayName": "BareRuby machine visualizer",
   "description": "Shows what the hosted machine's peripherals did while a program ran.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"

@@ -56,11 +56,11 @@ file. **Under a remote connection it lands on the remote side**, which is where 
 be: it starts a process in the project and reads the project's files.
 
 ```sh
-./vscode/package.sh
-code --install-extension vscode/bareruby-visualizer-0.0.1.vsix
+code --install-extension "vscode/$(./vscode/package.sh)"
 ```
 
-Then **Developer: Reload Window** from the palette
+`package.sh` prints what it wrote, so the version never has to be typed. Then
+**Developer: Reload Window** from the palette
 (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), open the project, and run **BareRuby:
 Watch this program run**. It watches the `.rb` file in front of you, or `app/main.rb` when
 that is not one. How much virtual time a run gets is `bareruby.seconds` in settings, 3 by
@@ -69,8 +69,14 @@ default.
 **The extension carries `watch.rb` with it**, so once it is installed this checkout does
 not have to be anywhere: the project's bundle is what the run reaches for.
 
+**Changing `extension.js` needs the extension host restarted, not just the window
+reloaded.** The panel is read off disk every time it opens, so the look changes on a
+reload while the code behind it does not — which shows up as `{{program}}` in the title
+and buttons that do nothing. **Developer: Restart Extension Host** is the shorter way;
+reinstalling over the same version is not enough on its own.
+
 While changing the extension itself, packing every time is not worth it — point VS Code at
-the extension and at a project as two paths:
+the extension and at a project as two paths, and each new window is new code:
 
 ```sh
 code --extensionDevelopmentPath=~/ruby/bareruby-prototype/vscode ~/ruby/bareruby-projects/test
