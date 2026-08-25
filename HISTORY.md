@@ -1251,6 +1251,54 @@ Cost: `samples/peripheral_answers.rb` is 46,592 B of text and 6,700 B of bss on 
 (85.5 KB UF2). Every other sample and `ref.rb` produce byte-identical host output to
 before the change. Built for its targets and run on the host; not flashed.
 
+### An array holding objects
+
+A fixed-capacity array whose element is an object compiles and runs — a class the program
+wrote and a peripheral class alike. `Array.new(n)` and then `pins[i] = GPIO.new(i, GPIO::OUT)`
+in a loop is how a program reaches a row of pins without naming each one, and it is the
+first thing anybody writes once there is more than one of something.
+
+The element is where the object lives. Reading one hands back the object rather than a copy
+of it, so `lamps[2].set(7)` reaches the lamp in the array, `taken = lamps[2]` is the same
+lamp under a second name, and a method handed `lamps[2]` is handed that lamp. This is the
+rule an object already followed — the binding a creation is written into owns it and every
+other binding is its address — and an element is a binding like any other. An array of
+objects held as an instance variable is embedded in its owner, the way an array of numbers
+already was.
+
+Two things had to be fixed, and both had gone unnoticed for the same reason: an array of
+anything but a scalar had never been compiled.
+
+- **The struct's name was not a name.** It was built by interpolating the element's
+  low-level type, which reads as an identifier only while that type is a scalar. An object
+  lowers to a struct, whose low-level form is a hash, so the name came out as
+  `bareruby_array_{kind: :struct, name: :bareruby_gpio_t}_50_t` — and, because that is a
+  name and nothing looks at it, the first stage reported success and left the C++ compiler
+  to report it. The name is a function of the low-level type now, which is what keeps two
+  arrays holding the same thing to one struct.
+- **The structs were written out in the order they were made.** An array is made while
+  lowering a method that uses it, which can be before the class whose instances it holds
+  has been reached, so `Lamp items[4]` named a type that had only been forward declared.
+  They are written in an order where nothing holds a type that is not yet complete; a
+  pointer is not part of that, since a forward declaration is all one needs.
+
+Neither had ever shown up because an array of scalars is unaffected by both: every existing
+sample and `ref.rb` produce byte-identical output to before the change.
+
+**What is deliberately not here.** Storing an object that already exists into an element
+copies it — `lamps[0] = made` and then `made.set(5)` leaves `lamps[0]` where it was, which
+is not what Ruby does. Sharing it would mean an array of pointers, and which of the two an
+array is cannot be settled one element at a time. An element never written holds nothing
+defined: a number has 0 to fall back on and an object has nothing. Arrays of arrays and
+arrays of variable-length strings now get a name of their own rather than a broken one, but
+neither was exercised beyond that.
+
+Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, and three pins —
+is 44,364 B of text and 6,672 B of bss on a Pico 1 (79.0 KB UF2), 14,892 B of text and
+1,984 B of bss on an F4, and 5,282 B of text and 186 B of bss on a Mega 2560 (14.6 KB HEX).
+Its host output matches real Ruby's line for line. Built for the Pico 1, the F4, the Mega
+2560 and the host, and run on the host; not flashed.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one
