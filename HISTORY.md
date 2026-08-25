@@ -1270,14 +1270,18 @@ where there is no heap — and each element is where one lives. **An array hande
 that already exists holds addresses**, because two names reaching one object is what
 assignment means and an address is the only way to do it. `pair[0] = spare` and
 `pair[1] = lamps[3]` make `pair` the second kind: setting `spare` afterwards is seen through
-`pair[0]`, as Ruby says it must be. So does `Array.new(3, shared)`, where every element is
-the one object that was evaluated once rather than three copies of it.
+`pair[0]`, as Ruby says it must be. So does `mirror[i] = lamps[i]`, which names the four
+lamps a second time rather than making four more of them, and `Array.new(3, shared)`, where
+every element is the one object that was evaluated once rather than three copies of it.
 
 Which of the two an array is, is read off the program before anything is lowered, and is
-remembered by what an array holds and how much of it — the same thing its struct is
-remembered by, so that one struct is never asked to be both. An array that is both created
-into and handed an object is refused rather than compiled: it has nowhere to keep the one
-made into it.
+answered one array at a time. Two arrays holding the same thing and the same number of it
+are still two arrays and can be different answers — copying the elements of one into another
+of the same size is the ordinary way to find that out — so each gets a struct of its own,
+which the name says. Telling them apart takes a number carried in the type rather than which
+hash it is, since a type is written out and read back at every pass boundary and nothing
+survives that but a value. An array that is both created into and handed an object is
+refused rather than compiled: it has nowhere to keep the one made into it.
 
 Three things had to be fixed. The first two had gone unnoticed for the same reason — an
 array of anything but a scalar had never been compiled — and the third had been silent
@@ -1310,16 +1314,21 @@ nothing where nothing asked for them.
 **What is deliberately not here.** An element never written holds nothing defined: a number
 has 0 to fall back on and an object has nothing. `dup` of an array that holds its objects
 duplicates them, where Ruby's `dup` is shallow and would leave both arrays naming the same
-ones. Two arrays that hold the same kind of thing and are the same size are one struct, so
-they are one answer about who owns the elements as well; a program where one of them is
-created into and the other is handed objects is refused rather than compiled. Arrays of
-arrays and arrays of variable-length strings now get a name of their own rather than a
-broken one, but neither was exercised beyond that.
+ones. One array cannot be both: created into in one place and handed an object in another is
+refused rather than compiled, since the object made into it would have nowhere to live.
+Arrays of arrays and arrays of variable-length strings now get a name of their own rather
+than a broken one, but neither was exercised beyond that.
 
-Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, two arrays that
-name lamps rather than hold them, and three pins — is 44,388 B of text and 6,672 B of bss on
-a Pico 1 (79.0 KB UF2), 15,012 B of text and 1,984 B of bss on an F4, and 5,350 B of text
-and 186 B of bss on a Mega 2560 (14.8 KB HEX).
+**What was found while doing this and is not fixed here.** A method that creates an array
+and answers it answers the address of its own frame, and the program falls over reading it.
+This has nothing to do with objects — an array of three integers does it — and it is what
+the second layer of the memory model is: an array lives where it was created, and a method
+answering one it made has nowhere to put it. It is left where it was found.
+
+Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, three arrays that
+name lamps rather than hold them, and three pins — is 44,396 B of text and 6,672 B of bss on
+a Pico 1 (79.0 KB UF2), 15,056 B of text and 1,984 B of bss on an F4, and 5,378 B of text
+and 186 B of bss on a Mega 2560 (14.9 KB HEX).
 Its host output matches real Ruby's line for line. Built for the Pico 1, the F4, the Mega
 2560 and the host, and run on the host; not flashed.
 
