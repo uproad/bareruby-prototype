@@ -12,6 +12,7 @@ module BareRubyProt
 
     def initialize
       @tree = build(:program, [[]], nil)
+      @arrays = 0
     end
 
     def install(payload)
@@ -28,7 +29,12 @@ module BareRubyProt
 
     def create_instance_type(class_name, struct = nil) = { kind: :instance, class_name:, struct: }
 
-    def create_array_type(element, capacity) = { kind: :array, element:, capacity: }
+    # Two arrays holding the same thing and the same number of it are still two arrays, and
+    # some questions — who owns the elements — are answered one array at a time. So each
+    # one is told apart by a number of its own rather than by which hash it is: a hash is
+    # written out and read back at every pass boundary, and nothing survives that but a
+    # value.
+    def create_array_type(element, capacity) = { kind: :array, element:, capacity:, array: (@arrays += 1) }
 
     def create_arena_array_type(element) = { kind: :arena_array, element: }
 

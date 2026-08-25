@@ -44,12 +44,12 @@ module BareRubyProt
 
     # An array whose elements are objects that live somewhere else. It holds their
     # addresses, since that is the only way two names reach one object. Which arrays these
-    # are is read off the program before anything is lowered, and is remembered by what
-    # an array holds and how much of it — the same thing the struct is remembered by, so
-    # that one struct cannot be asked to be both.
-    def hold_addresses(type) = @addressed[array_key(type)] = true
+    # are is read off the program before anything is lowered, and is remembered one array
+    # at a time: two of the same size holding the same thing can be different answers, and
+    # they get a struct each because the name says which.
+    def hold_addresses(type) = @addressed[type[:array]] = true
 
-    def addressed?(type) = array?(type) && @addressed.key?(array_key(type))
+    def addressed?(type) = array?(type) && @addressed.key?(type[:array])
 
     # What one element of an array is: the object itself where the array is where it lives,
     # its address where it is not.
@@ -112,8 +112,6 @@ module BareRubyProt
     def field_name(name) = name.to_s.delete_prefix("@").to_sym
 
     private
-
-    def array_key(type) = [type[:element], type[:capacity]]
 
     def struct_type_of(type)
       case type[:kind]
