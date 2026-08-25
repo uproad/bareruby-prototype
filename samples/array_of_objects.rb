@@ -79,6 +79,23 @@ puts bank.level_at(2)
 bank.lamp_at(1).set(6)
 puts bank.level_at(1)
 
+spare = Lamp.new(99)
+pair = Array.new(2)
+pair[0] = spare
+pair[1] = lamps[3]
+
+spare.set(3)
+puts pair[0].level
+
+lamps[3].set(4)
+puts pair[1].level
+
+shared = Lamp.new(50)
+three = Array.new(3, shared)
+three[0].set(51)
+puts three[2].level
+puts shared.level
+
 pins = Array.new(3)
 i = 0
 while i < 3
