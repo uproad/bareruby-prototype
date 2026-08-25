@@ -1,0 +1,15 @@
+checks:
+  - name: method_answers
+  - name: frequency_registers
+    observe: observe/tim2_frequency.resc
+  - name: duty_registers
+    observe: observe/tim2_duty.resc
+  - name: pulse_width_registers
+    observe: observe/tim3_pulse.resc
+  - name: af_registers
+    observe: observe/gpioa_af.resc
+  - name: duty_bounds
+    observe: observe/tim2_ccr.resc
+  - name: duty_wave
+    duty: 2 0.3 0.05
+  - name: no_timer_pin

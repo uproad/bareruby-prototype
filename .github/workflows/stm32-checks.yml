@@ -1,0 +1,134 @@
+# Every STM32 check this repository has, on every push that asks for review. The
+# fixed-answer suites fan out one job per suite and the host-agreement harness one job
+# per board, so the wall time is the slowest single suite rather than the sum.
+# Everything a job reaches for is pinned: the toolchain by sources.lock.yml (cached
+# under its hash, so only a lock change downloads), and the desk record written fresh —
+# CI is a desk like any other, and config/target.yml is what a desk says about itself.
+# Checks for another target family would be their own workflow beside this one.
+name: stm32 checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: stm32-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: stm32 ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [uart, i2c, gpio, onboard_led, clock, sleep, pwm, adc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Restore the pinned tools
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('gems/bareruby_prot-binding-stm32cube/lib/bareruby_prot/binding/stm32cube/data/sources.lock.yml') }}
+
+      - name: Install what the lock pins (a warm cache makes this a no-op)
+        run: gems/bareruby_prot-binding-stm32cube/lib/bareruby_prot/binding/stm32cube/install.sh
+
+      - name: Write this desk's target record
+        run: |
+          mkdir -p config
+          cat > config/target.yml <<'YAML'
+          # CI's own desk record — the emulated board the suites run against.
+          targets:
+            - name: host
+              machine: host
+              binding: host
+              triple: x86_64-pc-linux
+            - name: f446
+              machine: nucleo_f446re
+              binding: stm32cube
+              triple: thumbv7em-none-eabihf
+          YAML
+
+      - name: Resolve the working-tree gems
+        run: bundle install
+
+      - name: Run the ${{ matrix.suite }} suite
+        run: checks/stm32/${{ matrix.suite }}/check.sh f446
+
+      - name: Keep what a failure said
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-${{ matrix.suite }}-f446
+          path: |
+            .bareruby/checks/stm32/${{ matrix.suite }}/**
+          if-no-files-found: ignore
+
+  emulate:
+    name: stm32 emulate ${{ matrix.board.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - { name: f446, machine: nucleo_f446re }
+          - { name: f401, machine: nucleo_f401re }
+          - { name: disco, machine: stm32f4discovery }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Restore the pinned tools
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('gems/bareruby_prot-binding-stm32cube/lib/bareruby_prot/binding/stm32cube/data/sources.lock.yml') }}
+
+      - name: Install what the lock pins (a warm cache makes this a no-op)
+        run: gems/bareruby_prot-binding-stm32cube/lib/bareruby_prot/binding/stm32cube/install.sh
+
+      # emulate.sh runs the host oracle against every stm32cube entry the record
+      # carries, so one board per record is how the harness splits across jobs.
+      - name: Write this desk's target record
+        run: |
+          mkdir -p config
+          cat > config/target.yml <<YAML
+          # CI's own desk record — the host oracle and the one board this job answers for.
+          targets:
+            - name: host
+              machine: host
+              binding: host
+              triple: x86_64-pc-linux
+            - name: ${{ matrix.board.name }}
+              machine: ${{ matrix.board.machine }}
+              binding: stm32cube
+              triple: thumbv7em-none-eabihf
+          YAML
+
+      - name: Resolve the working-tree gems
+        run: bundle install
+
+      - name: Run the host-agreement harness
+        run: ./checks/emulate.sh
+
+      - name: Keep what a failure said
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulate-${{ matrix.board.name }}
+          path: |
+            .bareruby/checks/**
+          if-no-files-found: ignore

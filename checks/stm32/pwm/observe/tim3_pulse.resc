@@ -1,0 +1,2 @@
+sysbus ReadDoubleWord 0x40000428
+sysbus ReadDoubleWord 0x40000438

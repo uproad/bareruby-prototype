@@ -23,10 +23,18 @@
 #     line ending itself, and uart.txt is LF-normalized. What it tests is held instead
 #     by checks/stm32/uart/ — line_ending_tx captures the TX bytes as hex, gets_crlf
 #     holds the RX side — so the host diff here stays out of it by design.
-#   - logger: waits on a button, not the UART — a GPIO edge is a later harness step.
+#   - logger: waits on a button, not the UART. The edge exists now — the harness of
+#     checks/stm32/gpio/ presses an emulated B1 mid-run — but wiring a press into
+#     this host diff is a later step.
 #   - blink, heartbeat, servo, asleep, gpio_pico_loop, tenji, tenji_int, avs, adc:
-#     loop forever and say nothing on the UART — LED and duty-cycle assertions are a
-#     later harness step (hand-run once already: heartbeat held 0.1 ± 0.05).
+#     loop forever and say nothing on the UART. The duty-cycle assertions are held
+#     now by checks/stm32/sleep/ (blink_duty, heartbeat_duty — replacing the old
+#     hand-run 0.1 ± 0.05 record) — the host diff here stays out of it by design.
+#     asleep, adc, avs, tenji and tenji_int also read the ADC: the binding carries
+#     one now and they build, but their Pico pin numbers sit on no row of this
+#     board's adc table (and their PWM pins on none of its pwm table), so on the
+#     board they stop at bareruby_board_fault — builds, not verified runs. The
+#     converter itself is held by checks/stm32/adc/.
 #   - i2c, picoruby_interface: read I2C with no device behind it; the host stub
 #     answers, the emulated bus does not. The emulated bus is held instead by
 #     checks/stm32/i2c/, whose harness attaches a C# check sensor — the host diff
@@ -36,8 +44,13 @@
 #     this list.
 #   - uart_flow_control: flow control is refused on STM32 by design, so host and
 #     board are meant to disagree.
-#   - peripheral_answers: does not build for STM32 — the binding carries no PWM unit.
-#   - interrupt: produces no output and needs a GPIO edge.
+#   - peripheral_answers: builds for STM32 now that the binding carries a PWM unit
+#     (checks/stm32/pwm/ holds the answers), but the host binding logs uart.puts as a
+#     stderr trace instead of writing the text, so the boards say "chained" where the
+#     host says nothing — a question for the host binding, like uart_format.
+#   - interrupt: produces no output and needs a GPIO edge. The edge-to-handler path
+#     it exercises is held instead by checks/stm32/gpio/ (irq_falling) — the host
+#     diff here stays out of it by design.
 #   - require_helper, require_lib: libraries require.rb carries, not programs.
 
 checks:

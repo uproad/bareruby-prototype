@@ -1,0 +1,4 @@
+sysbus ReadDoubleWord 0x40012034
+sysbus ReadDoubleWord 0x40012010
+sysbus ReadDoubleWord 0x40012008
+sysbus ReadDoubleWord 0x40012304

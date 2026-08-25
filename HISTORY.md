@@ -1815,3 +1815,133 @@ outside this checkout, with the simulator added to its Gemfile — and the `Onbo
 program it came with leaves four frames over three virtual seconds, the indicator lit,
 unlit and lit again. But "it works as an extension" needs somebody to press F5, and
 nobody has. It is written up as built, not verified.
+## The STM32 GPIO binding has its own fixed-answer check
+
+`checks/stm32/gpio/` holds the GPIO binding to fixed answers with the same stub-Renode
+harness as the I2C suite. Outputs needed no counterpart — the emulated machine already
+wires PA5 to an LED model, the board's LD2 — but inputs needed a hand on a pin, so the
+harness attaches Renode's button model to PC13, the board's B1, and presses it mid-run:
+a press only lands once the emulation runs again, so the transformed script splits the
+run in two and presses between the slices. Seven checks pass. `write` answers 0 and the
+driven state reads back through IDR, with `high?` and `low?` agreeing. A write reaches
+the LED model itself — `True`, with MODER holding its reset value and the USART2 pins
+around the one changed bit (`0xA80004A0`) and ODR at `0x00000020`. An externally driven
+level reaches `read` on both sides of the press, and a falling edge reaches the
+realtime handler through EXTI and the NVIC, not before the press — the handler only
+raises PA5, its own handle made inside the block, and the main loop does the talking.
+Direction lands in MODER (`0x00000005`) and the pulls in PUPDR (`0x00000090`) on
+all-zero-reset port C, with `HIGH_Z` landing as input with no pull. A pin outside the
+range and a pin on a port the F446RE does not bond out (PE0) are refused through two
+different fault paths.
+
+Two model limits bound the claims. Renode 1.16.1's STM32_GPIOPort leaves OTYPER a
+tagged register — writes dropped, reads zero — so the open-drain pin proves only that
+its init path holds and the register's reflection joins the hardware list. And the
+machine has no SYSCFG, every port's pin N wired straight to EXTI line N, so the
+interrupt check proves the edge reaches the handler while EXTICR's port selection stays
+on hardware. One API gap is recorded rather than tested: the stdlib registers
+`EDGE_FALL` only, and the rising path waits for an `EDGE_RISE` constant to say so. The
+complete `checks/stm32/gpio/check.sh f446` run passed 7/7 in 57 seconds under Renode.
+It was built but not hardware-flashed.
+
+## The onboard LED, the clock profile and the sleeps get their own checks
+
+Three more suites, written as test cases first, reviewed for gaps, then implemented on
+the stub-Renode harness the I2C and GPIO suites established. Three more sit as
+reviewed test-case documents waiting on their bindings: ADC (no unit and no Renode F4
+model — a C# model like the I2C sensor will be needed), PWM (no unit, though probing
+showed the pinned STM32_Timer drives compare output all the way to the GPIO, so duty
+lands in the emulator when the binding does), and SPI (no stdlib class yet).
+
+`checks/stm32/onboard_led/` holds the class that deliberately knows no pin number:
+`on` lights the machine's LED model with no pin named anywhere in the program, `off`
+returns it dark, `write` folds zero and non-zero onto the same two answers, and `new`
+alone settles the LED off. The mid-cycle observation rides a `during:` probe the
+harness says between two slices of the run. 4/4 in 45 seconds.
+
+`checks/stm32/clock/` pins the premise every other suite's register expectations stand
+on — SYSCLK 84 MHz, APB1 42 MHz. Five observation-only checks read the profile out of
+the registers: PLLCFGR `0x22015410`, CFGR `0x0000100A`, CR `0x03000483`, FLASH ACR at
+two wait states, PWR VOS at scale 3. Time measured in the emulator would be circular
+here — the machine's DWT and SysTick are written from the same arithmetic — so the
+registers are the non-circular check and the frequencies stay on hardware. The pinned
+RCC model mirrors ready bits instantly, the flash controller drops the cache bits the
+way the GPIO model drops OTYPER, and PWR resets unlike the reference manual, so the
+PWR expectations are recorded model measurements. 5/5 in 52 seconds.
+
+`checks/stm32/sleep/` turns timing claims into exact numbers on deterministic virtual
+time, measured by the programs themselves through `ticks_ms`: 100 ms costs exactly
+100, 1 ms costs 2, a 20 ms body stretches a sleep lap to 120 while an asleep lap holds
+at 100, and an overrun re-anchors instead of carrying debt. Renode's LED tester turned
+out to carry `AssertDutyCycle` after all, and a failed assertion aborts the script —
+so a success marker said after it is the expectation, and blink holds 0.5 and
+heartbeat 0.1 where a hand-run once held 0.1 ± 0.05. A byte fed mid-wait shows
+`interrupt: false` deferring delivery to the next default wait without losing it. And
+`asleep_us`'s recorded fault — a delay that moves no period mark and never delivers —
+pins as: the delay itself costs its 500 ms, the overdue `asleep_ms` after it costs 0
+and never drains, the handler stays silent to the end. 10/10 in 337 seconds. All three
+suites were built but not hardware-flashed.
+
+## The STM32 binding grows a PWM unit, and the checks that hold it
+
+The unit mirrors the Pico binding's design: the board hands over a timer already
+prescaled to tick at one microsecond, so a period is its length in microseconds and a
+pulse width is the compare value itself. Which timer answers a pin is a new table in
+the board manifest — the program only ever says the pin, and a pin on no row is
+refused. The NUCLEO-F446RE's table wires PA5 (TIM2 channel 1, the LD2 wire), PA15
+(same channel — where the Pico-numbered samples land) and PC7 (TIM3 channel 2, Arduino
+D9); the other two boards carry matching rows, the devices record their timer lists,
+and the HAL grew its TIM sources. samples/peripheral_answers.rb and samples/servo.rb
+build for STM32 now; the host diff for the former stays out — the host binding logs
+uart.puts as a trace instead of writing the text, a disagreement that was invisible
+while the STM32 build was refused.
+
+Eight checks in checks/stm32/pwm/ hold it to fixed answers: the four calls answer
+their arithmetic (50, 50, 50.0, 7.5); 50 Hz lands as PSC 83 and ARR 19999 with the
+counter running, through frequency: and period_us alike; a quarter duty is compare
+value 5000 in PWM mode 1, enabled; 1500 µs is compare value 1500 through the TIM3
+row; the pin lands in AF1 with the reset and USART2 bits preserved; the ends of the
+duty range land as no pulse and ARR+1; and a pin off the table is refused. The one
+that needed the emulator to be more than a register file passed too: the pinned
+STM32_Timer drives its compare output through the GPIO to the LED model with real
+PWM-mode-1 polarity, so the LED tester holds duty_wave to 0.3 — the model's one gap
+is CCMR1's OC1PE preload bit, written by the HAL and read back zero, recorded the
+way GPIO's OTYPER is. What an inexpressible frequency should do is still an open
+design question, kept in the testcase as the unimplemented frequency_bounds. The
+suite passed 8/8 in 72 seconds under Renode, and the emulation harness still answers
+19/19 samples agreeing with the host on all three boards. It was built but not
+hardware-flashed.
+
+## The STM32 binding grows an ADC unit, and the checks that hold it
+
+The unit mirrors the Pico binding's design: the pin is wired analog on first reach,
+the channel is selected per read, and any number of ADC objects share the board's one
+converter. Which ADC1 channel reads a pin is a new `adc:` table in the board manifest
+— the same answer PWM's table gives about timers: the program only ever says the pin,
+and a pin on no row is refused at the table's default case, which is also what
+refuses the range and the bonded-but-not-analog cases. The NUCLEO-F446RE's table
+carries the Arduino header's A0–A5 and deliberately not PA2, PA3 or PA5, whose
+channels exist but whose wires stdout and LD2 stand on. The HAL grew its ADC sources
+— adc and adc_ex both, the former referencing the latter's weak callbacks — and
+`read`/`read_voltage` land on one call answering Q16.16 volts by the pico_sdk
+formula, sampling fixed at 480 cycles. samples/adc.rb, asleep.rb, avs.rb, tenji.rb
+and tenji_int.rb build for STM32 now; their Pico pin numbers sit on no row of this
+board's adc or pwm tables, so a run stops at bareruby_board_fault — builds, not
+verified runs, and the records say which.
+
+Eight checks in checks/stm32/adc/ hold the unit to fixed answers, against a converter
+of this repository's own: the pinned Renode 1.16.1 models no F4 ADC — its STM32
+converters are all the F0/L0/G0 register layout — so the suite compiles its own C#
+model at run time the way the I2C check sensor is compiled, spanning ADC1 through the
+common registers and answering mV * 4095 / 3300 in integer arithmetic, which settles
+the halfway question: 1650 mV is 0x7FF. Both ends and the middle of the 12-bit range
+arrive raw (0, 4095, 2047) with a mid-run voltage change seen by the next read; the
+byte-edge values 255, 256 and 3840 arrive exact; 1650 mV reads back as 1.64958
+through read and read_voltage alike; six pins land on six distinct channels across
+three ports; initialization leaves PC0's MODER at analog `11` and the converter's
+SQR3/SMPR2/CR2/CCR holding channel 4, 480 cycles, EOCS with ADON down, and the /4
+prescaler; and the two refusals say their marker and nothing more. The suite passed
+8/8 in 94 seconds under Renode, every prior suite still passes (gpio 7/7, pwm 8/8,
+sleep 10/10, clock 5/5, uart 33/33, i2c 12/12, onboard_led 4/4), and the emulation
+harness still answers 19/19 samples agreeing with the host on all three boards. It
+was built but not hardware-flashed.
