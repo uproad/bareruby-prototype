@@ -52,9 +52,43 @@ module BareRubyProt
         @binding_storage = BindingStorage.new(@lir, @tast, @value_layout, [])
         functions << lower_main
         functions.concat(@interrupt_functions)
-        @result = @lir.replace_module(@value_layout.structs + structs, functions)
+        @result = @lir.replace_module(in_definition_order(@value_layout.structs + structs), functions)
 
         self
+      end
+
+      # A struct holding another by value has to be written out after it, and the order they
+      # were made in does not say which: an array is made while a method that uses it is
+      # being lowered, which can be before the class whose instances it holds is reached.
+      # Pointer fields are not part of this — every struct is forward declared, and that is
+      # all a pointer needs.
+      def in_definition_order(structs)
+        @by_name = structs.to_h { |struct| [@lir.children_of(struct)[0], struct] }
+        @ordered = []
+        @placed = {}
+        structs.each { |struct| place_struct(struct) }
+        @ordered
+      end
+
+      def place_struct(struct)
+        name, fields = @lir.children_of(struct)
+        return if @placed[name]
+
+        @placed[name] = true
+        fields.each do |field|
+          held = @by_name[held_struct_name(field[:type])]
+          place_struct(held) if held
+        end
+        @ordered << struct
+      end
+
+      # Which struct a field holds by value: the one it is, or the one a C array of them
+      # is of.
+      def held_struct_name(type)
+        return nil unless type.is_a?(Hash)
+        return held_struct_name(type[:element]) if type[:kind] == :c_array
+
+        type[:name] if type[:kind] == :struct
       end
 
       def class_definition?(node) = @tast.node_type(node) == :class_definition

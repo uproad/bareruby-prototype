@@ -133,11 +133,24 @@ module BareRubyProt
       raise "the element type of this array was never determined" if type[:element].nil?
 
       element = type_of(type[:element])
-      name = :"bareruby_array_#{element}_#{type[:capacity]}_t"
+      name = :"bareruby_array_#{array_element_name(element)}_#{type[:capacity]}_t"
       @array_structs[name] ||= @lir.create_struct(
         name, [@lir.create_field(:items, @lir.c_array_type(element, type[:capacity]))]
       )
       @lir.struct_type(name)
+    end
+
+    # The name has to be a function of the low-level type rather than of the BareRuby one:
+    # two arrays holding what becomes the same thing are one struct, and Int8 and Int32
+    # both become int32. It also has to name every type it can be handed, or two that share
+    # a name would share a struct. A scalar is already an identifier. A struct carries its
+    # own name, and the affixes this wrapper is about to add back are taken off so that an
+    # array of arrays does not spell the word twice.
+    def array_element_name(element)
+      return element unless element.is_a?(Hash)
+      return "#{array_element_name(element[:target])}_ptr" if element[:kind] == :pointer
+
+      element[:name].to_s.delete_prefix("bareruby_").delete_suffix("_t")
     end
 
     # Like the variable-length string, an arena array is always the pointer the region
