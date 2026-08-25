@@ -90,6 +90,16 @@ puts pair[0].level
 lamps[3].set(4)
 puts pair[1].level
 
+mirror = Array.new(4)
+i = 0
+while i < 4
+  mirror[i] = lamps[i]
+  i = i + 1
+end
+
+lamps[0].set(8)
+puts mirror[0].level
+
 shared = Lamp.new(50)
 three = Array.new(3, shared)
 three[0].set(51)
