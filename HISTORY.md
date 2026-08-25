@@ -1319,12 +1319,6 @@ refused rather than compiled, since the object made into it would have nowhere t
 Arrays of arrays and arrays of variable-length strings now get a name of their own rather
 than a broken one, but neither was exercised beyond that.
 
-**What was found while doing this and is not fixed here.** A method that creates an array
-and answers it answers the address of its own frame, and the program falls over reading it.
-This has nothing to do with objects — an array of three integers does it — and it is what
-the second layer of the memory model is: an array lives where it was created, and a method
-answering one it made has nowhere to put it. It is left where it was found.
-
 Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, three arrays that
 name lamps rather than hold them, and three pins — is 44,396 B of text and 6,672 B of bss on
 a Pico 1 (79.0 KB UF2), 15,056 B of text and 1,984 B of bss on an F4, and 5,378 B of text
