@@ -128,12 +128,17 @@ module BareRubyProt
       # what a program says — the timer is this table's answer, never the program's word.
       PwmPin = Struct.new(:pin, :instance, :channel, :af)
 
+      # One pin a board offers to the ADC: which converter channel reads it. Addressed
+      # by the pin like PWM's table. Every row is ADC1's — the one converter every
+      # member of this family carries — so the channel alone is the answer.
+      AdcPin = Struct.new(:pin, :channel)
+
       # What a board adds to a device. The device is named rather than repeated.
       class Board
         FIELDS = %w[key name family device clock uart].freeze
 
         attr_reader :key, :name, :family, :device_key, :clock, :led, :uarts,
-                    :i2cs, :pwms, :probe, :layer, :path
+                    :i2cs, :pwms, :adcs, :probe, :layer, :path
 
         def initialize(record, layer:, path:)
           @layer = layer
@@ -150,6 +155,7 @@ module BareRubyProt
           @uarts = channels(record["uart"], %w[tx rx])
           @i2cs = channels(record["i2c"] || [], %w[scl sda])
           @pwms = pwm_pins(record["pwm"] || [])
+          @adcs = adc_pins(record["adc"] || [])
           @probe = record["probe"] || {}
         end
 
@@ -191,6 +197,16 @@ module BareRubyProt
             end
             PwmPin.new(Manifests.pin(one["pin"], @path), one["instance"], channel,
                        Integer(one["af"]))
+          end
+        end
+
+        def adc_pins(listed)
+          listed.map do |one|
+            channel = Integer(one.fetch("channel") { raise Error.new(@path, "adc #{one['pin']}: missing channel") })
+            unless (0..15).cover?(channel)
+              raise Error.new(@path, "adc #{one['pin']}: channel is 0..15")
+            end
+            AdcPin.new(Manifests.pin(one["pin"], @path), channel)
           end
         end
       end
@@ -246,7 +262,7 @@ module BareRubyProt
         board.pwms.each { |one| carried(board, one, device.timers) }
         pins = board.uarts.flat_map { |one| one.wires.values.map(&:pin) } +
                board.i2cs.flat_map { |one| one.wires.values.map(&:pin) } +
-               board.pwms.map(&:pin)
+               board.pwms.map(&:pin) + board.adcs.map(&:pin)
         pins << board.led.pin if board.led
         pins.each do |pin|
           unless device.gpio_ports.include?(pin.port)

@@ -44,12 +44,12 @@ samples/ の全 38 本のうち **19 本がテスト済み、19 本が未テス�
 | samples/blink.rb | 無限ループで UART に何も言わない | デューティ比アサーションは専用スイート [checks/stm32/sleep/](stm32/sleep/) の `blink_duty` が担保済み。このホスト突き合わせは対象外のまま |
 | samples/heartbeat.rb | 同上 | 同上(`heartbeat_duty` が手動記録 0.1 ± 0.05 をLEDTesterのアサーションで置き換え済み) |
 | samples/servo.rb | 同上 | v3 |
-| samples/asleep.rb | 同上 | v3 |
+| samples/asleep.rb | 同上 | v3。ビルド可(実行は board_fault — adc.rb の行を参照) |
 | samples/gpio_pico_loop.rb | 同上 | v3 |
-| samples/tenji.rb | 同上 | v3 |
-| samples/tenji_int.rb | 同上 | v3 |
-| samples/avs.rb | 同上 | v3 |
-| samples/adc.rb | 同上 | v3 |
+| samples/tenji.rb | 同上 | v3。ビルド可(実行は board_fault — adc.rb の行を参照) |
+| samples/tenji_int.rb | 同上 | v3。ビルド可(実行は board_fault — adc.rb の行を参照) |
+| samples/avs.rb | 同上 | v3。ビルド可(実行は board_fault — adc.rb の行を参照) |
+| samples/adc.rb | 同上 | v3。stm32cube に ADC ユニット実装済みでビルドは通るが、Pico のピン番号(ADC 26〜28・PWM 6〜8)がボードの adc/pwm 表のどの行にも無く、実行すると bareruby_board_fault で止まる。サンプルは書き換えず、変換の担保は専用スイート [checks/stm32/adc/](stm32/adc/)(8/8) |
 | samples/interrupt.rb | 出力がなく、GPIO エッジの注入が必要 | エッジ→ハンドラの経路は専用スイート [checks/stm32/gpio/](stm32/gpio/) の `irq_falling` が固定回答で担保済み。このホスト突き合わせは対象外のまま |
 | samples/i2c.rb | I2C の先にデバイスがいない(ホストのスタブは答えるが、エミュレートのバスは答えない)。エミュレートのバス側は checks/stm32/i2c/ が C# チェックセンサーを接続して固定回答で保持 | このホスト突き合わせは対象外(意図的) |
 | samples/picoruby_interface.rb | 同上 | 同上 |

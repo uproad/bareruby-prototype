@@ -62,6 +62,11 @@ module BareRubyProt
            * this board offers no timer on. */
           TIM_HandleTypeDef *bareruby_board_pwm(int32_t pin, uint32_t *channel);
 
+          /* The converter behind an ADC pin, clocked and initialized on first reach,
+           * with the pin wired analog and the channel that reads it answered through
+           * the pointer; a fault for a pin this board offers no channel on. */
+          ADC_HandleTypeDef *bareruby_board_adc(int32_t pin, uint32_t *channel);
+
           void bareruby_board_delay_us(uint32_t microseconds);
           #{stdout_define}#{led_declarations}
           #ifdef __cplusplus
@@ -93,6 +98,7 @@ module BareRubyProt
         sections << uart_text unless @board.uarts.empty?
         sections << i2c_text unless @board.i2cs.empty?
         sections << pwm_text unless @board.pwms.empty?
+        sections << adc_text unless @board.adcs.empty?
         sections << led_text if @board.led
         sections << @family.delay_text
         sections.join("\n")
@@ -340,6 +346,63 @@ module BareRubyProt
                   }
                   *channel = TIM_CHANNEL_#{one.channel};
                   return bareruby_board_pwm_#{one.instance}();
+        C
+      end
+
+      # The one converter behind every row of the board's ADC table, brought up on
+      # first reach and shared: each pin's case wires its own GPIO analog and answers
+      # its channel, exactly as PWM's cases answer their timer.
+      def adc_text
+        cases = @board.adcs.map { |one| adc_case(one) }
+        <<~C
+          static ADC_HandleTypeDef bareruby_board_adc_handle;
+
+          static ADC_HandleTypeDef *bareruby_board_adc_shared(void) {
+              ADC_HandleTypeDef *adc = &bareruby_board_adc_handle;
+              if (adc->Instance == NULL) {
+                  __HAL_RCC_ADC1_CLK_ENABLE();
+                  adc->Instance = ADC1;
+                  adc->Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+                  adc->Init.Resolution = ADC_RESOLUTION_12B;
+                  adc->Init.ScanConvMode = DISABLE;
+                  adc->Init.ContinuousConvMode = DISABLE;
+                  adc->Init.DiscontinuousConvMode = DISABLE;
+                  adc->Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+                  adc->Init.ExternalTrigConv = ADC_SOFTWARE_START;
+                  adc->Init.DataAlign = ADC_DATAALIGN_RIGHT;
+                  adc->Init.NbrOfConversion = 1;
+                  adc->Init.DMAContinuousRequests = DISABLE;
+                  adc->Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+                  if (HAL_ADC_Init(adc) != HAL_OK) {
+                      bareruby_board_fault();
+                  }
+              }
+              return adc;
+          }
+
+          ADC_HandleTypeDef *bareruby_board_adc(int32_t pin, uint32_t *channel) {
+              switch (pin) {
+          #{cases.join("\n")}
+              default: bareruby_board_fault(); return NULL;
+              }
+          }
+
+        C
+      end
+
+      def adc_case(one)
+        <<~C.chomp
+              case #{index_of(one.pin.port) * 16 + one.pin.index}: /* #{one.pin.name}: ADC1_IN#{one.channel} */
+                  {
+                      __HAL_RCC_GPIO#{one.pin.port}_CLK_ENABLE();
+                      GPIO_InitTypeDef wire = {0};
+                      wire.Pin = GPIO_PIN_#{one.pin.index};
+                      wire.Mode = GPIO_MODE_ANALOG;
+                      wire.Pull = GPIO_NOPULL;
+                      HAL_GPIO_Init(GPIO#{one.pin.port}, &wire);
+                  }
+                  *channel = ADC_CHANNEL_#{one.channel};
+                  return bareruby_board_adc_shared();
         C
       end
 

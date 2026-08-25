@@ -41,6 +41,17 @@ pwm:
   - { pin: PA5, instance: TIM2, channel: 1, af: 1 }
   - { pin: PA15, instance: TIM2, channel: 1, af: 1 }
   - { pin: PC7, instance: TIM3, channel: 2, af: 2 }
+adc:
+  # Which ADC1 channel reads a pin is silicon fact, recorded like PWM's table so a
+  # program only ever says the pin. These six are the Arduino header's A0–A5; PA2,
+  # PA3 (stdout's USART2) and PA5 (LD2) carry channels too, but wiring them here
+  # would let a program silently unhook what stdout and the LED stand on.
+  - { pin: PA0, channel: 0 }
+  - { pin: PA1, channel: 1 }
+  - { pin: PA4, channel: 4 }
+  - { pin: PB0, channel: 8 }
+  - { pin: PC1, channel: 11 }
+  - { pin: PC0, channel: 10 }
 probe:
   openocd:
     interface: stlink
