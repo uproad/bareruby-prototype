@@ -1311,13 +1311,13 @@ existing sample and `ref.rb` produce byte-identical output to before the change.
 array of pins, which is created into and therefore holds its objects — the addresses cost
 nothing where nothing asked for them.
 
-**What is deliberately not here.** An element never written holds nothing defined: a number
-has 0 to fall back on and an object has nothing. `dup` of an array that holds its objects
-duplicates them, where Ruby's `dup` is shallow and would leave both arrays naming the same
-ones. One array cannot be both: created into in one place and handed an object in another is
-refused rather than compiled, since the object made into it would have nowhere to live.
-Arrays of arrays and arrays of variable-length strings now get a name of their own rather
-than a broken one, but neither was exercised beyond that.
+**What is deliberately not here.** One array cannot be both: created into in one place and
+handed an object in another is refused rather than compiled, since the object made into it
+would have nowhere to live. Arrays of arrays and arrays of variable-length strings now get a
+name of their own rather than a broken one, but neither was exercised beyond that. Two
+things this turned up are open questions rather than omissions and are filed as such: what
+an element never written is worth, now that an element type can have no default (#157), and
+that `dup` of an array holding its objects duplicates them where Ruby's is shallow (#156).
 
 Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, three arrays that
 name lamps rather than hold them, and three pins — is 44,396 B of text and 6,672 B of bss on
