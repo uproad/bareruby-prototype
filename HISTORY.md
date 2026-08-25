@@ -1254,70 +1254,24 @@ before the change. Built for its targets and run on the host; not flashed.
 ### An array holding objects
 
 A fixed-capacity array whose element is an object compiles and runs — a class the program
-wrote and a peripheral class alike. `Array.new(n)` and then `pins[i] = GPIO.new(i, GPIO::OUT)`
-in a loop is how a program reaches a row of pins without naming each one, and it is the
-first thing anybody writes once there is more than one of something.
+wrote and a peripheral class alike. An array only ever created into holds its objects, which
+is the only way N of them exist where there is no heap; one handed an object that already
+exists holds addresses, so `pair[0] = spare` and `mirror[i] = lamps[i]` name a lamp a second
+time rather than making another, as Ruby does. Which of the two an array is, is answered one
+array at a time, so two of the same size holding the same thing get a struct each. An array
+that is both is refused: the object made into it would have nowhere to live.
 
-An element is a binding like any other, and the rule an object already followed is the rule
-it follows: the binding a creation is written into owns the object, and every other binding
-is its address. So `pins[i] = GPIO.new(i, GPIO::OUT)` puts the pin in the element, and
-`taken = lamps[2]` is that same lamp under a second name. An array of objects held as an
-instance variable is embedded in its owner, the way an array of numbers already was.
+Three things were wrong and are fixed. The struct's name was built by interpolating the
+element's low-level type, which is an identifier only while the element is a scalar. The
+structs were written out in the order they were made, so an array of a class named a type
+that was only forward declared. And putting an object into an element copied it rather than
+taking its address, as did `Array.new(n, object)`, which made N copies where Ruby has one
+object N times. An array of scalars met none of the three: every existing sample and `ref.rb`
+produce byte-identical output to before the change.
 
-Which means an array is one of two things, and cannot be told which by looking at its type.
-**An array only ever created into holds its objects** — the only way N of them can exist
-where there is no heap — and each element is where one lives. **An array handed an object
-that already exists holds addresses**, because two names reaching one object is what
-assignment means and an address is the only way to do it. `pair[0] = spare` and
-`pair[1] = lamps[3]` make `pair` the second kind: setting `spare` afterwards is seen through
-`pair[0]`, as Ruby says it must be. So does `mirror[i] = lamps[i]`, which names the four
-lamps a second time rather than making four more of them, and `Array.new(3, shared)`, where
-every element is the one object that was evaluated once rather than three copies of it.
-
-Which of the two an array is, is read off the program before anything is lowered, and is
-answered one array at a time. Two arrays holding the same thing and the same number of it
-are still two arrays and can be different answers — copying the elements of one into another
-of the same size is the ordinary way to find that out — so each gets a struct of its own,
-which the name says. Telling them apart takes a number carried in the type rather than which
-hash it is, since a type is written out and read back at every pass boundary and nothing
-survives that but a value. An array that is both created into and handed an object is
-refused rather than compiled: it has nowhere to keep the one made into it.
-
-Three things had to be fixed. The first two had gone unnoticed for the same reason — an
-array of anything but a scalar had never been compiled — and the third had been silent
-because nothing had ever put an object in an array and then looked.
-
-- **The struct's name was not a name.** It was built by interpolating the element's
-  low-level type, which reads as an identifier only while that type is a scalar. An object
-  lowers to a struct, whose low-level form is a hash, so the name came out as
-  `bareruby_array_{kind: :struct, name: :bareruby_gpio_t}_50_t` — and, because that is a
-  name and nothing looks at it, the first stage reported success and left the C++ compiler
-  to report it. The name is a function of the low-level type now, which is what keeps two
-  arrays holding the same thing to one struct.
-- **The structs were written out in the order they were made.** An array is made while
-  lowering a method that uses it, which can be before the class whose instances it holds
-  has been reached, so `Lamp items[4]` named a type that had only been forward declared.
-  They are written in an order where nothing holds a type that is not yet complete; a
-  pointer is not part of that, since a forward declaration is all one needs.
-
-- **Putting an object into an element copied it.** Every other assignment of an object takes
-  its address; this one path did not, so `lamps[0] = made` wrote a second lamp into the
-  array and `made.set(5)` was never seen through it. The same was true of
-  `Array.new(n, object)`, which made N copies where Ruby has one object N times. Both are
-  assignments, and they are the address the others are now.
-
-None of the three showed up in an array of scalars, and none of them changed one: every
-existing sample and `ref.rb` produce byte-identical output to before the change. So does the
-array of pins, which is created into and therefore holds its objects — the addresses cost
-nothing where nothing asked for them.
-
-**What is deliberately not here.** One array cannot be both: created into in one place and
-handed an object in another is refused rather than compiled, since the object made into it
-would have nowhere to live. Arrays of arrays and arrays of variable-length strings now get a
-name of their own rather than a broken one, but neither was exercised beyond that. Two
-things this turned up are open questions rather than omissions and are filed as such: what
-an element never written is worth, now that an element type can have no default (#157), and
-that `dup` of an array holding its objects duplicates them where Ruby's is shallow (#156).
+Arrays of arrays and arrays of variable-length strings get a name of their own rather than a
+broken one, but neither was exercised beyond that. What an element never written is worth
+(#157) and `dup` being deep where Ruby's is shallow (#156) are open questions, filed as such.
 
 Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, three arrays that
 name lamps rather than hold them, and three pins — is 44,396 B of text and 6,672 B of bss on
