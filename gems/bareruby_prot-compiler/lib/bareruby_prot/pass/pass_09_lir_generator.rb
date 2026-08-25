@@ -30,6 +30,8 @@ module BareRubyProt
         structs = []
         functions = []
         @interrupt_functions = []
+        @binding_storage = BindingStorage.new(@lir, @tast, @value_layout, [])
+        address_elements(@tast.program_body)
 
         @tast.program_body.each do |statement|
           next unless class_definition?(statement)
@@ -89,6 +91,45 @@ module BareRubyProt
         return held_struct_name(type[:element]) if type[:kind] == :c_array
 
         type[:name] if type[:kind] == :struct
+      end
+
+      # An element is a binding like any other: a creation written into one is what that
+      # element owns, and anything else assigned to it is somebody else's object under a
+      # second name. So an array only ever created into holds its objects — the only way N
+      # of them exist where there is no heap — and one handed an object that already
+      # exists, or filled with one object N times, holds addresses. Which of the two an
+      # array is has to be settled before anything is lowered, since it is what the struct
+      # is made of.
+      def address_elements(node)
+        return node.each { |child| address_elements(child) } if node.is_a?(Array)
+        return unless node.is_a?(Hash) && node.key?(:children)
+
+        array = addressed_array(node)
+        @value_layout.hold_addresses(array) if array
+        address_elements(node[:children])
+      end
+
+      def addressed_array(node)
+        case @tast.node_type(node)
+        when :index_assign then array_handed_an_object(node)
+        when :array_fill then array_filled_with_an_object(node)
+        end
+      end
+
+      def array_handed_an_object(node)
+        receiver, _index, value, = @tast.children_of(node)
+        return nil if @binding_storage.creation?(value) || !@value_layout.shared?(@tast.value_type(value))
+
+        @tast.value_type(receiver)
+      end
+
+      # Array.new(n, object) evaluates the object once and every element is that same one,
+      # which N copies of it would not be.
+      def array_filled_with_an_object(node)
+        fill_value, = @tast.children_of(node)
+        return nil if fill_value.nil? || !@value_layout.shared?(@tast.value_type(fill_value))
+
+        @tast.value_type(node)
       end
 
       def class_definition?(node) = @tast.node_type(node) == :class_definition
@@ -541,23 +582,36 @@ module BareRubyProt
       # back — the arithmetic is the same, the type is restored on the way in.
       def lower_index(node)
         receiver, index, type = @tast.children_of(node)
-        element = @value_layout.type_of(type)
+        array = @tast.value_type(receiver)
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
-        items = if @value_layout.arena_array?(@tast.value_type(receiver))
-                  @value_layout.arena_items_of(receiver_expression, element)
-                else
-                  @value_layout.items_of(receiver_expression)
-                end
+        if @value_layout.arena_array?(array)
+          element = @value_layout.type_of(type)
+          items = @value_layout.arena_items_of(receiver_expression, element)
+        else
+          element = @value_layout.element_type_of(array)
+          items = @value_layout.items_of(receiver_expression)
+        end
         [receiver_statements + index_statements, @lir.create_index(items, index_expression, element)]
       end
 
+      # An element that holds an address is assigned one, which is what makes the element
+      # and what was assigned to it the same object. An element that is where its object
+      # lives is assigned the object, and only a creation is ever assigned to one of those.
       def lower_index_assign(node)
-        receiver, index, value, type = @tast.children_of(node)
+        receiver, index, value, = @tast.children_of(node)
+        array = @tast.value_type(receiver)
         receiver_statements, receiver_expression = lower_expression(receiver)
         index_statements, index_expression = lower_expression(index)
         value_statements, value_expression = lower_expression(value)
-        place = @lir.create_index(@value_layout.items_of(receiver_expression), index_expression, @value_layout.type_of(type))
+        place = @lir.create_index(
+          @value_layout.items_of(receiver_expression), index_expression, @value_layout.element_type_of(array)
+        )
+        if @value_layout.addressed?(array)
+          raise "an array of objects that live elsewhere has nowhere to keep one made into it" if @binding_storage.creation?(value)
+
+          value_expression = @binding_storage.rvalue(value, value_expression)
+        end
 
         [receiver_statements + index_statements + value_statements +
           [@lir.create_assign(place, value_expression)], place]
@@ -668,11 +722,13 @@ module BareRubyProt
       end
 
       def fill_from_elements(place, value)
-        elements, = @tast.children_of(value)
+        elements, type = @tast.children_of(value)
+        element_type = @value_layout.element_type_of(type)
         elements.each_with_index.flat_map do |element, position|
           element_statements, element_expression = lower_expression(element)
+          element_expression = @binding_storage.rvalue(element, element_expression) if @value_layout.addressed?(type)
           slot = @lir.create_index(
-            @value_layout.items_of(place), @lir.create_const_int(position, :int32), @lir.value_type(element_expression)
+            @value_layout.items_of(place), @lir.create_const_int(position, :int32), element_type
           )
           element_statements + [@lir.create_assign(slot, element_expression)]
         end
@@ -685,8 +741,9 @@ module BareRubyProt
         fill_value, = @tast.children_of(value)
         return [] if fill_value.nil?
 
-        element_type = @value_layout.type_of(@value_layout.element_of(type))
+        element_type = @value_layout.element_type_of(type)
         statements, expression = lower_expression(fill_value)
+        expression = @binding_storage.rvalue(fill_value, expression) if @value_layout.addressed?(type)
         source = @function_scope.next_temporary
         counter = @function_scope.next_temporary
         local = @lir.create_local(counter, :int32)

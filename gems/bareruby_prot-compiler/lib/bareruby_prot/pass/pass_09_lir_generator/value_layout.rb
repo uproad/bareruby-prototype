@@ -13,6 +13,7 @@ module BareRubyProt
       @lir = low_ir
       @array_structs = {}
       @nilable_structs = {}
+      @addressed = {}
     end
 
     def structs = @nilable_structs.values + @array_structs.values
@@ -40,6 +41,22 @@ module BareRubyProt
     def shared?(type) = instance?(type) || array?(type)
 
     def nilable?(type) = type.is_a?(Hash) && type[:kind] == :nilable
+
+    # An array whose elements are objects that live somewhere else. It holds their
+    # addresses, since that is the only way two names reach one object. Which arrays these
+    # are is read off the program before anything is lowered, and is remembered by what
+    # an array holds and how much of it — the same thing the struct is remembered by, so
+    # that one struct cannot be asked to be both.
+    def hold_addresses(type) = @addressed[array_key(type)] = true
+
+    def addressed?(type) = array?(type) && @addressed.key?(array_key(type))
+
+    # What one element of an array is: the object itself where the array is where it lives,
+    # its address where it is not.
+    def element_type_of(type)
+      element = type_of(element_of(type))
+      addressed?(type) ? @lir.pointer_type(element) : element
+    end
 
     def arena_string?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
 
@@ -96,6 +113,8 @@ module BareRubyProt
 
     private
 
+    def array_key(type) = [type[:element], type[:capacity]]
+
     def struct_type_of(type)
       case type[:kind]
       when :array then array_struct_type(type)
@@ -132,7 +151,7 @@ module BareRubyProt
     def array_struct_type(type)
       raise "the element type of this array was never determined" if type[:element].nil?
 
-      element = type_of(type[:element])
+      element = element_type_of(type)
       name = :"bareruby_array_#{array_element_name(element)}_#{type[:capacity]}_t"
       @array_structs[name] ||= @lir.create_struct(
         name, [@lir.create_field(:items, @lir.c_array_type(element, type[:capacity]))]
