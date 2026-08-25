@@ -1,0 +1,30 @@
+{
+  "name": "bareruby-visualizer",
+  "publisher": "bareruby",
+  "displayName": "BareRuby machine visualizer",
+  "description": "Shows what the hosted machine's peripherals did while a program ran.",
+  "version": "0.0.6",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onCommand:bareruby.visualize"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bareruby.visualize",
+        "title": "BareRuby: Watch this program run",
+        "category": "BareRuby"
+      }
+    ]
+  }
+}

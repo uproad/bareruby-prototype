@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "printable"
+
 module BareRubyProt
   module Simulator
     # One serial port: the frame it was opened with, everything it has put on the wire,
@@ -15,6 +17,8 @@ module BareRubyProt
     # has been put there from outside, the queue fills from whatever was attached as the
     # wire — which is how a run started from a shell takes its input on `stdin`.
     class Uart
+      include Printable
+
       # How deep the queue is when the program did not ask for a depth of its own.
       DEPTH = 256
 
@@ -52,6 +56,18 @@ module BareRubyProt
         @baudrate, @data_bits, @stop_bits, @parity, @flow_control, @rts_pin, @cts_pin =
           [@baudrate, @data_bits, @stop_bits, @parity, @flow_control, @rts_pin, @cts_pin]
           .zip(settings).map { |kept, asked| asked == KEEP ? kept : asked }
+      end
+
+      # What this port is, as plain data. The two byte strings are rendered printable
+      # rather than handed over raw: what a port carries is bytes, and not every byte is
+      # a character anything outside Ruby would take.
+      def snapshot
+        { unit: @unit, baudrate: @baudrate, data_bits: @data_bits, stop_bits: @stop_bits,
+          parity: parity, flow_control: flow_control?, txd_pin: @txd_pin,
+          rxd_pin: @rxd_pin, rts_pin: @rts_pin, cts_pin: @cts_pin,
+          line_ending: printable(@line_ending), breaks: @breaks,
+          watching: !@handler.nil?, sent: printable(@transmitted),
+          pending: @received.bytesize, waiting: printable(@received) }
       end
 
       # The seven settings `setmode` names, in the order the struct carries them.

@@ -27,16 +27,18 @@ module BareRubyProt
 
       def initialize(seconds)
         @microseconds = 0
-        @limit = seconds * SECOND
+        @limit = seconds && seconds * SECOND
       end
 
       def ticks_ms = @microseconds / MILLISECOND
 
       def advance(microseconds) = @microseconds += microseconds
 
-      # Whether the run has had the time it was given. A firmware loops forever by
-      # design, so how long to watch is the one thing a run has to be told.
-      def over? = @microseconds >= @limit
+      # Whether the run has had the time it was given. A firmware loops forever by design,
+      # so how long to watch is the one thing a run has to be told — **unless it is not
+      # told at all**, and then it is never over. A display watching a loop is watching it
+      # because it does not end; that is the thing being looked at.
+      def over? = @limit ? @microseconds >= @limit : false
 
       def seconds = @microseconds.fdiv(SECOND)
     end

@@ -30,7 +30,8 @@ module BareRubyProt
       end
 
       # The program from its entry point until it returns, or until the time it was given
-      # runs out. A firmware never returns, which is why the second of those exists.
+      # runs out. A firmware never returns, which is why the second of those exists — and
+      # `seconds: nil` is how to ask for neither, which a display watching a loop does.
       #
       # A block given here runs every time the program waits, holding the machine: that is
       # when a caller gets to move an input, and it is the same moment a machine would
@@ -42,6 +43,10 @@ module BareRubyProt
       end
 
       def status = @system.status
+
+      # What to do between one instruction and the next — a step, in the unit the clock
+      # counts in. See `Binding#while_stepping`.
+      def while_stepping(&watching) = @binding.while_stepping(&watching)
 
       # How many instructions were interpreted. What a run cost, in the only unit this
       # side has one in.

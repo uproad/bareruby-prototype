@@ -18,3 +18,7 @@
 
 # Gems this checkout reaches for, installed here rather than into the desk.
 /.gems/
+
+# The extension, packed. `vscode/package.sh` writes it and VS Code installs it; the
+# sources beside it are what is kept.
+/vscode/*.vsix

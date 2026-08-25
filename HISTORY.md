@@ -1506,8 +1506,11 @@ reach with; here every peripheral is an object, so the caller reaches it directl
 receive side is **not** among them any more — `--input=` feeds an emulated UART, and a
 simulated run is fed through the same flag from the same files.
 
-- **I2C reads answer.** `samples/i2c.rb` and `samples/picoruby_interface.rb` are on the
-  list rather than waiting for a device model: what a bus answers is what was put in it.
+- **I2C reads answer without a device model.** `samples/i2c.rb` and
+  `samples/picoruby_interface.rb` are on this list because what a bus answers is whatever
+  this side put in it. The emulated bus has a device behind it too now — a C# sensor
+  written for Renode, held by `checks/stm32/i2c/` — which is the difference: there, a
+  device is a part somebody wrote; here it is an object that was already there.
 - **A pin can be moved.** `logger` and `interrupt` wait on a GPIO edge, which the emulated
   list records as a later harness step. Here a wait is where the caller gets its turn, so
   giving one is a line — which is what the paragraph below does.
@@ -1640,6 +1643,178 @@ itself on the transformed script, sensor attached. The complete
 `checks/stm32/i2c/check.sh f446` run passed 12/12 in 208 seconds under Renode. It was
 built but not hardware-flashed.
 
+### Showing what the machine did
+
+The simulator answers with objects, and nothing about an object is visible.
+[`vscode/`](vscode/README.md) is the other half: a panel that draws them — the pins as
+lamps, the serial ports as their buffers, the square waves as their duty, and the
+on-board LED as itself.
+
+**It watches a project, not this checkout.** The working directory is whichever project
+is being watched: its `config/target.yml` is the record that is read, its bundle is where
+the gems come from, and the command is reached as `bundle exec bareruby`. The extension
+hands `watch.rb` over by its full path and starts it there, so pointing an editor at a
+project and at this extension are two different paths on the command line.
+
+**The channel is one line of JSON per wait.** `Machine#snapshot` renders the same
+readings the accessors answer as plain data, and `vscode/watch.rb` builds a program,
+interprets it, and writes a line every time the program waits — which is every time the
+machine can have changed. The last line is marked `"over":true`. **Nothing in the gem
+knows a display exists**, and nothing in the panel knows what a peripheral is: it draws
+what a frame says, and a frame is a Hash.
+
+**A blink looks like a blink.** Virtual time makes a three-second run finish in a fraction
+of a second, so every frame of it arrives at once; the panel keeps them all and puts a
+slider along the run, which is what makes it watchable rather than a single final state.
+How many frames there are is a fact about the program rather than about the display —
+`blink` leaves 7 over three virtual seconds, `servo` 9, `logger` 31, `tenji` 259 and
+`adc` 298, while `features`, which never waits, leaves the one that says it is over.
+
+Two things came out of writing it, and both went back into the first half.
+
+- **The indicator was there before the program asked for it.** Every other peripheral
+  appears when a program opens one, and `machine.onboard_led` answered an unlit LED from
+  the start — so every panel had an On-board LED section whether or not the program had
+  ever met one. It is `nil` until an `OnboardLED` has run, like the rest.
+- **Bytes had to become readable.** A snapshot crosses into something that is not Ruby,
+  and what a port carries is bytes rather than characters. `Printable` spells what is not
+  a printable character as `\xNN`, the way C does, so `sent` is a string a panel can hold.
+
+What it cost: 436 lines, of which the panel is 188, the extension 71 and the Ruby half 71.
+**There is no build step** — plain JavaScript, loaded as it is. A throwaway has no business
+growing an npm toolchain, and nothing here is large enough to want one.
+
+**Installing it needed one anyway, of a sort.** VS Code installs an extension from a
+`.vsix`, and a `.vsix` is a zip with two manifests beside the files — so `package.sh`
+writes those two by hand and zips the directory, in a page, without `vsce`. Under a remote
+connection the install lands on the remote side, which is where this one has to be: it
+starts a process in the project. The extension carries `watch.rb` with it, so once
+installed it needs nothing of this checkout.
+
+**Renaming the machine broke the records that were already written.** A project written
+before the rename holds `machine: none`, and that composition no longer exists — the build
+stops and says so, listing the ones that do, which is the behaviour a record naming a
+missing composition has always had. Watching an existing project meant editing one line of
+its `config/target.yml` first. Nothing warns about it ahead of time and nothing migrates
+it; the cost of the rename is one line per project already in existence.
+
+**The panel became a machine rather than a table.** The first one listed what each
+peripheral answered; the design it was measured against draws the machine — a board on
+end, notched, fifty GPIO down its sides, the indicator under the notch. A pin says two
+things at once: its ring is what claimed it (green out, red in, orange ADC, blue DAC, cyan
+I2C, violet UART, yellow PWM) and its fill is what it is at, black through to green in a
+straight line. What a converter or a duty cycle reads goes outside the board beside its
+pin. **Two peripherals cannot be drawn there**: an I2C unit is opened by number and never
+says which pins it took, and nothing reaches a DAC yet.
+
+**And it became a transport rather than a slider.** Frames used to arrive as fast as the
+interpreter could make them; now `watch.rb` reads orders on stdin between one wait and the
+next — play, hold, one step, a speed — and playing pays real time for virtual time. A wait
+worth 500 ms costs half a second at `1×` and a twentieth of one at `10×`, measured: three
+virtual seconds of `samples/blink.rb` take 3.7 s of wall clock at `1×` and 0.8 s at `10×`,
+build included.
+
+**A step is an instruction**, which is what the clock counts in — one microsecond of
+virtual time, this machine's instruction clock. Held, the run stops between two of them
+and moves on when one is asked for: `us` reads 500028, 500029, 500030 as the button is
+pressed. Reaching in that far needed a hook the interpreter calls between instructions,
+and **it costs nothing measurable** — `samples/gpio_pico_loop.rb`, which is three million
+instructions and no waits at all, runs in the same 8 seconds with the hook in place as
+without it, because what a run that nobody is steering pays is one `nil` test per
+instruction.
+
+A step period of 100 MHz was asked for first, and virtual time cannot be divided that
+finely here: ten nanoseconds is a hundredth of the smallest thing that happens. Tying the
+step to the instruction clock is what settled it, and the period follows whatever that
+clock is set to.
+
+**Two of the seven colours are reserved.** A pin's ring says what claimed it, and the set
+was settled up front — green out, red in, orange ADC, blue DAC, cyan I2C, violet UART,
+yellow PWM — but two of them reach nothing.
+
+`I2C` was the interesting one. The class takes `unit:` and no pins, so a bus that has been
+opened cannot say which two lines it is on. Reading how PicoRuby does it settled what the
+right shape is rather than what to patch: the symbol is `<CHIP>_I2C<N>` with no primary
+alias — `:RP2040_I2C0`, `:RP2040_I2C1`, `:ESP32_I2C0`, `:ESP32_I2C1` — and pins come
+beside it, `sda_pin:` and `scl_pin:`, which `PICORUBY_COMPATIBILITY.md` already writes
+down and this prototype has never implemented. RP2040 also carries the table the other
+way, so a unit can be inferred from a pin: I2C0 takes SDA `0,4,8,…` and SCL `1,5,9,…`,
+I2C1 the odd pairs between them. **Its default is the loose end**: with pins left out it
+uses `PICO_DEFAULT_I2C_SDA_PIN`/`SCL` without looking at the unit at all, so
+`:RP2040_I2C1` opened bare lands on i2c0's pins. Guessing a rule for the hosted machine
+out of that would have been inventing one. The bus stays uncoloured until the class grows
+its pins, in a change of its own. `DAC` is reserved the same way — ESP32
+has one, nothing here reaches it.
+
+**Opening it in an editor found four things nothing else would have.**
+
+**Where a project starts is not where the editor is open.** The extension took the
+workspace folder as the root, which is right only when somebody opens exactly the project
+they are working on. Open a home directory and the root is the home directory: the title
+read `uproad/…`, the build ran in the wrong place, and nothing was found. **The root is
+where the Gemfile is** — the same question bundler answers and the same one every verb
+here asks — so the file in front of the reader is what the search now starts from, upward.
+
+**And the file in front of the reader is any file.** Fixing the root first, the search was
+started only from a `.rb` and fell back to the workspace folder otherwise — so reading the
+project's own `Gemfile` and asking for the panel said there was no Gemfile anywhere.
+Somebody with a `Gemfile` open is standing in a project as surely as somebody with a
+program open; what is watched is the program in front of them when there is one, and what
+the project is written around when there is not.
+
+**`bundle` is usually not a file the editor can find.** A desk that manages its Ruby
+versions puts a shim on the path from a shell profile, and this one has it in `.bashrc`,
+which a login shell does not read and an extension host has never read at all. What came
+back was `spawn bundle EACCES`, which says nothing about Ruby. The path is now asked of an
+interactive shell once and remembered; the run itself is still spawned directly, so
+nothing is quoted through a shell.
+
+**And a third, in the project rather than in the extension.** A project that reads these
+gems from git pins a revision, and `bundle update <gem>` left it where it was — the
+version had not changed, so nothing looked newer. Only a plain `bundle update` moved it.
+A project watching a branch has to be told to catch up with it.
+
+**The fourth was the design, not a bug.** The panel took the length of a run from the
+emulated side — three virtual seconds, which is what `emulate` gives a firmware before it
+stops — and after three seconds it sat there. It looked like a hang, and the objection was
+the right one: **a loop that does not end is the thing being watched.** Seeing a pin keep
+toggling, or stop, is what this kind of debugging is; cutting the run off answers a
+question nobody asked. `Clock` now takes `nil` for a length and is never over, the
+extension names none, and the panel keeps the last few thousand frames behind its slider
+rather than all of them.
+
+**Getting a change in front of somebody took longer than making it.** A newly installed
+extension does not come into effect on **Developer: Reload Window**, and under this remote
+connection **Developer: Restart Extension Host** did not do it either — the window has to
+be closed and opened. What made that hard to see is that **the panel is read off disk
+every time it opens while the code behind it is not**: the look changed on every reload,
+so each fix appeared to have landed and then behaved like the old one. `{{program}}` in
+the title was the tell, and it was mistaken twice for a bug in the substitution before it
+was recognised as the old extension still running. Pointing the editor at the extension
+directory instead (`--extensionDevelopmentPath`) makes every new window new code, which is
+the way to work on it.
+
+**And it took the panel down on the way.** The frame limit was given the name a constant
+two lines above it already had, and a repeated `const` is a syntax error — so the whole
+script failed to parse and the panel drew no pins, no speed buttons and no frames. Three
+symptoms, one line. Nothing had ever read that script: it lives inside an HTML file, so
+`node --check` on the extension never saw it. **`package.sh` now pulls it out and checks
+it before packing**, and refuses to write a `.vsix` that would draw nothing.
+
+That change made a second one necessary. Frames were written at the waits, so a program
+that never waits wrote none — `samples/gpio_pico_loop.rb`, twenty-six pins and no sleep,
+showed nothing at all. They are written between instructions now, at most one per
+20 virtual milliseconds, and that loop is as watchable as a blink: **8,428 changes on GP0
+in the first second**, with the pins moving as it goes.
+
+**It was not opened in an editor here.** The frames are real, and the panel's own script
+was run against the actual lines outside VS Code — fed `samples/servo.rb`'s frames it
+builds the rows for GP15 at 50 Hz and 10% duty, fed `samples/i2c.rb`'s it builds the bus
+at 400 kHz. **The Ruby half was run against a real project** — one `bareruby new` wrote,
+outside this checkout, with the simulator added to its Gemfile — and the `OnboardLED`
+program it came with leaves four frames over three virtual seconds, the indicator lit,
+unlit and lit again. But "it works as an extension" needs somebody to press F5, and
+nobody has. It is written up as built, not verified.
 ## The STM32 GPIO binding has its own fixed-answer check
 
 `checks/stm32/gpio/` holds the GPIO binding to fixed answers with the same stub-Renode

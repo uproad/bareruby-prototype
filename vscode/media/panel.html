@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+<title>BareRuby Host Simulator</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --out: #22c55e; --in: #ef4444; --adc: #f97316; --dac: #3b82f6;
+    --i2c: #22d3ee; --uart: #c4b5fd; --pwm: #eab308;
+    --idle: rgba(160, 160, 160, .55);
+  }
+  body {
+    font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground); background: var(--vscode-editor-background);
+    margin: 0; padding: 12px 16px;
+  }
+  h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  #program {
+    font-family: var(--vscode-editor-font-family); font-size: 12px; opacity: .7;
+    margin: 2px 0 14px;
+  }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .6;
+    margin: 16px 0 6px; font-weight: 600;
+  }
+
+  #top { display: flex; gap: 22px; align-items: flex-start; }
+
+  /* ---- the board ------------------------------------------------------- */
+  #board {
+    position: relative; border: 1px solid var(--vscode-panel-border); border-radius: 6px;
+    padding: 26px 8px 12px; min-width: 250px;
+  }
+  #notch {
+    position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
+    width: 54px; height: 13px; border: 1px solid var(--vscode-panel-border);
+    border-top: none; border-radius: 0 0 27px 27px;
+    background: var(--vscode-editor-background);
+  }
+  #indicator { text-align: center; margin: 4px 0 10px; font-size: 11px; opacity: .75; }
+  #lamp {
+    display: block; width: 30px; height: 15px; margin: 0 auto 3px; border-radius: 3px;
+    border: 1px solid var(--vscode-panel-border); background: #000;
+  }
+  #pins { display: flex; justify-content: space-between; gap: 10px; }
+  .side { display: flex; flex-direction: column; gap: 3px; }
+  .slot { display: flex; align-items: center; gap: 5px; height: 17px; }
+  .side.right .slot { flex-direction: row-reverse; }
+  .dot {
+    width: 13px; height: 13px; border-radius: 50%; box-sizing: border-box;
+    border: 1px solid var(--idle); background: transparent; flex: none;
+  }
+  .label {
+    font-size: 10px; opacity: .55; font-variant-numeric: tabular-nums; min-width: 2ch;
+  }
+  .used .label { opacity: .95; }
+  .value {
+    font-size: 10px; font-variant-numeric: tabular-nums; opacity: .85;
+    min-width: 5ch; text-align: right;
+  }
+  .side.right .value { text-align: left; }
+
+  /* ---- the transport --------------------------------------------------- */
+  #panel { flex: 1; min-width: 240px; }
+  #clock {
+    font-family: var(--vscode-editor-font-family); font-size: 20px;
+    font-variant-numeric: tabular-nums; margin: 2px 0 10px;
+  }
+  #transport { display: flex; align-items: center; gap: 6px; }
+  button {
+    font-family: inherit; font-size: 12px; color: var(--vscode-button-secondaryForeground);
+    background: var(--vscode-button-secondaryBackground); border: none; border-radius: 3px;
+    padding: 3px 9px; cursor: pointer;
+  }
+  button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  button.on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  #mode { font-size: 11px; opacity: .7; margin-left: 4px; }
+  #speeds { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; align-items: center; }
+  #speeds button { padding: 2px 6px; font-size: 11px; }
+  #free {
+    width: 5em; font-family: inherit; font-size: 11px; padding: 2px 5px;
+    color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px;
+  }
+  #scrub { width: 100%; margin-top: 10px; accent-color: var(--vscode-textLink-foreground); }
+  #legend { font-size: 10px; opacity: .6; margin-top: 10px; line-height: 1.7; }
+  #legend .kept { opacity: .45; }
+  .key {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    border: 2px solid; margin: 0 3px 0 9px; vertical-align: -1px;
+  }
+
+  /* ---- the rest -------------------------------------------------------- */
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 2px 10px 2px 0; vertical-align: top; }
+  td.name { opacity: .6; white-space: nowrap; width: 1%; }
+  pre {
+    margin: 3px 0 0; padding: 6px 8px; white-space: pre-wrap; word-break: break-all;
+    background: var(--vscode-textCodeBlock-background); border-radius: 4px;
+    font-family: var(--vscode-editor-font-family); font-size: 12px; max-height: 9em;
+    overflow: auto;
+  }
+  pre:empty::after { content: "—"; opacity: .4; }
+  #logs {
+    font-family: var(--vscode-editor-font-family); font-size: 12px;
+    background: var(--vscode-textCodeBlock-background); border-radius: 4px;
+    padding: 6px 0; max-height: 15em; overflow: auto;
+  }
+  #logs div { display: flex; gap: 10px; padding: 0 10px; }
+  #logs .n { opacity: .4; min-width: 3ch; text-align: right; user-select: none; }
+  #logs:empty::after { content: "  —"; opacity: .4; }
+  #trouble {
+    display: none; margin: 12px 0 0; padding: 9px 11px; border-radius: 4px;
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+    white-space: pre-wrap; font-family: var(--vscode-editor-font-family); font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>BareRuby Host Simulator</h1>
+<div id="program">{{program}}</div>
+<div id="trouble"></div>
+
+<div id="top">
+  <div id="board">
+    <div id="notch"></div>
+    <div id="indicator"><span id="lamp"></span>LED</div>
+    <div id="pins"><div class="side left" id="left"></div><div class="side right" id="right"></div></div>
+  </div>
+
+  <div id="panel">
+    <div id="clock">00:00.000000</div>
+    <div id="transport">
+      <button id="back" title="Show the frame before this one">&#10216;</button>
+      <button id="hold" title="Hold, and step from here">&#9633;</button>
+      <button id="play" title="Play">&#9654;</button>
+      <button id="next" title="Take one step">&#10217;</button>
+      <span id="mode">Live</span>
+    </div>
+    <div id="speeds"></div>
+    <input type="range" id="scrub" min="0" max="0" value="0" disabled>
+    <div id="legend"></div>
+  </div>
+</div>
+
+<h2>UART</h2>
+<div id="uart"></div>
+
+<h2>Logs (stdout)</h2>
+<div id="logs"></div>
+
+<script nonce="{{nonce}}">
+(function () {
+  const editor = acquireVsCodeApi();
+  const frames = [];
+
+  // What a pin's ring says it is being used as, and what its fill is worth.
+  const MODES = {
+    out: "--out", in: "--in", adc: "--adc", dac: "--dac",
+    i2c: "--i2c", uart: "--uart", pwm: "--pwm"
+  };
+  // Two of those never reach a pin yet, and the legend says so rather than leaving
+  // somebody waiting for a colour that is not coming. A bus is opened by number and
+  // answers with no pins at all; nothing reaches a converter going the other way.
+  const KEPT = ["dac", "i2c"];
+  const PINS = 50;
+  // How many frames to keep behind the slider. A run that is never over would otherwise
+  // fill a window that is never closed; what falls off the front is far enough back that
+  // nobody was looking at it.
+  const REMEMBERED = 3000;
+  const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0];
+  // What a full-scale reading is worth in volts. The converter is twelve bits.
+  const REFERENCE = 3.3;
+  const FULL = 4095;
+
+  const say = (order) => editor.postMessage(order);
+  const find = (id) => document.getElementById(id);
+  const clock = find("clock"), mode = find("mode"), scrub = find("scrub");
+  const lamp = find("lamp"), logs = find("logs"), uart = find("uart");
+  const trouble = find("trouble");
+
+  build();
+
+  window.addEventListener("message", (event) => {
+    const frame = event.data;
+    if (frame.trouble !== undefined) return complain(frame.trouble);
+
+    const following = scrub.value === scrub.max;
+    frames.push(frame);
+    if (frames.length > REMEMBERED) frames.shift();
+    scrub.max = String(frames.length - 1);
+    scrub.disabled = frames.length < 2;
+    if (following) scrub.value = scrub.max;
+    draw(frames[Number(scrub.value)]);
+  });
+
+  scrub.addEventListener("input", () => draw(frames[Number(scrub.value)]));
+
+  // ---- what is drawn -----------------------------------------------------
+
+  function draw(frame) {
+    if (!frame) return;
+    clock.textContent = spelled(frame.us);
+    mode.textContent = frame.over ? "over" : frame.live ? "Live" : "held";
+    find("play").classList.toggle("on", frame.live && !frame.over);
+    find("hold").classList.toggle("on", !frame.live && !frame.over);
+    lamp.style.background = frame.onboard_led && frame.onboard_led.level ? level(1) : "#000";
+    pins(frame);
+    ports(frame.uart);
+    printed(frame.said);
+    marked(frame.speed);
+  }
+
+  // Which peripheral has each pin, gathered from the tables that name one. **A bus is not
+  // here**: an I2C unit is opened by number and never says which pins it took.
+  function claimed(frame) {
+    const held = {};
+    for (const pin of Object.values(frame.gpio)) {
+      held[pin.pin] = { mode: pin.direction === "out" ? "out" : "in", fill: pin.level };
+    }
+    for (const port of Object.values(frame.uart)) {
+      for (const pin of [port.txd_pin, port.rxd_pin, port.rts_pin, port.cts_pin]) {
+        if (pin >= 0) held[pin] = { mode: "uart", fill: 0 };
+      }
+    }
+    // A bus claims no pin here. It is opened by unit and never says which two it took,
+    // which is a hole in the class rather than in this panel.
+    for (const wave of Object.values(frame.pwm)) {
+      held[wave.pin] = { mode: "pwm", fill: wave.duty / 100, value: wave.duty + "%" };
+    }
+    for (const input of Object.values(frame.adc)) {
+      held[input.pin] = {
+        mode: "adc", fill: input.raw / FULL,
+        value: (input.raw / FULL * REFERENCE).toFixed(2) + "V"
+      };
+    }
+    return held;
+  }
+
+  function pins(frame) {
+    const held = claimed(frame);
+    for (let pin = 0; pin < PINS; pin += 1) {
+      const slot = find("pin" + pin);
+      const dot = slot.querySelector(".dot");
+      const value = slot.querySelector(".value");
+      const has = held[pin];
+      slot.classList.toggle("used", Boolean(has));
+      dot.style.borderWidth = has ? "3px" : "1px";
+      dot.style.borderColor = has ? `var(${MODES[has.mode]})` : "var(--idle)";
+      dot.style.background = has ? level(has.fill) : "transparent";
+      value.textContent = has && has.value ? has.value : "";
+    }
+  }
+
+  // Black at nothing, green at everything, and straight through the middle: the fill is
+  // a reading rather than a hue, so only how much of it there is changes.
+  function level(much) {
+    const held = Math.max(0, Math.min(1, much || 0));
+    return `hsl(120, ${held * 100}%, ${held * 50}%)`;
+  }
+
+  function ports(found) {
+    const all = Object.values(found);
+    if (all.length === 0) return (uart.innerHTML = '<div style="opacity:.4">—</div>');
+    uart.innerHTML = all.map((port) =>
+      "<table>" + [
+        ["unit", port.unit + " &middot; " + port.baudrate + " baud &middot; " + port.data_bits +
+          (port.parity === "none" ? "N" : port.parity === "even" ? "E" : "O") + port.stop_bits +
+          (port.flow_control ? " &middot; RTS/CTS" : "") + (port.watching ? " &middot; irq" : "")],
+        ["sent", "<pre>" + port.sent + "</pre>"],
+        ["waiting", port.pending + " byte" + (port.pending === 1 ? "" : "s") +
+          (port.pending ? "<pre>" + port.waiting + "</pre>" : "")]
+      ].map((row) => '<tr><td class="name">' + row[0] + "</td><td>" + row[1] + "</td></tr>").join("") +
+      "</table>"
+    ).join("");
+  }
+
+  function printed(said) {
+    const lines = said.length ? said.replace(/\n$/, "").split("\n") : [];
+    logs.innerHTML = lines.map((line, index) =>
+      '<div><span class="n">' + (index + 1) + "</span><span>" + escaped(line) + "</span></div>"
+    ).join("");
+    logs.scrollTop = logs.scrollHeight;
+  }
+
+  function escaped(text) {
+    return text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function spelled(us) {
+    const whole = Math.floor(us / 1000000);
+    const pad = (value, width) => String(value).padStart(width, "0");
+    return pad(Math.floor(whole / 60), 2) + ":" + pad(whole % 60, 2) + "." +
+           pad(us % 1000000, 6);
+  }
+
+  function complain(what) {
+    trouble.style.display = "block";
+    trouble.textContent += what;
+  }
+
+  // ---- what is pressed ---------------------------------------------------
+
+  function build() {
+    const left = find("left"), right = find("right");
+    // Down the left from nothing, and up the right to the last — which is where a chip
+    // puts its numbers, and why the highest one is at the top on the right.
+    for (let pin = 0; pin < PINS / 2; pin += 1) left.appendChild(slot(pin));
+    for (let pin = PINS - 1; pin >= PINS / 2; pin -= 1) right.appendChild(slot(pin));
+
+    find("play").addEventListener("click", () => say({ live: true }));
+    find("hold").addEventListener("click", () => say({ live: false }));
+    find("next").addEventListener("click", () => say({ live: false, step: 1 }));
+    find("back").addEventListener("click", () => {
+      scrub.value = String(Math.max(0, Number(scrub.value) - 1));
+      draw(frames[Number(scrub.value)]);
+    });
+
+    const speeds = find("speeds");
+    for (const speed of SPEEDS) {
+      const button = document.createElement("button");
+      button.textContent = speed.toFixed(2).replace(/0$/, "").replace(/\.$/, "") + "×";
+      button.dataset.speed = String(speed);
+      button.addEventListener("click", () => say({ speed }));
+      speeds.appendChild(button);
+    }
+    const free = document.createElement("input");
+    free.id = "free";
+    free.type = "number";
+    free.step = "0.1";
+    free.min = "0.01";
+    free.placeholder = "free";
+    free.addEventListener("change", () => say({ speed: Number(free.value) }));
+    speeds.appendChild(free);
+
+    find("legend").innerHTML = Object.entries(MODES).map(([name, colour]) =>
+      '<span class="' + (KEPT.includes(name) ? "kept" : "") + '">' +
+      '<span class="key" style="border-color:var(' + colour + ')"></span>' +
+      name.toUpperCase() + (KEPT.includes(name) ? " (reserved)" : "") + "</span>"
+    ).join("");
+  }
+
+  // The same three cells either side; which way round they sit is the row's own doing,
+  // so that a value always ends up outside the board and a number always beside its dot.
+  function slot(pin) {
+    const holder = document.createElement("div");
+    holder.className = "slot";
+    holder.id = "pin" + pin;
+    holder.innerHTML =
+      '<span class="value"></span><span class="dot"></span><span class="label">' + pin + "</span>";
+    return holder;
+  }
+
+  function marked(speed) {
+    for (const button of document.querySelectorAll("#speeds button")) {
+      button.classList.toggle("on", Number(button.dataset.speed) === speed);
+    }
+  }
+})();
+</script>
+</body>
+</html>

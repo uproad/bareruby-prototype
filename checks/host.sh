@@ -7,7 +7,8 @@
 #
 # **What is named here is an entry, not a binding.** `--target=` takes an entry's name out
 # of config/target.yml, so that is what this looks up and that is what it carries: this
-# desk happens to call its hosted entry `host`, and another desk may not.
+# desk happens to call its hosted entry `host`, and another desk may not. Which entry it
+# is comes from the binding, because that reaches one machine and one only.
 #
 # Nothing else is needed: no board, no emulator to install, no device on a bus. One line
 # per sample, and a status the shell can read; what each run said is kept under
@@ -21,10 +22,10 @@ RUBY=${RUBY:-ruby}
 RECORD=config/target.yml
 
 NAME=$("$RUBY" -ryaml -e '
-  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["machine"] == "host" }
+  entry = (YAML.safe_load_file(ARGV[0])["targets"] || []).find { |t| t["binding"] == "host" }
   puts entry ? entry["name"] : ""' "$RECORD")
 [ -n "$NAME" ] || {
-    echo "checks: $RECORD records no entry whose machine is host." >&2
+    echo "checks: $RECORD records no entry whose binding is host." >&2
     exit 2
 }
 

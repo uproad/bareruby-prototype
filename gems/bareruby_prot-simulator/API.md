@@ -41,7 +41,7 @@ BareRubyProt::Simulator.run(artifact, seconds: 3, out: $stdout, err: $stderr, in
 | | |
 | --- | --- |
 | `artifact` | the executable a host build left, `build/<target>/bareruby_program` |
-| `seconds:` | how much **virtual** time the program is given. A firmware never returns, so a run has to be told how long to watch |
+| `seconds:` | how much **virtual** time the program is given. A firmware never returns, so a run has to be told how long to watch — or told `nil`, and then it never ends, which is what watching a loop means |
 | `out:` | where the program's own output goes — anything it `puts` |
 | `err:` | where a panic goes |
 | `input:` | an `IO` attached as the wire a serial port receives on, and as what an I2C read answers with. `$stdin` makes a run take its input the way the host build does |
@@ -74,13 +74,36 @@ every pin the program touched and `machine.gpio(25)` is one of them.
 | `pwm(pin = nil)` | by pin number |
 | `adc(pin = nil)` | by pin number |
 | `i2c(unit = nil)` | by unit |
-| `onboard_led` | the one indicator, which is always there |
+| `onboard_led` | the indicator, once the program has opened one |
 | `clock` | the same clock the run kept |
 | `change(pin, level)` | move an input from outside, and deliver the interrupt if that is the edge somebody registered for |
 | `while_waiting { \|machine\| }` | what to run every time the program waits (`Run#start` passes its block here) |
 
 A peripheral the program never opened is not there yet: `machine.gpio(3)` is `nil` until
-a `GPIO.new(3, ...)` has run.
+a `GPIO.new(3, ...)` has run, and `machine.onboard_led` is `nil` until an `OnboardLED` has
+been. A machine has an indicator, but a program that never lights it has not met it.
+
+### `snapshot`
+
+The same readings as plain data, for a reader that is not Ruby: a display in another
+process, a file, a check written elsewhere.
+
+```ruby
+machine.snapshot
+# => { us: 500_000,
+#      gpio: { 25 => { pin: 25, level: 1, changes: 6, direction: :out, pull: :none,
+#                      open_drain: false, watching: false } },
+#      uart: { 0 => { unit: 0, baudrate: 9600, ..., sent: "ready\\x0d\\x0a",
+#                     pending: 0, waiting: "" } },
+#      pwm: {}, adc: {}, i2c: {}, onboard_led: nil }
+```
+
+Every peripheral answers `snapshot` for itself, so one can be read alone. **Bytes come
+back printable** — what is not a printable character is spelled `\xNN`, the way C spells
+it — because what a port carries is bytes and not every byte is a character something
+outside Ruby would take. Nothing here knows about JSON: turning this into bytes belongs to
+whoever is doing the handing, and [`vscode/watch.rb`](../../vscode/watch.rb) is one that
+does.
 
 ## Gpio
 
@@ -176,7 +199,7 @@ is written against.
 | `ticks_ms` | milliseconds since the run began, which is what the program reads too |
 | `microseconds` | the same, unrounded |
 | `seconds` | the same, as a float |
-| `over?` | whether the run has had the time it was given |
+| `over?` | whether the run has had the time it was given. Always false when it was given none |
 
 The instruction cost is also what ends a program that never waits: a loop that only
 writes pins runs out of the time it was given rather than running until somebody stops

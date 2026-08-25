@@ -21,6 +21,9 @@ module BareRubyProt
         @reads = 0
       end
 
+      # What this input is, as plain data.
+      def snapshot = { pin: @pin, channel: @channel, raw: @raw, reads: @reads }
+
       def read
         @reads += 1
         @raw

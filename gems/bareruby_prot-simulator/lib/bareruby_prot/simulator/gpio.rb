@@ -32,6 +32,12 @@ module BareRubyProt
         @handler = nil
       end
 
+      # What this pin is, as plain data.
+      def snapshot
+        { pin: @pin, level: @level, changes: @changes, direction: direction, pull: pull,
+          open_drain: open_drain?, watching: !@handler.nil? }
+      end
+
       def direction
         return :high_z if @params.anybits?(HIGH_Z)
 
