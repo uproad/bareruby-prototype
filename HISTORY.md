@@ -1251,6 +1251,35 @@ Cost: `samples/peripheral_answers.rb` is 46,592 B of text and 6,700 B of bss on 
 (85.5 KB UF2). Every other sample and `ref.rb` produce byte-identical host output to
 before the change. Built for its targets and run on the host; not flashed.
 
+### An array holding objects
+
+A fixed-capacity array whose element is an object compiles and runs — a class the program
+wrote and a peripheral class alike. An array only ever created into holds its objects, which
+is the only way N of them exist where there is no heap; one handed an object that already
+exists holds addresses, so `pair[0] = spare` and `mirror[i] = lamps[i]` name a lamp a second
+time rather than making another, as Ruby does. Which of the two an array is, is answered one
+array at a time, so two of the same size holding the same thing get a struct each. An array
+that is both is refused: the object made into it would have nowhere to live.
+
+Three things were wrong and are fixed. The struct's name was built by interpolating the
+element's low-level type, which is an identifier only while the element is a scalar. The
+structs were written out in the order they were made, so an array of a class named a type
+that was only forward declared. And putting an object into an element copied it rather than
+taking its address, as did `Array.new(n, object)`, which made N copies where Ruby has one
+object N times. An array of scalars met none of the three: every existing sample and `ref.rb`
+produce byte-identical output to before the change.
+
+Arrays of arrays and arrays of variable-length strings get a name of their own rather than a
+broken one, but neither was exercised beyond that. What an element never written is worth
+(#157) and `dup` being deep where Ruby's is shallow (#156) are open questions, filed as such.
+
+Cost: `samples/array_of_objects.rb` — four lamps, three of them in a bank, three arrays that
+name lamps rather than hold them, and three pins — is 44,396 B of text and 6,672 B of bss on
+a Pico 1 (79.0 KB UF2), 15,056 B of text and 1,984 B of bss on an F4, and 5,378 B of text
+and 186 B of bss on a Mega 2560 (14.9 KB HEX).
+Its host output matches real Ruby's line for line. Built for the Pico 1, the F4, the Mega
+2560 and the host, and run on the host; not flashed.
+
 ## Verified on hardware
 
 These are runs on real boards rather than successful builds. The flashing route each one

@@ -38,6 +38,7 @@ it is given no argument.
 | `m25.rb` | Inheritance, modules, `super`, begin/rescue, interpolation assignment. Matches real Ruby |
 | `adc.rb` | Demo 4 — ADC read scaled through `Fixed` and driving a PWM duty cycle |
 | `array.rb` | Fixed-capacity arrays, as locals and as an instance variable. Matches real Ruby |
+| `array_of_objects.rb` | A fixed-capacity array whose elements are objects — a class the program wrote and a peripheral class alike. An array created into holds its objects; one handed objects that already exist names them, so assignment into an element shares as Ruby does — including a second array of the same size naming the first one's lamps. Matches real Ruby |
 | `arena.rb` | `arena(N)` as a form: nested blocks as release points, `arena` without a size, methods that allocate without being handed a region, growing arrays (`Arena::Array`, `[]`, `[]=` past the end, `<<`), `::Array` for the fixed-capacity one, a region left by an exception, and the three ways of running one out — all caught and carried on from |
 | `string.rb` | Variable-length strings in a region: `Arena::String.new`, the empty literal `""` as sugar for it, grown, aliased, joined, compared, duplicated, and one built from an interpolation measured while running |
 | `asleep.rb` | `asleep` in all three units: a 10 kHz square wave, a 100 Hz sampling loop, and a one second turn around work whose length varies |

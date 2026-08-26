@@ -13,6 +13,7 @@ module BareRubyProt
       @lir = low_ir
       @array_structs = {}
       @nilable_structs = {}
+      @addressed = {}
     end
 
     def structs = @nilable_structs.values + @array_structs.values
@@ -40,6 +41,22 @@ module BareRubyProt
     def shared?(type) = instance?(type) || array?(type)
 
     def nilable?(type) = type.is_a?(Hash) && type[:kind] == :nilable
+
+    # An array whose elements are objects that live somewhere else. It holds their
+    # addresses, since that is the only way two names reach one object. Which arrays these
+    # are is read off the program before anything is lowered, and is remembered one array
+    # at a time: two of the same size holding the same thing can be different answers, and
+    # they get a struct each because the name says which.
+    def hold_addresses(type) = @addressed[type[:array]] = true
+
+    def addressed?(type) = array?(type) && @addressed.key?(type[:array])
+
+    # What one element of an array is: the object itself where the array is where it lives,
+    # its address where it is not.
+    def element_type_of(type)
+      element = type_of(element_of(type))
+      addressed?(type) ? @lir.pointer_type(element) : element
+    end
 
     def arena_string?(type) = type.is_a?(Hash) && type[:kind] == :arena_string
 
@@ -132,12 +149,25 @@ module BareRubyProt
     def array_struct_type(type)
       raise "the element type of this array was never determined" if type[:element].nil?
 
-      element = type_of(type[:element])
-      name = :"bareruby_array_#{element}_#{type[:capacity]}_t"
+      element = element_type_of(type)
+      name = :"bareruby_array_#{array_element_name(element)}_#{type[:capacity]}_t"
       @array_structs[name] ||= @lir.create_struct(
         name, [@lir.create_field(:items, @lir.c_array_type(element, type[:capacity]))]
       )
       @lir.struct_type(name)
+    end
+
+    # The name has to be a function of the low-level type rather than of the BareRuby one:
+    # two arrays holding what becomes the same thing are one struct, and Int8 and Int32
+    # both become int32. It also has to name every type it can be handed, or two that share
+    # a name would share a struct. A scalar is already an identifier. A struct carries its
+    # own name, and the affixes this wrapper is about to add back are taken off so that an
+    # array of arrays does not spell the word twice.
+    def array_element_name(element)
+      return element unless element.is_a?(Hash)
+      return "#{array_element_name(element[:target])}_ptr" if element[:kind] == :pointer
+
+      element[:name].to_s.delete_prefix("bareruby_").delete_suffix("_t")
     end
 
     # Like the variable-length string, an arena array is always the pointer the region
