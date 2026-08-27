@@ -228,7 +228,7 @@ module BareRubyProt
       /* **A pin that was not asked for is the one this board brought the line out on**,
          and which pin that is arrives as a definition from the board rather than as a
          number written here. */
-      int32_t bareruby_uart_txd(const bareruby_uart_t *self) {
+      static int32_t bareruby_uart_txd(const bareruby_uart_t *self) {
           if (self->txd_pin >= 0) {
               return self->txd_pin;
           }
@@ -248,7 +248,7 @@ module BareRubyProt
           return (flow_control != 0 && asked >= 0) ? asked : UART_PIN_NO_CHANGE;
       }
 
-      void bareruby_uart_route(const bareruby_uart_t *self) {
+      static void bareruby_uart_route(const bareruby_uart_t *self) {
           uart_set_pin(bareruby_uart_port(self), bareruby_uart_txd(self), bareruby_uart_rxd(self),
                        bareruby_uart_flow_pin(self->rts_pin, self->flow_control),
                        bareruby_uart_flow_pin(self->cts_pin, self->flow_control));
@@ -618,18 +618,18 @@ module BareRubyProt
 
       #define BARERUBY_I2C_TIMEOUT_MS 1000
 
-      int32_t bareruby_i2c_sda_pin(int32_t unit) {
+      static int32_t bareruby_i2c_sda_pin(int32_t unit) {
           return unit == 0 ? BARERUBY_I2C0_SDA_PIN : BARERUBY_I2C1_SDA_PIN;
       }
 
-      int32_t bareruby_i2c_scl_pin(int32_t unit) {
+      static int32_t bareruby_i2c_scl_pin(int32_t unit) {
           return unit == 0 ? BARERUBY_I2C0_SCL_PIN : BARERUBY_I2C1_SCL_PIN;
       }
 
       /* **The bus is asked for by port rather than kept here.** The read side is a
          translation unit of its own and needs the same bus; asking the driver which bus
          that port is leaves one answer instead of two that have to agree. */
-      i2c_master_bus_handle_t bareruby_i2c_bus(int32_t unit) {
+      static i2c_master_bus_handle_t bareruby_i2c_bus(int32_t unit) {
           i2c_master_bus_handle_t bus = NULL;
           i2c_master_get_bus_handle((i2c_port_num_t)unit, &bus);
           return bus;
