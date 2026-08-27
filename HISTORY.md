@@ -1366,9 +1366,10 @@ Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w`
 real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
 because neither board is here.
 
-`freenove-esp32-s3-wroom` has run on real hardware, written over the chip's own USB;
+`freenove-esp32-s3-wroom` has run on real hardware, written over the chip's own USB.
 `samples/features.rb`, `samples/string.rb` and `samples/fixed.rb` matched the host line for
-line over the board's CH343 console. The board's other route to the chip — writing through
+line over the board's CH343 console, and `samples/heartbeat.rb` blinks the board's WS2812
+indicator at its 100 ms on / 900 ms off. The board's other route to the chip — writing through
 that same bridge — does not answer on this board and is recorded as not working rather than
 as untried.
 
@@ -2133,6 +2134,14 @@ over the CH343 bridge at 115200. `samples/features.rb`, `samples/string.rb` and
 and the fixed-point arithmetic on Xtensa with nothing changed for it. The bootloader
 reports what the build asked for: `SPI Flash Size : 16MB`, `SPI Mode : DIO`, ESP-IDF
 v5.5.5, `GPIO 44 and 43 are used as console UART I/O pins`.
+
+**`samples/heartbeat.rb` blinks the board's indicator** at the 100 ms on / 900 ms off it
+asks for, observed on the board. That is the first time `OnboardLED` has been answered by
+something that is not a pin at all: this indicator is one WS2812 on GPIO48, twenty-four
+bits of colour at a bit period no loop of stores can keep, driven by the transmitter that
+exists for exactly that. The class the program says is the same one a Pico and a NUCLEO
+answer — `on`, `off`, `write` — and the program that blinks says nothing about which of
+the three it is running on.
 
 **The flash size was wrong until the chip said so.** The module was taken for the 8 MB
 part and is the N16R8, so `machine/` said 8 MB and the image header did too — a board with
