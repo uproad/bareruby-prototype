@@ -29,18 +29,33 @@ module BareRubyProt
 
       ports.all? do |port|
         Toolchain.aloud([EspIdfTools.command("esptool.py"), "--chip", chip, "--port", port, "--baud", BAUD,
-                         "--before", "default_reset", "--after", "hard_reset", "write_flash",
+                         "--before", "default_reset", "--after", after(port), "write_flash",
                          "--flash_mode", "keep", "--flash_freq", "keep", "--flash_size", "keep",
                          "0x0", File.join(directory, EspIdfToolchain::IMAGE)], environment)
       end
     end
 
+    # **The chip's own USB.** A board wired for it brings this up itself, with no bridge
+    # chip in between — which is what makes it the one port that can always be written,
+    # and the one that has to be reset differently afterwards.
+    OWN_USB = 0x303a
+
     # **The bridges an ESP32 board is reached through**, by the vendor that made each: the
-    # chip's own USB device on a board wired for it, and the three USB-to-serial chips the
-    # boards that are not carry instead. It is a fact about the boards rather than about
-    # the SDK, and it is the only thing that keeps a Pico on the next port from ever being
-    # a candidate.
-    VENDORS = [0x303a, 0x1a86, 0x10c4, 0x0403].freeze
+    # chip's own above, and the three USB-to-serial chips the boards that are not wired for
+    # it carry instead. It is a fact about the boards rather than about the SDK, and it is
+    # the only thing that keeps a Pico on the next port from ever being a candidate.
+    VENDORS = [OWN_USB, 0x1a86, 0x10c4, 0x0403].freeze
+
+    # **A board written through its own USB comes back still waiting to be written.** The
+    # reset that can be driven over that peripheral is the peripheral's own, and the chip
+    # takes it as another request to be flashed — `rst:0x15 (USB_UART_CHIP_RESET),
+    # boot:0x0 (DOWNLOAD)`, over and over, with the program that was just written sitting
+    # in flash unread. The RTC watchdog is a reset from underneath the peripheral, and the
+    # board boots what it was given. A bridge chip holds the reset pin itself and has
+    # neither problem, which is what `hard_reset` is.
+    def self.after(port)
+      ports[File.realpath(port)] == OWN_USB ? "watchdog_reset" : "hard_reset"
+    end
 
     # **Asked until the bus is done moving, rather than once.** A board is identified here
     # by the serial port it brought up, and the ports are renumbered whenever anything on
@@ -75,9 +90,11 @@ module BareRubyProt
     LISTING = "import json, serial.tools.list_ports as ports; " \
               "print(json.dumps([[one.device, one.vid] for one in ports.comports()]))"
 
-    def self.candidates
+    def self.candidates = ports.select { |_, vendor| VENDORS.include?(vendor) }.keys.sort
+
+    def self.ports
       listing = IO.popen(environment, [EspIdfTools.command("python"), "-c", LISTING], &:read)
-      JSON.parse(listing).select { |_, vendor| VENDORS.include?(vendor) }.map(&:first).sort
+      JSON.parse(listing).to_h
     end
 
     def self.environment = EspIdfTools.environment
