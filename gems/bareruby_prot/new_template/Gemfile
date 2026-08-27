@@ -48,4 +48,5 @@ git "https://github.com/uproad/bareruby-prototype.git",
   # gem "bareruby_prot-binding-pico_sdk"   # Raspberry Pi Pico, Pico W, Pico 2, Pico 2 W
   # gem "bareruby_prot-binding-stm32cube"  # STM32: NUCLEO-F446RE/F401RE, F4DISCOVERY, or yours
   # gem "bareruby_prot-binding-arduino"    # Arduino Mega 2560
+  # gem "bareruby_prot-binding-esp_idf"    # FREENOVE ESP32-S3-WROOM
 end

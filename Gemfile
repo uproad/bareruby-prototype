@@ -17,6 +17,7 @@ source "https://rubygems.org"
 path "gems" do
   gem "bareruby_prot"
   gem "bareruby_prot-binding-arduino"
+  gem "bareruby_prot-binding-esp_idf"
   gem "bareruby_prot-binding-pico_sdk"
   gem "bareruby_prot-binding-stm32cube"
   gem "bareruby_prot-simulator"

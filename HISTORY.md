@@ -1366,6 +1366,13 @@ Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w`
 real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
 because neither board is here.
 
+`freenove-esp32-s3-wroom` has run on real hardware, written over the chip's own USB.
+`samples/features.rb`, `samples/string.rb` and `samples/fixed.rb` matched the host line for
+line over the board's CH343 console, and `samples/heartbeat.rb` blinks the board's WS2812
+indicator at its 100 ms on / 900 ms off. The board's other route to the chip — writing through
+that same bridge — does not answer on this board and is recorded as not working rather than
+as untried.
+
 `arduino-mega2560` has run on real hardware as well. `samples/heartbeat.rb` blinks the
 board's LED at the 100 ms on / 900 ms off it asks for; `samples/features.rb`,
 `samples/fixed.rb` and `samples/string.rb` printed over the board's serial port and were
@@ -1974,3 +1981,171 @@ prescaler; and the two refusals say their marker and nothing more. The suite pas
 sleep 10/10, clock 5/5, uart 33/33, i2c 12/12, onboard_led 4/4), and the emulation
 harness still answers 19/19 samples agreeing with the host on all three boards. It
 was built but not hardware-flashed.
+
+## A fourth binding, and the first instruction set that is neither Arm nor AVR
+
+`freenove-esp32-s3-wroom` — an ESP32-S3-WROOM-1 N16R8 module, two Xtensa LX7 cores at
+240 MHz with 16 MB of flash and 8 MB of PSRAM, on a FREENOVE board that brings its serial
+port out **twice** — through a CH343 bridge and through the chip's own USB — and its
+indicator out as one addressable RGB device. It is reached through ESP-IDF
+v5.5.5, pinned by tag and commit, and it is the fourth binding and the fourth instruction
+set: `xtensa-esp32s3-elf` beside two Arm profiles and an AVR. The triple names the chip
+rather than the family, because the LX6 in an ESP32 and the LX7 in this one are configured
+differently enough that a compiler built for one does not serve the other.
+
+**FreeRTOS owns `main` and calls `app_main`**, which puts this binding in the same shape as
+the STM32Cube one: the program is entered from outside, so this side names no entry point
+and the program's translation unit is named after the program. The second stage is a cmake
+project the SDK's own `project.cmake` drives, and the declaration the first stage makes
+everywhere — *these are the translation units this program reached for* — is one
+`idf_component_register`.
+
+**What the first stage already knew turned out to be exactly what this build system asks
+for.** ESP-IDF ships each driver as a component of its own, and a component nothing
+requires is never configured, never compiled and never linked — so the split between the
+units a program touched and the ones it did not carries straight through into somebody
+else's build system, unchanged: `samples/blink.rb` requires `esp_driver_gpio` and nothing
+else, and `ref.rb` builds no GPIO driver at all. It is the same boundary the Arduino
+binding meets by gathering sources into a sketch directory, met here by a list of names.
+
+**Every pin this binding needs a number for is a definition the build hands the compiler**
+— the indicator's, the two I2C buses', the pins each serial line comes out on — so the
+units are written in terms of names and the next board through this binding is a file in
+`machine/` and nothing else.
+
+Three of the SDK's answers had to be taken as they are, and the binding's
+[README](gems/bareruby_prot-binding-esp_idf/README.md) records them:
+
+- **The receive queue is the driver's, and opening the line buys it.** ESP-IDF will not
+  send on a line whose driver is not installed, and installing one allocates the receive
+  ring — so a program that only writes pays for a queue it never reads, which on a board
+  whose ring the binding owns it does not. `rx_buffer_size:` is honoured above the
+  hardware FIFO the driver drains and **refused below it**, at the second stage, naming
+  the keyword — a program that asked for 64 and silently got 129 has been told something
+  untrue about its board.
+- **A peek holds one byte outside that queue**, because the driver takes a byte off its
+  ring and cannot put it back.
+- **A break is the pin rather than the line.** This driver only sends a break after a
+  payload it is sending, so `break` takes the transmit pin back as an output, holds it low
+  for the span asked for, and hands it to the line again — the span exactly, and nothing on
+  the wire the program did not write.
+
+### What the SDK has to have present, and what it compiles, are two different lists
+
+The most useful thing this binding found is not about the chip. **ESP-IDF reads every
+component it can see before it chooses the ones a program reached**, and a component whose
+sources are missing stops that reading rather than being passed over. So the twenty-three
+submodules the SDK carries — a Bluetooth stack, a Wi-Fi stack, Thread, MQTT, a test
+framework, the radio blobs for five chips that are not this one — all have to be on disk
+for a build that compiles none of them. Naming only the three a build reaches gets as far
+as MQTT refusing to be looked at, and then lwip.
+
+They are named in the lock anyway, all twenty-three, each at the commit this release
+records. What that buys is not a shorter list but a smaller one: the SDK's own answer to a
+missing submodule is to fetch a whole history, one at a time, and **it leaves 8.2 GB where
+the same twenty-three commits fetched at one commit each weigh 1.9 GB**. The compilers are
+deliberately *not* pinned beside them — ESP-IDF installs its own from a table inside the
+pinned checkout, so the commit pins the compiler as exactly as it pins the headers, and a
+second answer here could only disagree with the first. Four of the dozen tools it offers
+are asked for: the Xtensa compiler, cmake, ninja, and the ROM symbol files the SDK reads.
+1.4 GB of tools, and a fetch of about 71 seconds for the checkout on this desk.
+
+### Two ports, and only one of them can be written
+
+The board's two USB sockets are not two ways to do one thing. The CH343 bridge reaches
+UART0 and is where `puts` arrives; writing through it needs the two transistors that turn
+DTR and RTS into the chip's EN and IO0, and **on this board that path does not answer at
+all** — `esptool` finds the port and gets no serial data back, at any polarity of the two
+lines, with or without a reset attempt. The other socket is the chip's own USB peripheral,
+which needs no such circuit because the ROM drives it directly: connecting to it succeeds
+first time, every time, with no button held.
+
+**A board written through its own USB then comes back still waiting to be written.** The
+only reset that can be driven over that peripheral is the peripheral's own, and the chip
+takes it as another request to be flashed — `rst:0x15 (USB_UART_CHIP_RESET), boot:0x0
+(DOWNLOAD)`, over and over, with the program that was just written sitting unread in
+flash. What boots it is a reset from underneath the peripheral: the RTC watchdog. So the
+binding chooses which reset to ask for by which port it is writing, and a board written
+over its own USB runs what it was given without anyone touching it. A bridge chip holds
+the reset pin itself and has neither problem.
+
+Both sockets attached at once is the arrangement that works, and the discovery says so by
+finding two candidates and refusing to guess between them — which is what `boards:` in
+`target.yml` is for.
+
+### What a board is given
+
+ESP-IDF writes three images — a bootloader at 0, a partition table at 0x8000 and the
+program at 0x10000. Everything downstream of a build here is one artifact, so the toolchain
+merges the three into the single image those offsets describe and writing a board is one
+file at offset zero; the offsets stay the build's answer, and nothing on the flashing side
+carries a number of its own. The port is found by asking which of this desk's serial ports
+was brought up by a bridge an ESP32 board is reached through, and `boards:` in
+`target.yml` names one only when that answer is more than one.
+
+### What it costs
+
+`samples/heartbeat.rb`, which is `OnboardLED` and two sleeps, against `ref.rb`, which is
+the representative program:
+
+| build | `text` | `data` | `bss` | app image | merged image |
+| --- | --- | --- | --- | --- | --- |
+| `heartbeat`, debug | 169801 | 60452 | 378641 | 230368 | 295904 |
+| `heartbeat`, debug, `--no-exceptions` | 158433 | 59048 | 378225 | 217600 | 283136 |
+| `heartbeat`, release | 150371 | 56944 | 370837 | 207424 | 272960 |
+| `heartbeat`, release, `--no-exceptions` | 139167 | 55556 | 370913 | 194832 | 260368 |
+| `blink`, debug | 153809 | 54500 | 372433 | 208432 | 273968 |
+| `features`, debug | 150265 | 53932 | 372433 | 204320 | 269856 |
+| `ref.rb`, debug | 149369 | 53772 | 372409 | 203264 | 268800 |
+| `ref.rb`, release | 132587 | 50664 | 365745 | 183360 | 248896 |
+
+**Almost none of that is the program.** The difference between `ref.rb` and `heartbeat` is
+20 KB of image, and the 130 KB underneath both is FreeRTOS, the console, the heap and the
+startup this chip is entered through — a floor no board here has had before, and the price
+of a binding whose SDK brings an operating system with it. Exceptions cost 11–12 KB of
+`text` on this target, which is the same order as the Pico's. A build takes about 15
+seconds after the first, which pays 3 minutes to configure.
+
+### What is deliberately not here
+
+- **No `target attach`.** These boards carry no name of their own, so there is nothing to
+  write into one and nothing to ask for; the binding declares no `board`, and the command
+  says so rather than pretending.
+- **No emulation.** There is no Renode machine for this chip here, so `emulate` is not
+  offered.
+- **The converter is not calibrated.** `read` is twelve bits scaled over the 3.1 V the
+  widest attenuation reaches, and that attenuation is also the least linear. ESP-IDF can
+  apply a per-chip correction and this does not.
+- **No PSRAM.** The module carries 8 MB of it and nothing here asks for it.
+- **A fifth PWM line shares a timer.** There are eight LEDC channels and four timers, so a
+  fifth and sixth line take an earlier line's frequency with them.
+
+### What has run
+
+Every unit compiles and links for this board: `samples/blink.rb`, `adc.rb`, `servo.rb`,
+`i2c.rb`, `interrupt.rb`, `uart_receive.rb`, `uart_buffered.rb`, `uart_flow_control.rb`,
+`features.rb`, `heartbeat.rb` and `ref.rb` all build through to a merged image. Every
+sample and `ref.rb` still compile for every other recorded target, the hosted check still
+answers 39/39, and two compilations of `ref.rb` leave 205 identical files.
+
+**It has run on real hardware.** The board is an ESP32-S3 (QFN56) revision v0.2 with
+16 MB of flash and 8 MB of embedded PSRAM, written over the chip's own USB and read back
+over the CH343 bridge at 115200. `samples/features.rb`, `samples/string.rb` and
+`samples/fixed.rb` printed on the board exactly what they print on the host — 15, 14 and
+12 lines, diffed line for line — which puts the arena, the variable-length string runtime
+and the fixed-point arithmetic on Xtensa with nothing changed for it. The bootloader
+reports what the build asked for: `SPI Flash Size : 16MB`, `SPI Mode : DIO`, ESP-IDF
+v5.5.5, `GPIO 44 and 43 are used as console UART I/O pins`.
+
+**`samples/heartbeat.rb` blinks the board's indicator** at the 100 ms on / 900 ms off it
+asks for, observed on the board. That is the first time `OnboardLED` has been answered by
+something that is not a pin at all: this indicator is one WS2812 on GPIO48, twenty-four
+bits of colour at a bit period no loop of stores can keep, driven by the transmitter that
+exists for exactly that. The class the program says is the same one a Pico and a NUCLEO
+answer — `on`, `off`, `write` — and the program that blinks says nothing about which of
+the three it is running on.
+
+**The flash size was wrong until the chip said so.** The module was taken for the 8 MB
+part and is the N16R8, so `machine/` said 8 MB and the image header did too — a board with
+half its flash unreachable and nothing to say it. `esptool` reads the size off the chip,
+which is what settled it.
