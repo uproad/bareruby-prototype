@@ -400,6 +400,7 @@ Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
 | `stm32-nucleo-f401re` | NUCLEO-F401RE | STM32F401RE |
 | `stm32-f4discovery` | STM32F4DISCOVERY | STM32F407VG |
 | `arduino-mega2560` | Arduino Mega 2560 | ATmega2560 |
+| `freenove-esp32-s3-wroom` | FREENOVE ESP32-S3-WROOM | ESP32-S3 |
 
 These are what `target add` offers and what the manifest records. An entry does not name
 one — it writes out the three answers a composition is made of, because no one of them
@@ -474,9 +475,12 @@ somewhere else.
 │   ├── arduino-cli-1.5.2-rc.1/
 │   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
 │   └── downloads/
-└── pico_sdk/
-    ├── pico-sdk-2.3.0/
-    └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+├── pico_sdk/
+│   ├── pico-sdk-2.3.0/
+│   └── picotool-2.3.0/                 # the SDK fetches and builds this itself
+└── esp_idf/
+    ├── esp-idf-v5.5.5/                 # the checkout, every submodule at one commit
+    └── tools-v5.5.5/                   # the compiler, cmake, ninja, ROM symbols, python
 ```
 
 `common/` is for what more than one binding reaches for: the Pico boards and the NUCLEO
@@ -510,8 +514,8 @@ partly this project's — the CubeMX project a build is made against:
 
 A desk that keeps its own copies elsewhere says so through the environment, and what is
 set there wins: `PICO_SDK_PATH`, `PICO_TOOLCHAIN_PATH`, `PICOTOOL_FETCH_FROM_GIT_PATH`,
-`ARM_TOOLCHAIN_PATH`, `ARDUINO_DIRECTORIES_DATA` and its two companions, and an
-`arduino-cli` already on `PATH`. Toolchain output is shown only when a step fails.
+`ARM_TOOLCHAIN_PATH`, `ARDUINO_DIRECTORIES_DATA` and its two companions, an
+`arduino-cli` already on `PATH`, and `IDF_PATH` and `IDF_TOOLS_PATH`. Toolchain output is shown only when a step fails.
 
 What is not fetched is what the desk brings to any work at all: `ruby`, `make`, `cmake`,
 `git`. Only Ruby is needed for the first stage — Prism ships with Ruby 4.0. Every run
@@ -628,6 +632,46 @@ timeout 6 cat /dev/ttyACM2
 
 There is no `--debug` here and nothing to turn on: the console is a bridge chip of the
 board's own, so `puts` reaches it in every build.
+
+### FREENOVE ESP32-S3-WROOM, through ESP-IDF
+
+Two things are fetched and neither is asked for: the pinned ESP-IDF checkout with every one
+of its submodules at the commit that release records, and the four tools it installs for
+itself. 1.9 GB for the checkout and 1.4 GB for the tools, onto the desk's shelf rather than
+into the project, so the second project pays nothing.
+
+```
+bareruby: fetching esp-idf-v5.5.5 into ~/.bareruby/tools
+bareruby:   https://github.com/espressif/esp-idf @ v5.5.5
+bareruby: fetching the ESP-IDF v5.5.5 toolchain into ~/.bareruby/tools
+bareruby:   ~/.bareruby/tools/esp_idf/esp-idf-v5.5.5/tools/idf_tools.py install
+```
+
+**Every submodule is named here rather than left to the SDK**, and that is worth knowing
+before the first build: ESP-IDF reads every component it can see before it chooses the ones
+a program reached, so all twenty-three have to be on disk for a build that compiles three
+of them. Left to fetch its own it pulls whole histories one at a time and leaves 8.2 GB.
+
+A desk that has its own says so and nothing is fetched: `IDF_PATH` covers the checkout and
+`IDF_TOOLS_PATH` covers the tools. Both are read before anything reaches the network.
+
+`./bareruby flash --target=esp32s3` writes one image at offset zero — the bootloader, the
+partition table and the program, merged by the build that decided where each goes — over
+the board's serial port, found by asking which of this desk's ports was brought up by a
+bridge an ESP32 board is reached through. `boards:` in `target.yml` names a port only when
+more than one could be that board.
+
+There is no `--debug` here and nothing to turn on: the console is a bridge chip of the
+board's own, so `puts` reaches it in every build, at 115200:
+
+```sh
+stty -F /dev/ttyACM0 115200 raw -echo
+timeout 6 cat /dev/ttyACM0
+```
+
+What `--debug` does buy is the optimizer's answer — a debug build is about 20 KB larger —
+and `--no-exceptions` is a real choice here rather than a requirement, as it is on a Pico
+and unlike on the Arduino core.
 
 ## Flashing a Pico
 
@@ -939,6 +983,9 @@ which lists what each one covers. `ref.rb` stays at the root because it is what
 | arm-none-eabi-g++ | 13.2.Rel1 (ARM official release) |
 | cmake | 4.4.0 |
 | arduino-cli | 1.5.2-rc.1 |
+| ESP-IDF | v5.5.5 |
+| xtensa-esp-elf-g++ | 14.2.0 (esp-14.2.0_20260121) |
+| esptool | 4.12.0 |
 | arduino:avr core | 1.8.8 |
 | avr-g++ | 7.3.0 (atmel3.6.1-arduino7) |
 | STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
