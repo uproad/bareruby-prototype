@@ -1366,6 +1366,12 @@ Of the four Pico board targets, **`raspberry-pi-pico` and `raspberry-pi-pico2-w`
 real hardware**; `raspberry-pi-pico-w` and `raspberry-pi-pico2` are built but not run,
 because neither board is here.
 
+`freenove-esp32-s3-wroom` has run on real hardware, written over the chip's own USB;
+`samples/features.rb`, `samples/string.rb` and `samples/fixed.rb` matched the host line for
+line over the board's CH343 console. The board's other route to the chip — writing through
+that same bridge — does not answer on this board and is recorded as not working rather than
+as untried.
+
 `arduino-mega2560` has run on real hardware as well. `samples/heartbeat.rb` blinks the
 board's LED at the 100 ms on / 900 ms off it asks for; `samples/features.rb`,
 `samples/fixed.rb` and `samples/string.rb` printed over the board's serial port and were
@@ -1977,9 +1983,10 @@ was built but not hardware-flashed.
 
 ## A fourth binding, and the first instruction set that is neither Arm nor AVR
 
-`freenove-esp32-s3-wroom` — an ESP32-S3-WROOM-1 module, two Xtensa LX7 cores at 240 MHz
-with 8 MB of flash, on a FREENOVE board that brings its serial port out through a CH343
-bridge and its indicator out as one addressable RGB device. It is reached through ESP-IDF
+`freenove-esp32-s3-wroom` — an ESP32-S3-WROOM-1 N16R8 module, two Xtensa LX7 cores at
+240 MHz with 16 MB of flash and 8 MB of PSRAM, on a FREENOVE board that brings its serial
+port out **twice** — through a CH343 bridge and through the chip's own USB — and its
+indicator out as one addressable RGB device. It is reached through ESP-IDF
 v5.5.5, pinned by tag and commit, and it is the fourth binding and the fourth instruction
 set: `xtensa-esp32s3-elf` beside two Arm profiles and an AVR. The triple names the chip
 rather than the family, because the LX6 in an ESP32 and the LX7 in this one are configured
@@ -2040,6 +2047,29 @@ second answer here could only disagree with the first. Four of the dozen tools i
 are asked for: the Xtensa compiler, cmake, ninja, and the ROM symbol files the SDK reads.
 1.4 GB of tools, and a fetch of about 71 seconds for the checkout on this desk.
 
+### Two ports, and only one of them can be written
+
+The board's two USB sockets are not two ways to do one thing. The CH343 bridge reaches
+UART0 and is where `puts` arrives; writing through it needs the two transistors that turn
+DTR and RTS into the chip's EN and IO0, and **on this board that path does not answer at
+all** — `esptool` finds the port and gets no serial data back, at any polarity of the two
+lines, with or without a reset attempt. The other socket is the chip's own USB peripheral,
+which needs no such circuit because the ROM drives it directly: connecting to it succeeds
+first time, every time, with no button held.
+
+**A board written through its own USB then comes back still waiting to be written.** The
+only reset that can be driven over that peripheral is the peripheral's own, and the chip
+takes it as another request to be flashed — `rst:0x15 (USB_UART_CHIP_RESET), boot:0x0
+(DOWNLOAD)`, over and over, with the program that was just written sitting unread in
+flash. What boots it is a reset from underneath the peripheral: the RTC watchdog. So the
+binding chooses which reset to ask for by which port it is writing, and a board written
+over its own USB runs what it was given without anyone touching it. A bridge chip holds
+the reset pin itself and has neither problem.
+
+Both sockets attached at once is the arrangement that works, and the discovery says so by
+finding two candidates and refusing to guess between them — which is what `boards:` in
+`target.yml` is for.
+
 ### What a board is given
 
 ESP-IDF writes three images — a bootloader at 0, a partition table at 0x8000 and the
@@ -2095,9 +2125,16 @@ Every unit compiles and links for this board: `samples/blink.rb`, `adc.rb`, `ser
 sample and `ref.rb` still compile for every other recorded target, the hosted check still
 answers 39/39, and two compilations of `ref.rb` leave 205 identical files.
 
-**It has not been flashed.** The board on this desk answers as a CH343 bridge on
-`/dev/ttyACM0` and does not respond to the download-mode reset that bridge is meant to
-carry — `esptool` finds the port and gets no serial data back from the chip, with or
-without a reset attempt, at any polarity of DTR and RTS. Built, not hardware-flashed: the
-indicator's pin, the console's arrival and everything below the second stage are unproved
-until a board answers.
+**It has run on real hardware.** The board is an ESP32-S3 (QFN56) revision v0.2 with
+16 MB of flash and 8 MB of embedded PSRAM, written over the chip's own USB and read back
+over the CH343 bridge at 115200. `samples/features.rb`, `samples/string.rb` and
+`samples/fixed.rb` printed on the board exactly what they print on the host — 15, 14 and
+12 lines, diffed line for line — which puts the arena, the variable-length string runtime
+and the fixed-point arithmetic on Xtensa with nothing changed for it. The bootloader
+reports what the build asked for: `SPI Flash Size : 16MB`, `SPI Mode : DIO`, ESP-IDF
+v5.5.5, `GPIO 44 and 43 are used as console UART I/O pins`.
+
+**The flash size was wrong until the chip said so.** The module was taken for the 8 MB
+part and is the N16R8, so `machine/` said 8 MB and the image header did too — a board with
+half its flash unreachable and nothing to say it. `esptool` reads the size off the chip,
+which is what settled it.

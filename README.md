@@ -108,9 +108,9 @@ goes is [further down](#what-a-build-reaches-for), and so is what every verb doe
 
 ## What it has answered
 
-The pipeline runs end to end, on real hardware, for three instruction sets — an RP2040
-and an RP2350 through pico-sdk, a NUCLEO-F446RE through the STM32Cube HAL, and an
-eight-bit ATmega2560 through the Arduino core. The language reaches M4, and the compiler
+The pipeline runs end to end, on real hardware, for four instruction sets — an RP2040 and
+an RP2350 through pico-sdk, a NUCLEO-F446RE through the STM32Cube HAL, an eight-bit
+ATmega2560 through the Arduino core, and an Xtensa LX7 ESP32-S3 through ESP-IDF. The language reaches M4, and the compiler
 itself holds no peripheral and no board: bindings and standard classes arrive as gems, and
 uninstalling one takes its machines away and leaves everything else compiling.
 
@@ -655,11 +655,21 @@ of them. Left to fetch its own it pulls whole histories one at a time and leaves
 A desk that has its own says so and nothing is fetched: `IDF_PATH` covers the checkout and
 `IDF_TOOLS_PATH` covers the tools. Both are read before anything reaches the network.
 
+**This board has two USB sockets and they do different things.** One is a CH343 bridge on
+UART0, which is where `puts` arrives. The other is the chip's own USB peripheral, which is
+what gets written: it needs no auto-reset circuit and no button held, and on this board the
+bridge's own path into download mode does not answer at all. Attach both.
+
 `./bareruby flash --target=esp32s3` writes one image at offset zero — the bootloader, the
-partition table and the program, merged by the build that decided where each goes — over
-the board's serial port, found by asking which of this desk's ports was brought up by a
-bridge an ESP32 board is reached through. `boards:` in `target.yml` names a port only when
-more than one could be that board.
+partition table and the program, merged by the build that decided where each goes. With
+both sockets attached the discovery finds two candidates and refuses to guess, which is
+what `boards:` in `target.yml` is for: name the chip's own port there.
+
+**A board written over its own USB needs the right reset or it never runs what it was
+given.** The only reset that peripheral can be asked for is its own, and the chip takes it
+as another request to be flashed; the RTC watchdog is a reset from underneath it, and that
+is what boots the program. The binding picks by which port it is writing, so nothing has to
+be typed.
 
 There is no `--debug` here and nothing to turn on: the console is a bridge chip of the
 board's own, so `puts` reaches it in every build, at 115200:

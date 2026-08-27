@@ -12,9 +12,10 @@ cmake project the SDK's own `project.cmake` drives, and what the first stage dec
 everywhere — *these are the translation units this program reached for* — is what one
 `idf_component_register` says here.
 
-`freenove-esp32-s3-wroom` is the board this was proved on: an ESP32-S3-WROOM-1 module,
-two Xtensa LX7 cores at 240 MHz, 8 MB of flash, with its serial port brought out through a
-CH343 bridge and its indicator brought out as a single addressable RGB device.
+`freenove-esp32-s3-wroom` is the board this was proved on: an ESP32-S3-WROOM-1 N16R8
+module, two Xtensa LX7 cores at 240 MHz, 16 MB of flash and 8 MB of PSRAM, with its serial
+port brought out twice — through a CH343 bridge and through the chip's own USB — and its
+indicator brought out as a single addressable RGB device.
 
 ## Which of the SDK a build compiles
 
@@ -91,3 +92,12 @@ own offset in flash. Everything downstream of a build here is one artifact, so t
 toolchain merges the three into the single image those offsets describe, and writing a
 board is one file at offset zero. The offsets stay the build's answer; nothing on the
 flashing side carries a number of its own.
+
+**Which port, and which reset.** A board of this family can bring its serial port out
+twice: through a USB-to-serial bridge, and through the chip's own USB peripheral. The
+second needs no auto-reset circuit and no button held, which makes it the one that can
+always be written — but the only reset that can be driven over it is its own, and the chip
+takes that as another request to be flashed. So a board written there is reset by the RTC
+watchdog instead, which is a reset from underneath the peripheral, and it boots what it was
+just given. A bridge chip holds the reset pin itself and takes the ordinary reset. The
+binding decides by the port's USB vendor, so nothing has to be said.
