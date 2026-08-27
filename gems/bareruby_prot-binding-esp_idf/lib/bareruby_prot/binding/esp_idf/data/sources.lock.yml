@@ -1,0 +1,75 @@
+# Everything an ESP-IDF build reaches for that this gem does not carry: where it comes
+# from, which version it is, and where it lands in the store. `bareruby tools install`
+# reads this file and nothing else downloads.
+#
+# Nothing here says `latest`. The SDK is pinned by tag and commit, because a tag that has
+# been moved is the failure a tag alone cannot see. A desk that keeps its own copy says so
+# through the environment, and then nothing here is read.
+#
+# **The compilers are not pinned here, and that is not an omission.** ESP-IDF installs its
+# own with `idf_tools.py`, against a table inside the checkout — so the commit above pins
+# the compiler as exactly as it pins the headers, and writing the versions down a second
+# time here would be a second answer that can disagree with the first. It is the same
+# shape as the Arduino core: what the ecosystem has never heard of, it is not asked to do.
+# What is written down is which of them a build needs, and where each keeps its commands.
+sdk:
+  github: espressif/esp-idf
+  tag: v5.5.5
+  commit: b774170ff46c393eeb5e495ea37936038d3f4f4f
+  directory: esp_idf/esp-idf-v5.5.5
+  # **Every submodule the SDK has, pinned by the commit this release records.** The three
+  # a build here actually reaches are the allocator the heap is built on, the cryptography
+  # the bootloader and the TLS layer are, and the curve a signature is verified with. The
+  # other twenty are a Bluetooth stack, a Wi-Fi stack, Thread, a test framework and the
+  # radio blobs for five chips that are not this one, and none of them is reachable from
+  # anything this compiler can be asked for.
+  #
+  # **They are here anyway, because the SDK reads every component before it chooses the
+  # ones a program reached.** A component whose sources are missing stops that reading
+  # rather than being passed over, so what a build needs present and what it compiles are
+  # two different lists — and the second is no help in writing the first.
+  #
+  # Naming them is still worth doing rather than leaving the SDK to fetch its own. It
+  # fetches whole histories, one at a time, for anything it finds missing; these are
+  # fetched at one commit each, which is what turns 8.2 GB into 1.9 GB.
+  submodules:
+    components/bootloader/subproject/components/micro-ecc/micro-ecc: 24c60e243580c7868f4334a1ba3123481fe1aa48
+    components/bt/controller/lib_esp32: b4b7c54b1eab6a844789b69e56322ef5736eddc8
+    components/bt/controller/lib_esp32c2/esp32c2-bt-lib: 6a5c0b8bfca1a2e984e89431b8ebf9b521dad5ea
+    components/bt/controller/lib_esp32c3_family: 0a08c4b32f3666003080b662a1a61794da24ff0f
+    components/bt/controller/lib_esp32c5/esp32c5-bt-lib: c328228f53fe167cc9fbd05b5bef37158f64956d
+    components/bt/controller/lib_esp32c6/esp32c6-bt-lib: e7be018522c85e67c298effc8ffa7f5b84887a7b
+    components/bt/controller/lib_esp32h2/esp32h2-bt-lib: b2b8fd009c31816497d55726af297761147beb07
+    components/bt/esp_ble_mesh/lib/lib: e44762384ed104a0ebc78f134eeba5f3ab648ddc
+    components/bt/host/nimble/nimble: 685675c0128deafdd201c9eb82e61d227364646c
+    components/cmock/CMock: eeecc49ce8af123cf8ad40efdb9673e37b56230f
+    components/esp_coex/lib: 79e618f033e926d134decc6d95bb1b1850bd032c
+    components/esp_phy/lib: 59c1234e929212aec0fdda75769b759951235536
+    components/esp_wifi/lib: 22bb3517b08760ed43b889013f8a122db0d46da0
+    components/heap/tlsf: 2867f6883a12920b1969ff9624c0ab0e4185c2ce
+    components/json/cJSON: b2890c8d76bbb64e710585ebc0a917196b9c67e7
+    components/lwip/lwip: fd432e4ee2cfb7f7f1c7eb7227e0173412e7b84e
+    components/mbedtls/mbedtls: 9d669eadb1955d348986b9280156710aaaadf79f
+    components/mqtt/esp-mqtt: 0e9ec171b448db2101ea537300976b7ffe595941
+    components/openthread/lib: 33209823e559560f54dcd41cbf3dbdd27f46d569
+    components/openthread/openthread: b678a4f63b6f9397d1a0fa8f31e5b8e0271a4d00
+    components/protobuf-c/protobuf-c: abc67a11c6db271bedbb9f58be85d6f4e2ea8389
+    components/spiffs/spiffs: ad902cadceb39d0825a97e25ecb5867641f606ba
+    components/unity/unity: bf560290f6020737eafaa8b5cbd2177c3956c03f
+
+tools:
+  directory: esp_idf/tools-v5.5.5
+  # Four of the dozen ESP-IDF offers. The debugger, the on-chip debug probe and the RISC-V
+  # compiler are not reached by anything here: a board is written over its serial port and
+  # read back over the same one.
+  #
+  # A tool is here for one of two reasons, and they are kept apart because a build meets
+  # them differently. Three are run, and what is written down is where under the version
+  # directory their commands are. The fourth is read — the SDK looks in it for what the
+  # chip's own ROM exports — so what is written down is the variable that names it.
+  commands:
+    xtensa-esp-elf: xtensa-esp-elf/bin
+    cmake: bin
+    ninja: .
+  named:
+    esp-rom-elfs: ESP_ROM_ELF_DIR

@@ -1,0 +1,6 @@
+# What `bareruby target add` offers for this binding, and what it needs beyond a machine.
+key: esp32
+label: Espressif ESP32
+targets:
+  - freenove-esp32-s3-wroom
+asks: []

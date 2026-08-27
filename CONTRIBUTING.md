@@ -13,13 +13,13 @@ change to it.
 bareruby                  the entrance while working in the checkout
 ref.rb                    the default program `bareruby compile` takes
 samples/                  the programs each milestone was proved with
-reserved/                 notes for bindings that do not exist yet — ESP-IDF, UEFI, WASI
+reserved/                 notes for bindings that do not exist yet — UEFI, WASI
 config/                   target.yml.sample, and target.yml if this desk made one
 vscode/                   the panel that shows what the hosted machine did, and what feeds it
 gems/
 ├── bareruby_prot-compiler/          the first stage: every pass, the IRs, the runtime
 ├── bareruby_prot/                   everything after it: the executable, target.yml, flashing
-├── bareruby_prot-binding-*/         pico_sdk, arduino, stm32cube
+├── bareruby_prot-binding-*/         pico_sdk, arduino, stm32cube, esp_idf
 ├── bareruby_prot-stdlib-*/          gpio, pwm, adc, uart, i2c, onboard_led
 └── bareruby_prot-simulator/         the host build interpreted, with the desk's own peripherals
 ```
