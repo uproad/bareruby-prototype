@@ -38,8 +38,9 @@ next board through this binding is a file in `machine/` and nothing else.
   not send on a line whose driver is not installed, and installing one allocates its
   receive ring — so a program that only writes pays for a queue it never reads, which on a
   board whose ring this binding owned it would not. `UART.new(..., rx_buffer_size: n)` is
-  honoured, except that the driver will not take a queue smaller than the hardware FIFO it
-  drains: anything under 129 bytes is raised to that.
+  honoured above the hardware FIFO the driver drains, and **refused below it**: a program
+  that asked for 64 bytes and silently got 129 has been told something untrue about the
+  board it is running on, so the build stops where the number is.
 - **A peek holds a byte outside the queue.** The driver takes a byte off its ring and
   cannot put it back, so looking at what is next without taking it keeps one byte here.
   `bytes_available` counts it, and `clear_rx_buffer` discards it.

@@ -211,15 +211,19 @@ module BareRubyProt
       #include "freertos/task.h"
 
       /* What this binding gives when the program did not ask. A program that asks reaches
-         the same name from the header, settled where the call was written. The driver
-         will not take a queue smaller than the hardware FIFO it drains, so a smaller
-         answer is raised to what it will take. */
+         the same name from the header, settled where the call was written.
+
+         **A size this driver will not take is refused rather than substituted.** It will
+         not hold a queue smaller than the hardware FIFO it drains, and a program that
+         asked for 64 bytes and silently got 129 has been told something untrue about the
+         board it is running on. The build stops here instead, where the number is. */
       #ifndef BARERUBY_UART_RX_BUFFER_SIZE
       #define BARERUBY_UART_RX_BUFFER_SIZE 256
+      #else
+      #if BARERUBY_UART_RX_BUFFER_SIZE <= 128
+      #error "rx_buffer_size: this driver will not hold a queue smaller than the hardware FIFO it drains, which is 128 bytes"
       #endif
-
-      #define BARERUBY_UART_RX_QUEUE \\
-          (BARERUBY_UART_RX_BUFFER_SIZE > 128 ? BARERUBY_UART_RX_BUFFER_SIZE : 129)
+      #endif
 
       static uart_port_t bareruby_uart_port(const bareruby_uart_t *self) {
           return (uart_port_t)self->unit;
@@ -276,7 +280,7 @@ module BareRubyProt
           if (!uart_is_driver_installed(port)) {
               /* No send queue: a write reaches the wire before it returns, which is what
                  lets bytes_to_write answer about the hardware alone. */
-              uart_driver_install(port, BARERUBY_UART_RX_QUEUE, 0, 0, NULL, 0);
+              uart_driver_install(port, BARERUBY_UART_RX_BUFFER_SIZE, 0, 0, NULL, 0);
           }
       }
 

@@ -2020,7 +2020,9 @@ Three of the SDK's answers had to be taken as they are, and the binding's
   send on a line whose driver is not installed, and installing one allocates the receive
   ring — so a program that only writes pays for a queue it never reads, which on a board
   whose ring the binding owns it does not. `rx_buffer_size:` is honoured above the
-  hardware FIFO's 128 bytes and raised to it below.
+  hardware FIFO the driver drains and **refused below it**, at the second stage, naming
+  the keyword — a program that asked for 64 and silently got 129 has been told something
+  untrue about its board.
 - **A peek holds one byte outside that queue**, because the driver takes a byte off its
   ring and cannot put it back.
 - **A break is the pin rather than the line.** This driver only sends a break after a
