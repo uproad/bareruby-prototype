@@ -2,18 +2,20 @@
 
 module BareRubyProt
   module EspIdfBinding
-    # FREENOVE ESP32-S3-WROOM. An ESP32-S3-WROOM-1 module — Xtensa LX7, two cores at
-    # 240 MHz, 8 MB of flash — on a board that brings its serial port out through a CH343
-    # bridge and its indicator out as a single addressable RGB device rather than a pin.
+    # FREENOVE ESP32-S3-WROOM. An ESP32-S3-WROOM-1 N16R8 module — Xtensa LX7, two cores at
+    # 240 MHz, 16 MB of flash and 8 MB of PSRAM — on a board that brings its serial port
+    # out twice, through a CH343 bridge and through the chip's own USB, and its indicator
+    # out as a single addressable RGB device rather than as a pin.
     module Esp32S3Wroom
       # What ESP-IDF calls the chip. It is the SDK's word rather than the board's: the
       # same board reached through another ecosystem would be spelled differently, and
       # this is what picks the compiler, the linker script and the register headers.
       def self.idf_target = "esp32s3"
 
-      # How much flash the module carries. The image says so in its own header, and a
-      # bootloader that finds a different answer there refuses to run.
-      def self.flash_size = "8MB"
+      # How much flash the module carries, as the chip reports it. The image says so in
+      # its own header, and a bootloader that finds a smaller answer there than the chip
+      # has is a board with flash nobody can reach.
+      def self.flash_size = "16MB"
 
       # The indicator is one WS2812 rather than a pin, so it is the RGB unit that answers
       # for this board.
