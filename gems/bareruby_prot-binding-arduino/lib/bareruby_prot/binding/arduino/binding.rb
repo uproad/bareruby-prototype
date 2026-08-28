@@ -56,7 +56,11 @@ module BareRubyProt
       /* The converter here is 10 bits against a 5 V reference, where a Pico's is 12 bits
          against 3.3 V, and the channel is the analog input's own number rather than a
          pin's distance from the first of them. read answers volts either way, which is
-         what keeps a program that reads a voltage from carrying the board's numbers. */
+         what keeps a program that reads a voltage from carrying the board's numbers.
+
+         The divisor is widened before it is multiplied out. An int is 16 bits here, and
+         1023 * 1000 written as two ints is not 1023000 — so every voltage this board
+         reported was wrong, and nothing had read one to see it. */
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
           self->pin = pin;
           self->channel = pin;
@@ -68,7 +72,7 @@ module BareRubyProt
 
       int32_t bareruby_adc_read(bareruby_adc_t *self) {
           int64_t raw = (int64_t)bareruby_adc_read_raw(self);
-          return (int32_t)((raw * 5000 * 65536) / (1023 * 1000));
+          return (int32_t)((raw * 5000 * 65536) / ((int64_t)1023 * 1000));
       }
     CPP
 
