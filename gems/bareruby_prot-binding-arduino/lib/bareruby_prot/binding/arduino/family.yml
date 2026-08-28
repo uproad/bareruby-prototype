@@ -3,4 +3,5 @@ key: arduino
 label: Arduino
 targets:
   - arduino-mega2560
+  - freenove-esp32-s3-wroom-arduino
 asks: []

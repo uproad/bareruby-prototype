@@ -18,20 +18,35 @@ module BareRubyProt
       #include <stdio.h>
       #include <string.h>
 
+      /* **Whether a frequency can be obeyed is the core's answer, and it is not the same
+         answer on both architectures this binding reaches.** An AVR's analogWrite takes
+         its frequency from whichever timer the pin sits on and offers no way to name
+         another, so the number is remembered and nothing else; an ESP32 puts each line on
+         a channel whose frequency is settable, so it is obeyed. Remembering it is what
+         both need, because a pulse width is turned into a duty against it. */
+      static void bareruby_pwm_settle_frequency(bareruby_pwm_t *self, int32_t frequency) {
+          self->frequency = frequency;
+      #ifdef ARDUINO_ARCH_ESP32
+          if (frequency > 0) {
+              analogWriteFrequency((uint8_t)self->pin, (uint32_t)frequency);
+          }
+      #endif
+      }
+
       void bareruby_pwm_init(bareruby_pwm_t *self, int32_t pin, int32_t frequency, int32_t duty) {
           self->pin = pin;
           self->slice = 0;
-          self->frequency = frequency;
           pinMode((uint8_t)pin, OUTPUT);
+          bareruby_pwm_settle_frequency(self, frequency);
           bareruby_pwm_apply_duty(self, duty);
       }
 
       void bareruby_pwm_apply_frequency(bareruby_pwm_t *self, int32_t frequency) {
-          self->frequency = frequency;
+          bareruby_pwm_settle_frequency(self, frequency);
       }
 
       void bareruby_pwm_apply_period_us(bareruby_pwm_t *self, int32_t period_us) {
-          self->frequency = period_us > 0 ? (int32_t)(1000000 / period_us) : 0;
+          bareruby_pwm_settle_frequency(self, period_us > 0 ? (int32_t)(1000000 / period_us) : 0);
       }
 
       void bareruby_pwm_apply_duty(bareruby_pwm_t *self, int32_t duty) {
@@ -53,14 +68,18 @@ module BareRubyProt
       #include <stdio.h>
       #include <string.h>
 
-      /* The converter here is 10 bits against a 5 V reference, where a Pico's is 12 bits
-         against 3.3 V, and the channel is the analog input's own number rather than a
-         pin's distance from the first of them. read answers volts either way, which is
-         what keeps a program that reads a voltage from carrying the board's numbers.
+      /* **How wide the converter is and what it reads full scale are the board's**, and
+         they arrive as definitions: ten bits against a 5 V reference on one of these
+         boards, twelve against the 3.1 V the widest attenuation reaches on the other.
+         read answers volts either way, which is what keeps a program that reads a voltage
+         from carrying the board's numbers.
 
-         The divisor is widened before it is multiplied out. An int is 16 bits here, and
-         1023 * 1000 written as two ints is not 1023000 — so every voltage this board
-         reported was wrong, and nothing had read one to see it. */
+         What a channel is, is the board's too — the analog input's own number on an AVR
+         and the pin's GPIO number on an ESP32 — and analogRead takes whichever of the two
+         that core speaks, so it is passed through as written.
+
+         The divisor is widened before it is multiplied out. An int is 16 bits on one of
+         these machines, and 1023 * 1000 written as two ints does not fit in one. */
       void bareruby_adc_init(bareruby_adc_t *self, int32_t pin) {
           self->pin = pin;
           self->channel = pin;
@@ -72,7 +91,8 @@ module BareRubyProt
 
       int32_t bareruby_adc_read(bareruby_adc_t *self) {
           int64_t raw = (int64_t)bareruby_adc_read_raw(self);
-          return (int32_t)((raw * 5000 * 65536) / ((int64_t)1023 * 1000));
+          return (int32_t)((raw * BARERUBY_ADC_MILLIVOLTS * 65536) /
+                           ((int64_t)BARERUBY_ADC_RESOLUTION * 1000));
       }
     CPP
 
@@ -83,20 +103,70 @@ module BareRubyProt
       #include <stdio.h>
       #include <string.h>
 
-      /* This board carries four of them. Serial is the one on the USB bridge, which is
-         why it is also the console, and 1 through 3 are the pin headers. */
+      /* **How many lines a board brings out is not the same through this core on both
+         architectures.** A Mega has four USARTs and an ESP32-S3 has three, of which this
+         binding reaches the two the board wires up. Unit 0 is the console either way: on
+         one board that is the USB bridge, on the other the pins the bridge chip is on. */
       static HardwareSerial *bareruby_uart_port(const bareruby_uart_t *self) {
           switch (self->unit) {
-          case 1: return &Serial1;
-          case 2: return &Serial2;
+      #ifdef BARERUBY_UART3_TXD_PIN
           case 3: return &Serial3;
+      #endif
+      #ifdef BARERUBY_UART2_TXD_PIN
+          case 2: return &Serial2;
+      #endif
+          case 1: return &Serial1;
           default: return &Serial;
           }
       }
 
-      /* The core spells the whole frame as one byte, and the constants are laid out so
-         that the three fields are separate bits: data bits in 2..1, stop bits in 3,
-         parity in 5..4. Building the byte beats a table of thirty-six names. */
+      /* **Which pin a line comes out on is the board's**, and it arrives as a definition
+         rather than as a number written into this unit — so the next board through this
+         binding is a file in machine/ and nothing else. Two things need it: a break, which
+         no core here offers a call for, and opening a line on an ESP32, where the pins can
+         be moved and therefore have to be said. */
+      static int32_t bareruby_uart_transmit_pin(const bareruby_uart_t *self) {
+          switch (self->unit) {
+      #ifdef BARERUBY_UART3_TXD_PIN
+          case 3: return BARERUBY_UART3_TXD_PIN;
+      #endif
+      #ifdef BARERUBY_UART2_TXD_PIN
+          case 2: return BARERUBY_UART2_TXD_PIN;
+      #endif
+          case 1: return BARERUBY_UART1_TXD_PIN;
+          default: return BARERUBY_UART0_TXD_PIN;
+          }
+      }
+
+      #ifdef ARDUINO_ARCH_ESP32
+      static int32_t bareruby_uart_receive_pin(const bareruby_uart_t *self) {
+          switch (self->unit) {
+          case 1: return BARERUBY_UART1_RXD_PIN;
+          default: return BARERUBY_UART0_RXD_PIN;
+          }
+      }
+      #endif
+
+      /* **The frame is one number, and how it is spelled is the core's.** An AVR lays the
+         three fields out as separate bits of one byte — data bits in 2..1, stop bits in 3,
+         parity in 5..4 — and an ESP32 lays them out differently in a word carrying a
+         marker above them. Building the number beats a table of thirty-six names either
+         way, and that a table would have had to be written twice is the point. */
+      #ifdef ARDUINO_ARCH_ESP32
+      static uint32_t bareruby_uart_configuration(
+          int32_t data_bits, int32_t stop_bits, int32_t parity) {
+          uint32_t configuration = 0x8000000u | (uint32_t)((data_bits - 1) << 2);
+          if (stop_bits == 2) {
+              configuration |= 0x20u;
+          }
+          if (parity == 1) {
+              configuration |= 0x02u;
+          } else if (parity == 2) {
+              configuration |= 0x03u;
+          }
+          return configuration;
+      }
+      #else
       static uint8_t bareruby_uart_configuration(
           int32_t data_bits, int32_t stop_bits, int32_t parity) {
           uint8_t configuration = (uint8_t)((data_bits - 5) << 1);
@@ -110,22 +180,39 @@ module BareRubyProt
           }
           return configuration;
       }
+      #endif
 
       /* What the line is opened with, applied. The constructor and setmode differ only in
          where the values came from, so both end here.
 
-         **Which pins a port is on is the board's, not the program's.** The core reaches a
-         USART's own pins and offers no way to move them, and it has no hardware flow
-         control at all — so a line asked for on other pins, or with RTS/CTS, is a line
-         this board cannot open. It is refused rather than opened somewhere else. */
+         **Which pins a port is on is the board's, not the program's.** One core reaches a
+         USART's own pins and offers no way to move them; the other reaches pins that can
+         be moved, and is told the board's. Neither has hardware flow control here — so a
+         line asked for on other pins, or with RTS/CTS, is a line this binding does not
+         open. It is refused rather than opened somewhere else.
+
+         **How deep the receive queue is, is the core's on one board and the program's on
+         the other.** An ESP32's driver takes a size before the line is opened, so a size
+         the program asked for is given to it here. */
       static void bareruby_uart_apply(bareruby_uart_t *self) {
           if (self->txd_pin >= 0 || self->rxd_pin >= 0 || self->flow_control != 0 ||
               self->rts_pin >= 0 || self->cts_pin >= 0) {
               bareruby_panic("UART: the pins and flow control here are the board's");
           }
+      #ifdef ARDUINO_ARCH_ESP32
+      #ifdef BARERUBY_UART_RX_BUFFER_SIZE
+          bareruby_uart_port(self)->setRxBufferSize(BARERUBY_UART_RX_BUFFER_SIZE);
+      #endif
+          bareruby_uart_port(self)->begin(
+              (unsigned long)self->baudrate,
+              bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity),
+              (int8_t)bareruby_uart_receive_pin(self),
+              (int8_t)bareruby_uart_transmit_pin(self));
+      #else
           bareruby_uart_port(self)->begin(
               (unsigned long)self->baudrate,
               bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
+      #endif
       }
 
       void bareruby_uart_init(
@@ -193,37 +280,33 @@ module BareRubyProt
           return (int32_t)bareruby_uart_port(self)->available();
       }
 
-      /* availableForWrite reports the room left in the core's send ring, so what is still
-         owed is the ring's size less that room, plus the frame in the shift register --
-         which the core does not expose, so it is not counted. */
+      /* availableForWrite reports the room left before a write would wait, so what is
+         still owed is the whole of that room less what is free, plus the frame in the
+         shift register -- which no core here exposes, so it is not counted. **How much
+         room there is, is the core's**: a ring of a size the AVR core names, and on an
+         ESP32 the hardware FIFO the line drains from. */
       int32_t bareruby_uart_bytes_to_write(bareruby_uart_t *self) {
+      #ifdef ARDUINO_ARCH_ESP32
+          return (int32_t)(SOC_UART_FIFO_LEN - bareruby_uart_port(self)->availableForWrite());
+      #else
           return (int32_t)(SERIAL_TX_BUFFER_SIZE - 1 - bareruby_uart_port(self)->availableForWrite());
+      #endif
       }
 
-      /* **The core offers no break at all.** An AVR sends one by taking the pin back from
+      /* **Neither core offers a break at all.** One is sent by taking the pin back from
          the transmitter and holding it low, so that is what this does: drain, release the
-         port, drive the pin, and start it again from what the program asked for -- which
-         is the one place the frame kept in the struct is read back. */
-      static uint8_t bareruby_uart_transmit_pin(const bareruby_uart_t *self) {
-          switch (self->unit) {
-          case 1: return 18;
-          case 2: return 16;
-          case 3: return 14;
-          default: return 1;
-          }
-      }
-
+         port, drive the pin, and open the line again from what the program asked for --
+         which is the one place the frame kept in the struct is read back. */
       void bareruby_uart_break(bareruby_uart_t *self, int32_t milliseconds) {
           HardwareSerial *port = bareruby_uart_port(self);
-          uint8_t pin = bareruby_uart_transmit_pin(self);
+          uint8_t pin = (uint8_t)bareruby_uart_transmit_pin(self);
           port->flush();
           port->end();
           pinMode(pin, OUTPUT);
           digitalWrite(pin, LOW);
           delay((unsigned long)(milliseconds > 0 ? milliseconds : 0));
           digitalWrite(pin, HIGH);
-          port->begin((unsigned long)self->baudrate,
-                      bareruby_uart_configuration(self->data_bits, self->stop_bits, self->parity));
+          bareruby_uart_apply(self);
       }
 
       void bareruby_uart_flush(bareruby_uart_t *self) {
@@ -254,10 +337,12 @@ module BareRubyProt
           bareruby_gpio_interrupt_handler();
       }
 
-      /* This chip has pull-ups and no pull-downs, so a pin asked for one is left plain
-         rather than given the other. What a pin can do is the chip's answer and not the
-         program's, which is the same reason a pin with no converter channel is passed
-         through as written. */
+      /* **Whether a pin can be pulled down is the chip's answer and not the program's**,
+         and the two chips this core reaches here do not agree: an AVR has pull-ups only,
+         so a pin asked for the other is left plain rather than given the wrong one, and an
+         ESP32 has both. The core says which by whether it defines the mode at all, which
+         is a more honest question to ask than the architecture. It is the same reason a
+         pin with no converter channel is passed through as written. */
       void bareruby_gpio_init(bareruby_gpio_t *self, int32_t pin, int32_t params) {
           self->pin = pin;
           self->params = params;
@@ -265,6 +350,10 @@ module BareRubyProt
               pinMode((uint8_t)pin, OUTPUT);
           } else if (params & 8) {
               pinMode((uint8_t)pin, INPUT_PULLUP);
+      #ifdef INPUT_PULLDOWN
+          } else if (params & 16) {
+              pinMode((uint8_t)pin, INPUT_PULLDOWN);
+      #endif
           } else {
               pinMode((uint8_t)pin, INPUT);
           }
@@ -312,9 +401,18 @@ module BareRubyProt
       #include <stdio.h>
       #include <string.h>
 
-      /* printf writes to a stream, and on this libc there is no stream until one is made.
-         The console is the board's USB-serial bridge, and both of the runtime's channels
-         are pointed at it: fd1 is what puts reaches and fd2 is where a panic says so. */
+      /* **Where printf already goes is the libc's answer, and the two libcs here differ.**
+         On an AVR there is no stream until one is made, so one is made over the port the
+         board's USB-serial bridge is on and both of the runtime's channels are pointed at
+         it — fd1 is what puts reaches and fd2 is where a panic says so. On an ESP32 the
+         console is already a UART the system opened before this ran, and it is the one
+         this board brings out through its bridge chip; opening the line here is what makes
+         it the port the program can also write to as unit 0. */
+      #ifdef ARDUINO_ARCH_ESP32
+      void bareruby_startup(void) {
+          Serial.begin(#{CONSOLE_BAUD});
+      }
+      #else
       static int bareruby_console_put(char byte, FILE *stream) {
           (void)stream;
           Serial.write((uint8_t)byte);
@@ -329,6 +427,7 @@ module BareRubyProt
           stdout = &bareruby_console;
           stderr = &bareruby_console;
       }
+      #endif
 
 
 
@@ -428,11 +527,14 @@ module BareRubyProt
          calling getbyte are the same kind of consumer, reaching it through the same
          call. Emptying it is the uart unit's clear_rx_buffer, which is already the same
          buffer — so there is nothing to override here. */
-      /* **The size of this queue is not this binding's to choose.** The core declared the
-         buffer and fills it from its own interrupt, so a program asking for another size is
-         asking this board for something it cannot give — and the build stops rather than
-         running quietly with a different one. Saying nothing gets the core's size. */
-      #ifdef BARERUBY_UART_RX_BUFFER_SIZE
+      /* **Whether the size of this queue is this binding's to choose is the core's
+         answer.** The AVR core declares the buffer at compile time and fills it from its
+         own interrupt, so a program asking for another size is asking that board for
+         something it cannot give — and the build stops where the number is rather than
+         running quietly with a different one. An ESP32's driver is told a size before the
+         line is opened, so the number is given to it there, in the unit that opens lines.
+         Saying nothing gets the core's own size on either. */
+      #if defined(BARERUBY_UART_RX_BUFFER_SIZE) && !defined(ARDUINO_ARCH_ESP32)
       #if BARERUBY_UART_RX_BUFFER_SIZE != SERIAL_RX_BUFFER_SIZE
       #error "rx_buffer_size: the core owns the receive queue here, and its size is SERIAL_RX_BUFFER_SIZE"
       #endif
@@ -440,9 +542,13 @@ module BareRubyProt
 
       static HardwareSerial *bareruby_uart_receive_port(bareruby_uart_t *self) {
           switch (self->unit) {
-          case 1: return &Serial1;
-          case 2: return &Serial2;
+      #ifdef BARERUBY_UART3_TXD_PIN
           case 3: return &Serial3;
+      #endif
+      #ifdef BARERUBY_UART2_TXD_PIN
+          case 2: return &Serial2;
+      #endif
+          case 1: return &Serial1;
           default: return &Serial;
           }
       }
@@ -502,27 +608,51 @@ module BareRubyProt
       }
     CPP
 
-    # This board has one bus, so the unit names nothing to choose between and Wire is it.
-    # SDA is pin 20 and SCL pin 21, which the core knows and this side does not say.
+    # **How many buses a board has, and where they come out, is the board's answer.** One
+    # of these has a single bus on pins the chip fixes, which the core knows and this side
+    # does not say; the other has two, on pins that can be moved and therefore arrive from
+    # machine/ as definitions. A unit nothing is wired for falls to the first.
+    I2C_BUS = <<~CPP
+      #ifdef BARERUBY_I2C1_SDA_PIN
+      static TwoWire *bareruby_i2c_bus(const bareruby_i2c_t *self) {
+          return self->unit == 1 ? &Wire1 : &Wire;
+      }
+      #else
+      static TwoWire *bareruby_i2c_bus(const bareruby_i2c_t *self) {
+          (void)self;
+          return &Wire;
+      }
+      #endif
+    CPP
+
     I2C = <<~CPP
       #include "bareruby_binding.h"
 
       #include <Arduino.h>
       #include <Wire.h>
 
+      #{I2C_BUS}
       void bareruby_i2c_init(bareruby_i2c_t *self, int32_t unit, int32_t frequency) {
           self->unit = unit;
           self->frequency = frequency;
+      #ifdef BARERUBY_I2C1_SDA_PIN
+          if (unit == 1) {
+              Wire1.begin(BARERUBY_I2C1_SDA_PIN, BARERUBY_I2C1_SCL_PIN, (uint32_t)frequency);
+          } else {
+              Wire.begin(BARERUBY_I2C0_SDA_PIN, BARERUBY_I2C0_SCL_PIN, (uint32_t)frequency);
+          }
+      #else
           Wire.begin();
           Wire.setClock((uint32_t)frequency);
+      #endif
       }
 
       int32_t bareruby_i2c_write(
           bareruby_i2c_t *self, int32_t address, const char *bytes, int32_t length) {
-          (void)self;
-          Wire.beginTransmission((uint8_t)address);
-          Wire.write((const uint8_t *)bytes, (size_t)length);
-          return Wire.endTransmission(true) == 0 ? length : -1;
+          TwoWire *bus = bareruby_i2c_bus(self);
+          bus->beginTransmission((uint8_t)address);
+          bus->write((const uint8_t *)bytes, (size_t)length);
+          return bus->endTransmission(true) == 0 ? length : -1;
       }
     CPP
 
@@ -532,29 +662,31 @@ module BareRubyProt
       #include <Arduino.h>
       #include <Wire.h>
 
+      #{I2C_BUS}
       bareruby_string_t *bareruby_i2c_read(
           bareruby_i2c_t *self, bareruby_arena_t *arena, int32_t address, int32_t length,
           const char *outputs, int32_t output_length) {
-          (void)self;
+          TwoWire *bus = bareruby_i2c_bus(self);
           if (0 < output_length) {
-              Wire.beginTransmission((uint8_t)address);
-              Wire.write((const uint8_t *)outputs, (size_t)output_length);
-              Wire.endTransmission(false);
+              bus->beginTransmission((uint8_t)address);
+              bus->write((const uint8_t *)outputs, (size_t)output_length);
+              bus->endTransmission(false);
           }
 
-          Wire.requestFrom((uint8_t)address, (uint8_t)length);
+          bus->requestFrom((uint8_t)address, (uint8_t)length);
           bareruby_string_t *result = bareruby_string_new(arena, "");
-          while (Wire.available() > 0) {
-              bareruby_string_append_byte(result, Wire.read());
+          while (bus->available() > 0) {
+              bareruby_string_append_byte(result, bus->read());
           }
           return result;
       }
     CPP
 
-    # The core spells the peripherals the same way on every board it reaches, so one
-    # implementation serves all of them and only the board name handed to the build tells
-    # them apart. That is the same shape the Pico boards have, one step wider: these
-    # boards do not even share an instruction set.
+    # One implementation of each peripheral serves every board this core reaches, which is
+    # the same shape the Pico boards have, one step wider: these boards do not even share
+    # an instruction set. **The core does not quite spell every peripheral the same way on
+    # both of them**, and where it does not, the unit asks — the board's own numbers by the
+    # names they arrive under, and the core's own by what it defines.
     PWM_FILE = "bareruby_binding_pwm_arduino.cpp"
     ADC_FILE = "bareruby_binding_adc_arduino.cpp"
     UART_FILE = "bareruby_binding_uart_arduino.cpp"
@@ -594,6 +726,41 @@ module BareRubyProt
 
     ONBOARD_LED_PIN_FILE = "bareruby_binding_onboard_led_arduino_pin.cpp"
 
+    # A board whose indicator is not on a pin at all, but is one addressable device on a
+    # wire: twenty-four bits of colour at a bit period no loop of stores can keep. The core
+    # carries the transmitter that exists for exactly that, so the whole of driving it is
+    # one call. **Which pin it is on is the board's**, and arrives as a definition.
+    ONBOARD_LED_RGB = <<~CPP
+      #include "bareruby_binding.h"
+
+      #include <Arduino.h>
+
+      /* **An indicator answers on or off, and this one takes a colour** — so "on" is a
+         level of white low enough to be looked at rather than the full scale that makes
+         one of these painful. */
+      #define BARERUBY_LED_ON 32
+
+      void bareruby_onboard_led_write(bareruby_onboard_led_t *self, int32_t value) {
+          self->state = (value != 0) ? 1 : 0;
+          uint8_t level = self->state ? BARERUBY_LED_ON : 0;
+          rgbLedWrite(BARERUBY_ONBOARD_LED_PIN, level, level, level);
+      }
+
+      void bareruby_onboard_led_init(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+
+      void bareruby_onboard_led_on(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 1);
+      }
+
+      void bareruby_onboard_led_off(bareruby_onboard_led_t *self) {
+          bareruby_onboard_led_write(self, 0);
+      }
+    CPP
+
+    ONBOARD_LED_RGB_FILE = "bareruby_binding_onboard_led_arduino_rgb.cpp"
+
     FILES = {
       GPIO_FILE => GPIO,
       ADC_FILE => ADC,
@@ -604,7 +771,8 @@ module BareRubyProt
       UART_INTERRUPT_FILE => UART_INTERRUPT,
       I2C_FILE => I2C,
       I2C_READ_FILE => I2C_READ,
-      ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN
+      ONBOARD_LED_PIN_FILE => ONBOARD_LED_PIN,
+      ONBOARD_LED_RGB_FILE => ONBOARD_LED_RGB
     }.freeze
 
     # What a peripheral asks for by key, this binding answers with a file. The key is the

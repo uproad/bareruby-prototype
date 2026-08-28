@@ -17,7 +17,9 @@ module BareRubyProt
     # variable covers which thing is known here and nowhere else, which is why the skipping
     # is here rather than in the fetching: the ecosystem knows how to bring an archive
     # down, not that `PICO_TOOLCHAIN_PATH` is what makes bringing one down unnecessary.
-    def self.install(into:)
+    # One SDK and one compiler serve every board this binding reaches, so which machines
+    # a run is for settles nothing here.
+    def self.install(into:, targets: [])
       unless ENV["PICO_TOOLCHAIN_PATH"]
         Tools.archive(directory: LOCK["arm_gcc"]["directory"],
                       from: LOCK["arm_gcc"]["from"], **archive)

@@ -3,7 +3,7 @@
 # reads this file and nothing else downloads.
 #
 # **Two things arrive, and only one of them is an archive.** arduino-cli is a release like
-# any other — fetched, verified by SHA-256, unpacked. The core is what actually compiles a
+# any other — fetched, verified by SHA-256, unpacked. A core is what actually compiles a
 # sketch, and it is not a file: arduino-cli fetches it from an index of its own, in pieces,
 # and there is nothing single for the fetching side to hash. So it is pinned on the command
 # line instead, and the versioned directory it lands in is what says it arrived.
@@ -32,17 +32,35 @@ cli:
       file: arduino-cli_1.5.2-rc.1_macOS_ARM64.tar.gz
       sha256: 24479837c6d30d36e6bebf446eb0d20e2dce465223fc004335de4732570b2cfa
 
-core:
-  package: arduino:avr
-  version: 1.8.8
-  # Under the data directory, and the whole of what says the core is already here. It is
-  # the versioned path arduino-cli files a core under, so a version bump asks the question
-  # again rather than finding the old answer.
-  holds: packages/arduino/hardware/avr/1.8.8
-  # The three directories arduino-cli keeps its own things in. Left alone it puts them
-  # under ~/.arduino15, which would leave the largest part of this binding's toolchain
-  # outside the store — and outside wherever BARERUBY_TOOLS moves the store to.
-  directories:
-    ARDUINO_DIRECTORIES_DATA: arduino/data
-    ARDUINO_DIRECTORIES_DOWNLOADS: arduino/downloads
-    ARDUINO_DIRECTORIES_USER: arduino/user
+# **One core to a package, and a build fetches the one its board's FQBN names.** The two
+# here are 259 MB and 5.6 GB of somebody else's compiler, and a desk with a Mega on it has
+# no use for the second — so which of them arrives follows from which machines a run is for
+# rather than from this file listing both.
+#
+# `index` is what a core that is not Arduino's own needs before arduino-cli has heard of
+# it: the AVR core is in the index the command ships with, and the ESP32 core is published
+# by whoever wrote it.
+#
+# `writer` is the program that puts an image on a board, for a core whose boards are not
+# written by `arduino-cli upload`. Its version is the one the core's own board list asks
+# for, pinned here for the same reason the core's is.
+cores:
+  arduino:avr:
+    version: 1.8.8
+    # Under the data directory, and the whole of what says the core is already here. It is
+    # the versioned path arduino-cli files a core under, so a version bump asks the question
+    # again rather than finding the old answer.
+    holds: packages/arduino/hardware/avr/1.8.8
+  esp32:esp32:
+    version: 3.3.11
+    index: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    holds: packages/esp32/hardware/esp32/3.3.11
+    writer: packages/esp32/tools/esptool_py/5.3.1/esptool
+
+# The three directories arduino-cli keeps its own things in. Left alone it puts them
+# under ~/.arduino15, which would leave the largest part of this binding's toolchain
+# outside the store — and outside wherever BARERUBY_TOOLS moves the store to.
+directories:
+  ARDUINO_DIRECTORIES_DATA: arduino/data
+  ARDUINO_DIRECTORIES_DOWNLOADS: arduino/downloads
+  ARDUINO_DIRECTORIES_USER: arduino/user

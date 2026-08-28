@@ -23,19 +23,21 @@
 #
 # An entry names a composition rather than a target, and always names all three parts of
 # it, because no one of them settles another. One board is reachable through more than one
-# binding — a NUCLEO board through STM32Cube or through STM32duino — and one whose chip
+# binding — an ESP32-S3 through ESP-IDF or through the Arduino core — and one whose chip
 # carries two instruction sets is built for either of them, as an RP2350 is for Arm or for
 # RISC-V. The three together are looked up: a composition nobody has run is not a target
 # yet, and saying one names nothing prints the ones that do.
 #
 #   machine:  which board.        pico, pico_w, pico2, pico2_w, nucleo_f446re,
-#                                 mega2560, host (the machine doing the compiling)
-#   binding:  what it is called through.  host, pico_sdk, stm32cube, arduino
+#                                 nucleo_f401re, stm32f4discovery, mega2560,
+#                                 esp32_s3_wroom, host (the machine doing the compiling)
+#   binding:  what it is called through.  host, pico_sdk, stm32cube, arduino, esp_idf
 #   triple:   which instruction set, and what lies under it.
 #               thumbv6m-none-eabi           RP2040
 #               thumbv8m.main-none-eabihf    RP2350, Arm
 #               thumbv7em-none-eabihf        STM32F4
 #               avr-none                     AVR. The chip is named by the FQBN, not here
+#               xtensa-esp32s3-elf           ESP32-S3
 #               x86_64-pc-linux              the machine doing the compiling
 #   name:     what this entry is called. It is what --target= says, what its directory
 #             under build/ is called, and what the line saying where the artifact went
@@ -113,3 +115,15 @@ targets:
   #   machine: mega2560
   #   binding: arduino
   #   triple: avr-none
+
+  # The same board under two entries, reached two ways. Both can be recorded at once:
+  # they build into directories of their own and write the same board, and a program says
+  # nothing about which of them it was compiled for.
+  # - name: esp32s3
+  #   machine: esp32_s3_wroom
+  #   binding: esp_idf
+  #   triple: xtensa-esp32s3-elf
+  # - name: esp32s3_arduino
+  #   machine: esp32_s3_wroom
+  #   binding: arduino
+  #   triple: xtensa-esp32s3-elf

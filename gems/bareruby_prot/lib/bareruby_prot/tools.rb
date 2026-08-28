@@ -27,9 +27,14 @@ module BareRubyProt
     # Asked of the bindings a run is about to use, before the run uses them. A binding with
     # nothing to install answers by not having any — the same shape as a binding with no
     # peripherals to implement.
+    #
+    # **The machines are handed over with the question**, because for some bindings what to
+    # fetch is not settled by the binding alone: one Arduino core is 259 MB and another is
+    # 5.6 GB, and which of them a desk needs is which boards it has. A binding whose answer
+    # does not depend on that takes the list and ignores it.
     def self.install(targets)
-      targets.map(&:binding).uniq.each do |binding|
-        binding.tools.install(into: STORE) if binding.respond_to?(:tools)
+      targets.group_by(&:binding).each do |binding, wanted|
+        binding.tools.install(into: STORE, targets: wanted) if binding.respond_to?(:tools)
       end
     end
 
