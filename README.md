@@ -401,6 +401,7 @@ Raspberry Pi Pico  (bareruby_prot-binding-pico_sdk)
 | `stm32-f4discovery` | STM32F4DISCOVERY | STM32F407VG |
 | `arduino-mega2560` | Arduino Mega 2560 | ATmega2560 |
 | `freenove-esp32-s3-wroom` | FREENOVE ESP32-S3-WROOM | ESP32-S3 |
+| `freenove-esp32-s3-wroom-arduino` | the same board, through the Arduino core | ESP32-S3 |
 
 These are what `target add` offers and what the manifest records. An entry does not name
 one — it writes out the three answers a composition is made of, because no one of them
@@ -473,7 +474,7 @@ somewhere else.
 ├── common/arm/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/
 ├── arduino/
 │   ├── arduino-cli-1.5.2-rc.1/
-│   ├── data/                           # the core: avr-gcc, avr-libc, avrdude
+│   ├── data/                           # the cores, and only those a board here needs
 │   └── downloads/
 ├── pico_sdk/
 │   ├── pico-sdk-2.3.0/
@@ -496,11 +497,15 @@ what `--debug` needs** — without it the SDK only warns and builds a firmware i
 the non-debug one, so a `--debug` build silently is not one. **The CYW43 driver is what a
 wireless board's on-board LED needs**, because that LED hangs off the radio.
 
-**Not everything arrives as an archive to verify.** `arduino-cli` does, and is; the AVR
-core does not — it is an index and a set of packages `arduino-cli` resolves for itself, so
-there is no single file to hash and the version is pinned on its command line instead. The
-command that owns a format is the one that fetches it, and both land on the same shelf
-either way.
+**Not everything arrives as an archive to verify.** `arduino-cli` does, and is; a core does
+not — it is an index and a set of packages `arduino-cli` resolves for itself, so there is
+no single file to hash and the version is pinned on its command line instead. The command
+that owns a format is the one that fetches it, and both land on the same shelf either way.
+
+**Which core arrives follows from which boards are recorded.** The AVR core is 259 MB and
+the ESP32 one is 5.6 GB, and a desk with a Mega on it is asked to hold neither of the
+other. Which core a board wants is the first two words of what this side already calls
+that board, so nothing here keeps a second list of it.
 
 One binding is still not fetched this way. `stm32cube` installs itself with its own script,
 into the project's `.tools/` rather than the desk's store, because what it puts there is
@@ -605,8 +610,9 @@ libc carries no unwinder, so a program containing `begin` has no build for this 
 either way round.
 
 Two things are needed and neither is asked for: `build` fetches `arduino-cli`, then has it
-install the pinned core. 36 MB for the command and 325 MB for the core, onto the desk's
-shelf rather than into the project, so the second project pays nothing.
+install the core this board's name asks for. 36 MB for the command and 259 MB for the
+core, onto the desk's shelf rather than into the project, so the second project pays
+nothing — and a desk with no ESP32 recorded never hears about that core at all.
 
 ```
 bareruby: fetching arduino-cli-1.5.2-rc.1 into ~/.bareruby/tools
@@ -682,6 +688,47 @@ timeout 6 cat /dev/ttyACM0
 What `--debug` does buy is the optimizer's answer — a debug build is about 20 KB larger —
 and `--no-exceptions` is a real choice here rather than a requirement, as it is on a Pico
 and unlike on the Arduino core.
+
+### FREENOVE ESP32-S3-WROOM, through the Arduino core
+
+**The same board as above, reached the other way.** Both entries can be recorded at once;
+they build into directories of their own and write the same board, and a program says
+nothing about which is being used. What differs is everything underneath: `esp32:esp32`
+3.3.11 instead of ESP-IDF, `setup`/`loop` instead of `app_main`, and a sketch directory
+instead of a cmake project.
+
+The core is 5.6 GB and `build` fetches it, once, the first time an entry names this
+composition:
+
+```
+bareruby: fetching esp32:esp32@3.3.11 into ~/.bareruby/tools
+bareruby:   ~/.bareruby/tools/arduino/arduino-cli-1.5.2-rc.1/arduino-cli core install
+```
+
+It ships its own Xtensa compiler and its own `esptool`, so nothing else is fetched for it —
+and a desk that keeps its own says so with `ARDUINO_DIRECTORIES_DATA` and an `arduino-cli`
+on `PATH`, exactly as a Mega's desk does.
+
+`./bareruby flash --target=esp32s3_arduino` writes one image at offset zero: the
+bootloader, the partition table, the OTA selector and the program, merged by the build that
+decided where each goes. **`arduino-cli upload` is not what writes it.** It puts the same
+four images at the same offsets and then asks for a hard reset, which over this board's own
+USB leaves the chip waiting to be written again with the program unread in flash — so the
+core's own `esptool` is used instead, with the reset that boots it.
+
+**The port needs no naming here.** Only the chip's own USB socket brings up a device the
+ESP32 core recognises, so with both sockets attached the discovery finds exactly one
+candidate and `boards:` can stay empty. `puts` still arrives on the CH343 bridge, at
+115200, because the console is UART0 either way round:
+
+```sh
+stty -F /dev/ttyACM1 115200 raw -echo
+timeout 6 cat /dev/ttyACM1
+```
+
+`--no-exceptions` is a real choice here, as it is under ESP-IDF: this core is built with
+exceptions, so `begin` works. It is not a size, though — the unwinder is in libraries the
+core ships already built with it.
 
 ## Flashing a Pico
 
@@ -994,10 +1041,11 @@ which lists what each one covers. `ref.rb` stays at the root because it is what
 | cmake | 4.4.0 |
 | arduino-cli | 1.5.2-rc.1 |
 | ESP-IDF | v5.5.5 |
-| xtensa-esp-elf-g++ | 14.2.0 (esp-14.2.0_20260121) |
-| esptool | 4.12.0 |
+| xtensa-esp-elf-g++ | 14.2.0 (esp-14.2.0_20260121), from ESP-IDF and from the ESP32 core alike |
+| esptool | 4.12.0 with ESP-IDF, 5.3.1 with the ESP32 core |
 | arduino:avr core | 1.8.8 |
 | avr-g++ | 7.3.0 (atmel3.6.1-arduino7) |
+| esp32:esp32 core | 3.3.11 |
 | STM32CubeMX project | 6.15.0, STM32CubeF4 HAL 1.28.3 |
 | STM32CubeProgrammer | 2.23.0 |
 | STM32CubeIDE | 2.2.0 (the STM32 hardware runs, and nothing since) |

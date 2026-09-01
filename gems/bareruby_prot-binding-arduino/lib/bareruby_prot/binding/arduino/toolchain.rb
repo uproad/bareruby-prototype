@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "fileutils"
 
 require "bareruby_prot/toolchain"
@@ -23,6 +24,10 @@ module BareRubyProt
       "bareruby_program.ino.elf" => "bareruby_program.elf"
     }.freeze
 
+    # Where a build that takes more than one image writes down which offset each goes to.
+    # The name is the core's, not this side's.
+    LAYOUT = "flash_args"
+
     def self.run(directory, options: {})
       gather(directory)
       return false unless Toolchain.as_recorded(directory, environment)
@@ -31,7 +36,7 @@ module BareRubyProt
         path = File.join(directory, made)
         FileUtils.mv(path, File.join(directory, kept)) if File.exist?(path)
       end
-      true
+      merged(directory)
     end
 
     def self.gather(directory)
@@ -44,13 +49,40 @@ module BareRubyProt
       end
     end
 
+    # **A board that takes four images gets the one they describe.** An ESP32 is written a
+    # bootloader, a partition table, an OTA selector and the program, each at its own
+    # offset — and the build says which offset each goes to, in a file of its own beside
+    # them. Everything downstream of a build here is one artifact, so the four are merged
+    # into the single image those offsets describe and writing a board is one file at
+    # offset zero. **The offsets stay the core's answer**: they are read out of what it
+    # wrote rather than copied onto this side.
+    #
+    # A board that takes one image leaves no such file, and there is nothing here to do
+    # for it.
+    def self.merged(directory)
+      build = File.join(directory, "build")
+      return true unless File.exist?(File.join(build, LAYOUT))
+
+      output = IO.popen(environment,
+                        [ArduinoTools.writer(Toolchain.recorded(directory, "fqbn")),
+                         "--chip", Toolchain.recorded(directory, "chip"), "merge-bin",
+                         "-o", File.join("..", Toolchain.recorded(directory, "artifact")),
+                         "@#{LAYOUT}"],
+                        chdir: build, err: %i[child out], &:read)
+      return true if $CHILD_STATUS.success?
+
+      warn output
+      warn "bareruby: merging the images failed in #{directory}"
+      false
+    end
+
     # **What this binding is built with belongs to the desk, not to a project and not to
-    # this gem.** One core serves every project on a machine, and it is 325 MB of somebody
-    # else's compiler — a binding that reached out of its own directory for one would be
-    # looking inside itself, and one that filed it under whichever project built first
-    # would make the next project fetch it again. Where the store is is the ecosystem's
-    # answer; which things go in it is this binding's, and it is written down in the lock
-    # beside tools.rb.
+    # this gem.** One core serves every project on a machine, and it is gigabytes of
+    # somebody else's compiler — a binding that reached out of its own directory for one
+    # would be looking inside itself, and one that filed it under whichever project built
+    # first would make the next project fetch it again. Where the store is is the
+    # ecosystem's answer; which things go in it is this binding's, and it is written down
+    # in the lock beside tools.rb.
     #
     # The command is looked for on PATH before the store's copy, because a desk that has
     # its own has said so — and the fetching side reads that same answer, so the copy this
@@ -60,6 +92,6 @@ module BareRubyProt
                   .merge("PATH" => "#{ENV.fetch('PATH', '')}:#{ArduinoTools.command_directory}")
     end
 
-    def self.artifact(directory) = File.join(directory, IMAGES.values.first)
+    def self.artifact(directory) = Toolchain.artifact(directory)
   end
 end

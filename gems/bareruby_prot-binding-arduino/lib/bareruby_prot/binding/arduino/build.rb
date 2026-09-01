@@ -15,10 +15,17 @@ module BareRubyProt
 
     # The core calls setup once and loop forever, so a program is entered from setup and
     # never comes back — its own loop is the program. A board has nowhere to return to,
-    # and here that is not this side's arrangement but the core's, already made. The two
-    # are C symbols, because that is how the core's main calls them.
-    ENTRY = "extern \"C\" void setup(void) {\n    bareruby_startup();\n    bareruby_main();\n}\n\n" \
-            "extern \"C\" void loop(void) {\n}\n"
+    # and here that is not this side's arrangement but the core's, already made.
+    #
+    # **Which linkage the core calls the two with is the core's answer, and the two cores
+    # here disagree.** One declares them inside `extern "C"` and calls C symbols; the other
+    # declares them as C++ and calls mangled ones. Neither is this side's to choose, and a
+    # program written for the wrong one links against nothing.
+    BODY = "{\n    bareruby_startup();\n    bareruby_main();\n}\n\n"
+
+    ENTRY = "#ifdef ARDUINO_ARCH_ESP32\nvoid setup(void) #{BODY}void loop(void) {}\n" \
+            "#else\nextern \"C\" void setup(void) #{BODY}extern \"C\" void loop(void) {}\n" \
+            "#endif\n"
 
     # A directory is a sketch only if it holds a file of its own name, so there has to be
     # one and there is nothing for it to hold: setup and loop are in the program beside
@@ -28,6 +35,8 @@ module BareRubyProt
     def initialize(target, sources:, units: [], debug: false, exceptions: true)
       @target = target
       @sources = sources
+      @exceptions = exceptions
+      @machine = ArduinoBinding.machine(target.machine)
     end
 
     def files = {
@@ -42,7 +51,29 @@ module BareRubyProt
 
     def entry = ENTRY
 
-    def fqbn = ArduinoBinding.machine(@target.machine).fqbn
+    def fqbn = @machine.fqbn
+
+    # **Which pin a peripheral came out on is the board's answer**, and it arrives as a
+    # definition rather than as a number written into a unit — so one unit serves every
+    # board this binding reaches, and a second board is a file in machine/ and nothing
+    # else. The converter's reference and its width come the same way, because a board is
+    # what decides them as much as a chip is.
+    def definitions
+      @machine.definitions.map { |name, value| "-D#{name}=#{value}" }
+    end
+
+    # **Where a core can be asked for exceptions, `--no-exceptions` is what asks.** One of
+    # these boards compiles with them and one cannot have them at all, so the flag is added
+    # only where its absence would have meant something else.
+    def flags
+      definitions + (@machine.exceptions? && !@exceptions ? ["-fno-exceptions"] : [])
+    end
+
+    def exceptions
+      return "unavailable (this core compiles with -fno-exceptions)" unless @machine.exceptions?
+
+      @exceptions ? "enabled" : "disabled"
+    end
 
     def manifest
       <<~MANIFEST
@@ -56,11 +87,18 @@ module BareRubyProt
         compile_options = arduino core setting
         sketch = #{SKETCH}
         sources = #{@sources.join(' ')}
+        definitions = #{definitions.join(' ')}
         stdout_channel = serial
-        exceptions = unavailable (this core compiles with -fno-exceptions)
-        artifact = bareruby_program.hex
-        build_command = arduino-cli compile --fqbn #{fqbn} --build-path build --output-dir . #{SKETCH}
+        exceptions = #{exceptions}
+        artifact = #{@machine.artifact}
+        build_command = #{build_command}
       MANIFEST
+    end
+
+    def build_command
+      "arduino-cli compile --fqbn \"#{fqbn}\" " \
+        "--build-property \"compiler.cpp.extra_flags=#{flags.join(' ')}\" " \
+        "--build-path build --output-dir . #{SKETCH}"
     end
   end
 end

@@ -26,7 +26,9 @@ module BareRubyProt
     # two variables are ESP-IDF's own, honoured by every command it ships, and which of
     # them covers which thing is known here and nowhere else — the same way it is for
     # every other binding.
-    def self.install(into:)
+    # One checkout and one set of tools serve every board this binding reaches, so which
+    # machines a run is for settles nothing here.
+    def self.install(into:, targets: [])
       checkout unless own_sdk?
       compilers
     end

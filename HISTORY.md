@@ -1373,6 +1373,13 @@ indicator at its 100 ms on / 900 ms off. The board's other route to the chip —
 that same bridge — does not answer on this board and is recorded as not working rather than
 as untried.
 
+`freenove-esp32-s3-wroom-arduino` — the same board through the Arduino core rather than
+through ESP-IDF — has run on real hardware too, written the same way over the chip's own
+USB. `samples/features.rb`, `samples/string.rb`, `samples/fixed.rb`, `samples/m25.rb` and
+`samples/arena.rb` matched the host line for line, `samples/uart_receive.rb` took bytes off
+the console and answered them, and `samples/heartbeat.rb` blinks the same WS2812 indicator.
+The two compositions are recorded side by side at this desk and write the same board.
+
 `arduino-mega2560` has run on real hardware as well. `samples/heartbeat.rb` blinks the
 board's LED at the 100 ms on / 900 ms off it asks for; `samples/features.rb`,
 `samples/fixed.rb` and `samples/string.rb` printed over the board's serial port and were
@@ -2149,3 +2156,177 @@ the three it is running on.
 part and is the N16R8, so `machine/` said 8 MB and the image header did too — a board with
 half its flash unreachable and nothing to say it. `esptool` reads the size off the chip,
 which is what settled it.
+
+## One board, two bindings
+
+`freenove-esp32-s3-wroom-arduino` is the same ESP32-S3-WROOM-1 N16R8 module that
+`freenove-esp32-s3-wroom` already reached, reached again through the **Arduino core for
+ESP32** (`esp32:esp32` 3.3.11) instead of through ESP-IDF. It is the first machine here
+that two bindings answer for, and that is the whole of what it was written to prove: which
+SDK answers for a board is a separate question from which board it is.
+
+Nothing had to be added to the vocabulary for it. A machine registered twice is the machine
+registered once — `Machine.register` was already written to answer with the one that is
+there — and the composition a target names has carried all four answers apart from the
+beginning, so the second one is a line in `targets.rb` and a file in `machine/`. The
+artifacts land in `esp32_s3_wroom-arduino-xtensa-esp32s3-elf` beside
+`esp32_s3_wroom-esp_idf-xtensa-esp32s3-elf`, which is what that directory's long name was
+for. Both entries can be recorded at once and both write the same board.
+
+**The board's own numbers are the same numbers in both.** GPIO48 for the indicator, 8 and 9
+and 10 and 11 for the two buses, 43 and 44 and 17 and 18 for the serial lines — written
+twice, in two `machine/` files, because they are facts about the board rather than about
+either SDK, and because neither binding is in a position to read the other's.
+
+### What the same program costs through each
+
+Debug builds of the same two programs, on the same board, on the same day:
+
+| program | binding | `text` | `data` | `bss` | app image | merged image |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ref.rb` | esp_idf | 149369 | 53772 | 372409 | 203264 | 268800 |
+| `ref.rb` | arduino | 206703 | 66486 | 511491 | 273312 | 338848 |
+| `heartbeat` | esp_idf | 169801 | 60452 | 378641 | 230368 | 295904 |
+| `heartbeat` | arduino | 226251 | 72215 | 518486 | 298576 | 364112 |
+
+**The Arduino core costs about 56 KB of `text` and 139 KB of static RAM over ESP-IDF for
+the same program on the same chip**, and about 70 KB of image. It is the same FreeRTOS
+underneath; what is on top of it is Arduino's own — the loop task and its stack, `Serial`,
+the peripheral manager that decides which driver owns a pin. What the difference is made of
+beyond that is not broken down here.
+
+What it buys is the other side of that. A build is about 5 seconds with no configure step
+at all, against ESP-IDF's 15 seconds after 3 minutes of cmake. Nothing but the core is
+fetched — it carries its own Xtensa compiler and its own `esptool` — and the sketch that
+comes out can be opened in the Arduino IDE.
+
+Sizes of the rest, for the Arduino composition:
+
+| build | `text` | `data` | `bss` | app image | merged image |
+| --- | --- | --- | --- | --- | --- |
+| `blink` | 228979 | 72695 | 518518 | 301792 | 367328 |
+| `features` | 207103 | 66614 | 511515 | 273840 | 339376 |
+| `ref.rb`, `--no-exceptions` | 206703 | 66486 | 511491 | 273312 | 338848 |
+
+**`--no-exceptions` costs nothing here and cannot be made to.** The flag reaches the build
+as `-fno-exceptions` over this side's translation units, and that is all it can reach: the
+unwinder and its tables are inside libraries the core ships already built with exceptions
+on. So the byte-for-byte identical row above is the honest answer rather than a flag that
+failed to arrive — and the first stage still refuses `begin` under it, which is the part
+that was worth having.
+
+### The core is one surface, and it is not quite one surface
+
+The claim this binding was written on — one `binding.rb`, and only the board's name tells
+the machines apart — held for four peripherals and broke in five places. All five are the
+core's own answers rather than the boards', and every one of them had to be asked:
+
+- **`setup` and `loop` are C symbols on one core and C++ symbols on the other.** The AVR
+  core declares them inside `extern "C"`; the ESP32 core declares them as C++. A program
+  written for the wrong one links against nothing, which is what the first build here said.
+- **`printf` has somewhere to go on one and not the other.** The AVR libc has no stream
+  until one is made; on an ESP32 the console is a UART the system opened before any of this
+  ran, and opening `Serial` is only what makes it reachable as unit 0 as well.
+- **The frame is one number and it is not the same number.** Data bits, stop bits and
+  parity are separate bits of one byte on an AVR and of a word with a marker above them on
+  an ESP32, so the number a line is opened with is built twice.
+- **A line is opened on pins that can be moved, on one of them.** An AVR reaches a USART's
+  own pins and cannot be told others; an ESP32 has to be told, and is told the board's.
+- **`analogWrite` takes a frequency on one and invents one on the other.** An AVR's takes
+  whichever the pin's timer already runs at; an ESP32's line takes a channel whose
+  frequency is settable, so `PWM.new(pin, frequency: 50)` is obeyed rather than remembered.
+
+Everything else — `pinMode`, `digitalWrite`, `analogRead`, `attachInterrupt`, `Wire`,
+`HardwareSerial`, `delay` — is one implementation for both, and what it differs by is
+numbers that arrive from `machine/`.
+
+### Two things the same binding can and cannot do, depending on the board
+
+Both are worth more than the code they cost, because they are the same binding answering
+differently about the same question.
+
+- **`begin` works on one of these boards and can never work on the other.** The AVR core
+  compiles with `-fno-exceptions` and its libc carries no unwinder; the ESP32 core is built
+  with `-fexceptions`. `samples/m25.rb` and `samples/arena.rb` — the two programs here that
+  raise and rescue, including three ways of running a region out — printed on the board
+  exactly what they print on the host, 11 lines and 17 lines, diffed line for line.
+- **`rx_buffer_size:` is refused on one and honoured on the other.** The AVR core declares
+  its receive buffer at compile time, so a program asking for another size is stopped at
+  the second stage, where the number is. An ESP32's driver is told a size before the line
+  is opened, so the number is given to it. Neither answer is this binding's preference; both
+  are what the core left it.
+
+### Where the board's numbers were not the board's
+
+Turning the Arduino units' numbers into definitions the machine supplies found a fault that
+had been sitting in the AVR converter since it was written. `bareruby_adc_read` divided by
+`1023 * 1000`, two `int` literals — and an `int` is 16 bits on that machine, so the divisor
+was never 1023000. Every voltage that board reported was wrong. It is fixed by widening the
+divisor before it is multiplied out, and it is recorded here rather than quietly: nothing
+had read a voltage on that board, which is why nobody saw it.
+
+### What writes the board, and what boots it
+
+`arduino-cli upload` puts the four images an ESP32 takes at the four offsets it takes them
+at, and then asks for a hard reset — and over the chip's own USB that leaves the board
+saying `rst:0x15 (USB_UART_CHIP_RESET),boot:0x0 (DOWNLOAD)` with the program it was just
+given sitting unread in flash. **This is the second tool to reproduce that**, after
+`esptool` under ESP-IDF, and the upload recipe has no way to be told another reset. So the
+core's own `esptool` writes it instead, with the watchdog reset that boots it from
+underneath the peripheral.
+
+The offsets are still nobody's to write down here. **The core leaves a `flash_args` beside
+its images** — the same shape ESP-IDF leaves, naming the same four offsets — so the merge
+into one image at offset zero is the same step, reading what the build wrote rather than
+carrying a copy of it.
+
+**And the port needs no naming.** Only the chip's own USB socket brings up a device the
+ESP32 core recognises, so with both of this board's sockets attached the discovery finds
+exactly one candidate — where ESP-IDF's own discovery finds two and refuses to guess
+between them. What a port answers here is the family rather than the board, which is
+usually less than an AVR port answers and on this board is exactly enough.
+
+### Which core arrives
+
+The AVR core is 259 MB and this one is 5.6 GB, and a desk should hold neither on account of
+a board it does not have. Which core a build needs is the first two words of the FQBN the
+machine already records — `esp32:esp32` — so the answer was already written down and the
+fetching side reads it rather than keeping a list. The machines a run is for are now handed
+to the binding with the question; the three bindings whose answer does not depend on them
+take the list and ignore it.
+
+Only one of the dozen options the core offers had to be said: `FlashSize=16M`. The rest of
+what this module needs is what the core already defaults to — the chip's own USB as a
+hardware CDC, `Serial` left as UART0 so that it is the port `printf` already writes to and
+the port the board's CH343 bridge carries.
+
+### What is deliberately not here
+
+- **No PSRAM**, as under the other binding. The module carries 8 MB and nothing asks for it.
+- **No hardware flow control**, on either board this binding reaches. A line asked for with
+  RTS/CTS is refused rather than opened without it.
+- **Two serial lines**, which is what this board wires up, against the three the chip has.
+- **The converter is not calibrated.** Twelve bits over the 3.1 V the core's default
+  attenuation reaches, which is also the least linear of them.
+- **A PWM duty is eight bits**, so an obeyed 50 Hz still quantises a servo pulse to 78 µs.
+- **No `target attach` and no emulation**, for the same reasons as under the other binding.
+
+### What has run
+
+Every sample and `ref.rb` build through to a merged image for this composition — all 40 of
+them. Every sample and `ref.rb` still compile for every other recorded target, the mega
+still builds and still refuses `rx_buffer_size:` where it should, the hosted check answers
+39/39, and two compilations leave 227 identical files.
+
+**It has run on real hardware**, written over the chip's own USB and read back over the
+CH343 bridge at 115200. `samples/features.rb`, `samples/string.rb`, `samples/fixed.rb`,
+`samples/m25.rb` and `samples/arena.rb` printed on the board exactly what they print on the
+host — 15, 14, 12, 11 and 17 lines, diffed line for line. `samples/uart_receive.rb` took
+`ABCDhello` off the same bridge it prints on and answered the five lines the host answers.
+**`samples/heartbeat.rb` blinks the board's WS2812 indicator** at the 100 ms on / 900 ms
+off it asks for, observed on the board — the same indicator, the same program and the same
+`OnboardLED` class as under the other binding, answered here by one call the core carries
+rather than by a transmitter this side configures.
+
+`arduino-mega2560` is built but not hardware-flashed in this change: that board is not on
+the desk.
