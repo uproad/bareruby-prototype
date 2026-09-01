@@ -729,7 +729,7 @@ module BareRubyProt
       # getbyte answers one byte as the integer it is, which is how a reading taken over a
       # bus comes apart into values without leaving the region.
       def infer_getbyte_call(receiver_tast, arguments, type_environment:, span:)
-        raise "getbyte takes the index of the byte it answers" if arguments.empty?
+        raise "getbyte takes the index of the byte it answers, and nothing else" unless arguments.length == 1
 
         index = infer_node(arguments[0], type_environment:)
         string_call(:getbyte, ArenaString::GETBYTE_FUNCTION, [receiver_tast, index], :Int32, span)
