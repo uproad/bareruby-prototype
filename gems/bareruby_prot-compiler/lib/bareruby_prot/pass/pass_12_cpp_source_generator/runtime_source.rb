@@ -66,6 +66,7 @@ module BareRubyProt
       bareruby_string_t *bareruby_string_dup(bareruby_string_t *self);
       const char *bareruby_string_bytes(bareruby_string_t *self);
       int32_t bareruby_string_length(bareruby_string_t *self);
+      int32_t bareruby_string_getbyte(bareruby_string_t *self, int32_t index);
       bool bareruby_string_equal(bareruby_string_t *self, const char *text);
       void bareruby_puts_int32(int32_t value);
       void bareruby_puts_int64(int64_t value);
@@ -364,6 +365,19 @@ module BareRubyProt
 
       int32_t bareruby_string_length(bareruby_string_t *self) {
           return self->length;
+      }
+
+      /* getbyte answers one byte as the integer it is, and a negative index counts from
+         the end, as Ruby's does. Past either end Ruby answers nil; an integer has no nil
+         to answer, so it throws instead, the way running out of region does. */
+      int32_t bareruby_string_getbyte(bareruby_string_t *self, int32_t index) {
+          if (index < 0) {
+              index += self->length;
+          }
+          if (index < 0 || index >= self->length) {
+              bareruby_throw("getbyte is past the end of the string");
+          }
+          return (int32_t)(unsigned char)self->bytes[index];
       }
 
       bool bareruby_string_equal(bareruby_string_t *self, const char *text) {

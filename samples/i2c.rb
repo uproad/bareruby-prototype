@@ -10,4 +10,6 @@ arena(256) do
   reading = i2c.read(0x48, 2, 0x00)
   puts reading
   puts reading.size
+  puts reading.getbyte(0)
+  puts reading.getbyte(-1)
 end

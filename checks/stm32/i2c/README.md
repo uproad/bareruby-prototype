@@ -21,6 +21,7 @@ checks/stm32/i2c/check.sh f446
 | `payload_shapes` | integers, arrays, strings and an `Arena::String` assemble into one transaction |
 | `write_all_byte_values` | all 256 byte values — 0x00 and 0xFF included — cross the write path; the sensor scores mismatches and how many arrived |
 | `read_pattern` | a sixteen-byte read arrives complete and in order |
+| `read_getbyte` | `getbyte` takes a reading apart into integers — a negative index counts from the end, and past the end throws and is rescued on the board |
 | `frequency_registers` | 100 kHz standard mode reaches I2C1's CR1, CR2, CCR and TRISE |
 | `frequency_fast` | 400 kHz fast mode reaches the registers through the DeInit → Init path |
 | `invalid_address` | an address beyond seven bits is refused before touching the bus |

@@ -12,6 +12,7 @@ checks:
   - name: write_all_byte_values
   - name: read_pattern
     capture: hex
+  - name: read_getbyte
   - name: frequency_registers
     observe: observe/frequency.resc
   - name: frequency_fast
