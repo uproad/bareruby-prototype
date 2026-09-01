@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: gems/${{ matrix.suite }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ruby/setup-ruby@v1
         with:
