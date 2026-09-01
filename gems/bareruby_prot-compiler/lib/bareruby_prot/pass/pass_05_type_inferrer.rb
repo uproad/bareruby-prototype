@@ -715,6 +715,7 @@ module BareRubyProt
         return receiver_tast if name == :to_s
         return string_call(name, ArenaString::LENGTH_FUNCTION, [receiver_tast], :Int32, span) if SIZE_NAMES.include?(name)
         return string_call(name, ArenaString::DUP_FUNCTION, [receiver_tast], ArenaString.type(@tast), span) if name == :dup
+        return infer_getbyte_call(receiver_tast, arguments, type_environment:, span:) if name == :getbyte
 
         source = arguments.first
         if name == :<< && formatted?(source)
@@ -723,6 +724,15 @@ module BareRubyProt
         end
 
         infer_string_operator_call(name, receiver_tast, source, type_environment:, span:)
+      end
+
+      # getbyte answers one byte as the integer it is, which is how a reading taken over a
+      # bus comes apart into values without leaving the region.
+      def infer_getbyte_call(receiver_tast, arguments, type_environment:, span:)
+        raise "getbyte takes the index of the byte it answers" if arguments.empty?
+
+        index = infer_node(arguments[0], type_environment:)
+        string_call(:getbyte, ArenaString::GETBYTE_FUNCTION, [receiver_tast, index], :Int32, span)
       end
 
       def infer_string_operator_call(name, receiver_tast, source, type_environment:, span:)

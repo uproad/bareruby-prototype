@@ -18,6 +18,7 @@ module BareRubyProt
     DUP_FUNCTION = :bareruby_string_dup
     BYTES_FUNCTION = :bareruby_string_bytes
     APPEND_BYTE_FUNCTION = :bareruby_string_append_byte
+    GETBYTE_FUNCTION = :bareruby_string_getbyte
 
     OPERATOR_FUNCTIONS = {
       :<< => :bareruby_string_append,
@@ -48,7 +49,7 @@ module BareRubyProt
       return APPEND_BYTE_FUNCTION if name == :<< && TypeUnion::WIDTHS.include?(source_type)
 
       OPERATOR_FUNCTIONS.fetch(name) do
-        raise "a variable-length string answers <<, +, ==, size, dup and to_s, not #{name}"
+        raise "a variable-length string answers <<, +, ==, size, dup, to_s and getbyte, not #{name}"
       end
     end
   end
