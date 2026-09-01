@@ -1,0 +1,51 @@
+name: rspec checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rspec-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: rspec ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [bareruby_prot-compiler]
+    defaults:
+      run:
+        working-directory: gems/${{ matrix.suite }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the locked bundle
+        run: bundle install
+
+      - name: Run the suite
+        run: bundle exec rspec
+
+  gate:
+    name: RSpec gate
+    needs: suite
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every RSpec suite to pass
+        env:
+          SUITE_RESULT: ${{ needs.suite.result }}
+        run: test "$SUITE_RESULT" = success
