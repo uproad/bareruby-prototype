@@ -14,6 +14,10 @@
 # and the one a user's project takes.
 source "https://rubygems.org"
 
+group :test do
+  gem "rspec", "~> 3.13"
+end
+
 path "gems" do
   gem "bareruby_prot"
   gem "bareruby_prot-binding-arduino"
