@@ -2330,3 +2330,35 @@ rather than by a transmitter this side configures.
 
 `arduino-mega2560` is built but not hardware-flashed in this change: that board is not on
 the desk.
+
+## Each gem answers for itself
+
+Eight gems now carry a bundle and a suite of their own: the compiler, the ecosystem, and
+the six standard classes. A suite runs in its own gem's directory, against the bundle that
+directory's `Gemfile` describes, and needs nothing installed first — from an empty
+`GEM_HOME` all eight resolve, install and pass, one example each.
+
+**What a suite is allowed to run against is the range the gemspec declares.** Every
+internal dependency now carries one (`>= 0.0.1, < 0.1.0`) where it carried none, and a
+version outside it stops resolution rather than being picked up: raising the compiler to
+`0.1.0` fails every consumer's `bundle install` with exit 6. Inside a checkout a consumer
+reads the compiler from the working tree beside it, because neither gem is published and a
+development bundle has nowhere else to look. That line says where the gem is; the range
+says which gem is allowed.
+
+The one example each gem carries is the seam. A standard class requires itself and asks
+whether the compiler took its registration; the ecosystem loads the command that pulls the
+first stage in; the compiler asks whether it still offers the registration the others are
+written against. Renaming `Peripheral.register` turns the compiler's own example red and
+takes the seven consumers down with it at load, which is what the example is for: a green
+that says nothing about which code it read is not worth running.
+
+Two workflows carry them — the tool's two gems in one, the six standard classes in the
+other, because a standard class is released apart from the tool it is written against.
+Eight jobs, one per gem, each in its own directory.
+
+### What this does not do
+
+No end-to-end suite, no packaging suite, no `spec_helper`, no fixtures, and nothing for
+the bindings, the machine layer or the simulator: what fits those is a separate question.
+Nothing here tests what a compiled program does. Samples still answer that.
