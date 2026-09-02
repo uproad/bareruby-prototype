@@ -27,7 +27,7 @@ jobs:
       matrix:
         suite: [uart, i2c, gpio, onboard_led, clock, sleep, pwm, adc]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -85,7 +85,7 @@ jobs:
           - { name: f401, machine: nucleo_f401re }
           - { name: disco, machine: stm32f4discovery }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ruby/setup-ruby@v1
         with:
