@@ -1,4 +1,4 @@
-name: rspec checks
+name: stdlib rspec checks
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rspec-checks-${{ github.ref }}
+  group: stdlib-rspec-checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,8 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - bareruby_prot
-          - bareruby_prot-compiler
           - bareruby_prot-stdlib-adc
           - bareruby_prot-stdlib-gpio
           - bareruby_prot-stdlib-i2c
@@ -38,7 +36,6 @@ jobs:
           ruby-version: "4.0"
 
       - name: Package the working-tree compiler
-        if: matrix.suite != 'bareruby_prot-compiler'
         working-directory: gems/bareruby_prot-compiler
         run: |
           mkdir -p "${{ github.workspace }}/gems/${{ matrix.suite }}/vendor/cache"

@@ -1,0 +1,60 @@
+name: bareruby rspec checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bareruby-rspec-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compiler:
+    name: rspec bareruby_prot-compiler
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the locked bundle
+        working-directory: gems/bareruby_prot-compiler
+        run: bundle install
+
+      - name: Run the suite
+        working-directory: gems/bareruby_prot-compiler
+        run: bundle exec rspec
+
+  ecosystem:
+    name: rspec bareruby_prot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Package the working-tree compiler
+        working-directory: gems/bareruby_prot-compiler
+        run: |
+          mkdir -p "${{ github.workspace }}/gems/bareruby_prot/vendor/cache"
+          gem build bareruby_prot-compiler.gemspec \
+            --output "${{ github.workspace }}/gems/bareruby_prot/vendor/cache/bareruby_prot-compiler-0.0.1.gem"
+
+      - name: Install the locked bundle
+        working-directory: gems/bareruby_prot
+        run: bundle install
+
+      - name: Run the suite
+        working-directory: gems/bareruby_prot
+        run: bundle exec rspec
