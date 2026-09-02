@@ -1,3 +1,8 @@
+# The RSpec suites carried by the two gems the tool itself is made of, one job each.
+# A suite runs in its own gem's directory against the bundle that directory's Gemfile
+# describes, so a gem carries its checks the way it carries its source: whole, and
+# runnable from where it sits. Standard classes ship as their own release and have their
+# own workflow beside this one for the same reason.
 name: bareruby rspec checks
 
 on:
@@ -14,10 +19,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  compiler:
-    name: rspec bareruby_prot-compiler
+  suite:
+    name: rspec ${{ matrix.suite }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - bareruby_prot-compiler
+          - bareruby_prot
     steps:
       - uses: actions/checkout@v7
 
@@ -26,37 +37,9 @@ jobs:
           ruby-version: "4.0"
 
       - name: Install the bundle
-        working-directory: gems/bareruby_prot-compiler
+        working-directory: gems/${{ matrix.suite }}
         run: bundle install
 
       - name: Run the suite
-        working-directory: gems/bareruby_prot-compiler
-        run: bundle exec rspec
-
-  ecosystem:
-    name: rspec bareruby_prot
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "4.0"
-
-      - name: Install the working-tree compiler
-        working-directory: gems/bareruby_prot-compiler
-        run: |
-          gem build bareruby_prot-compiler.gemspec \
-            --output "${{ runner.temp }}/bareruby_prot-compiler-0.0.1.gem"
-          gem install --local \
-            "${{ runner.temp }}/bareruby_prot-compiler-0.0.1.gem" \
-            --no-document
-
-      - name: Install the bundle
-        working-directory: gems/bareruby_prot
-        run: bundle install
-
-      - name: Run the suite
-        working-directory: gems/bareruby_prot
+        working-directory: gems/${{ matrix.suite }}
         run: bundle exec rspec
