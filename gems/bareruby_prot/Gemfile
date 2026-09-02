@@ -5,4 +5,11 @@ lockfile false
 
 gemspec
 
+# The compiler this gem is written against is read from the working tree beside it. Both
+# gems are this checkout's own and neither is published, so there is nowhere else for a
+# development bundle to find it. **What a bundle is allowed to resolve is the range the
+# gemspec declares**, and that range is what a user's install answers to; this line only
+# says where the gem is while it sits next door.
+gem "bareruby_prot-compiler", path: "../bareruby_prot-compiler"
+
 gem "rspec", "~> 3.13"
