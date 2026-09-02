@@ -23,8 +23,8 @@ Gem::Specification.new do |spec|
   # words of what it calls, which is the first stage's vocabulary, and it starts a second
   # stage and writes a machine, which is the ecosystem's. Naming both is what the line
   # crossed here costs; a user who uncomments this gem in a Gemfile gets both with it.
-  spec.add_dependency "bareruby_prot"
-  spec.add_dependency "bareruby_prot-compiler"
+  spec.add_dependency "bareruby_prot", ">= 0.0.1", "< 0.1.0"
+  spec.add_dependency "bareruby_prot-compiler", ">= 0.0.1", "< 0.1.0"
 
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

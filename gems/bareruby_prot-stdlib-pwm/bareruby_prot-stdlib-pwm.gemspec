@@ -21,7 +21,7 @@ Gem::Specification.new do |spec|
   # into and the vocabulary it is written in are the first stage's, so a class is
   # meaningless without it. A user never writes this line in a Gemfile: naming the class is
   # what brings the compiler with it.
-  spec.add_dependency "bareruby_prot-compiler"
+  spec.add_dependency "bareruby_prot-compiler", ">= 0.0.1", "< 0.1.0"
 
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end

@@ -32,7 +32,7 @@ Gem::Specification.new do |spec|
 
   # A user installs this one and gets a compiler with it. The other way round is not true:
   # a compiler is usable without anything that runs a second stage.
-  spec.add_dependency "bareruby_prot-compiler"
+  spec.add_dependency "bareruby_prot-compiler", ">= 0.0.1", "< 0.1.0"
 
   spec.metadata = { "rubygems_mfa_required" => "true" }
 end
