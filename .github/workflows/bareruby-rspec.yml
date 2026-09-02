@@ -44,12 +44,14 @@ jobs:
         with:
           ruby-version: "4.0"
 
-      - name: Package the working-tree compiler
+      - name: Install the working-tree compiler
         working-directory: gems/bareruby_prot-compiler
         run: |
-          mkdir -p "${{ github.workspace }}/gems/bareruby_prot/vendor/cache"
           gem build bareruby_prot-compiler.gemspec \
-            --output "${{ github.workspace }}/gems/bareruby_prot/vendor/cache/bareruby_prot-compiler-0.0.1.gem"
+            --output "${{ runner.temp }}/bareruby_prot-compiler-0.0.1.gem"
+          gem install --local \
+            "${{ runner.temp }}/bareruby_prot-compiler-0.0.1.gem" \
+            --no-document
 
       - name: Install the bundle
         working-directory: gems/bareruby_prot
