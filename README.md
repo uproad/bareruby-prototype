@@ -7,9 +7,10 @@ garbage collector; every type is resolved at compile time.
 
 **This repository is a throwaway feasibility prototype, not that compiler.** It exists to
 answer one question by running it: can the pipeline the design calls for actually be
-built end to end? It has no tests, no diagnostics and no error handling, and the only
-command-line options are the few the build itself cannot do without. Happy path only, and
-it is meant to be thrown away once it has answered the question.
+built end to end? It has no diagnostics and no error handling, the only command-line
+options are the few the build itself cannot do without, and the only suites it carries
+answer for the gems rather than for the language. Happy path only, and it is meant to be
+thrown away once it has answered the question.
 
 The language specification and the real implementation live in separate repositories
 that are not public yet. Nothing here points at them.

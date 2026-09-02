@@ -1,11 +1,11 @@
 # Contributing
 
 This is a throwaway feasibility prototype, so what counts as a good change here is not
-what would count in the compiler it is standing in for. There are no tests, no
-diagnostics and no error handling, and a change is finished when a sample program that
-could not be compiled before can be. [`AGENTS.md`](AGENTS.md) states the discipline in
-full; this file says how the thing is put together and how to build, install and check a
-change to it.
+what would count in the compiler it is standing in for. There are no diagnostics and no
+error handling, a change is finished when a sample program that could not be compiled
+before can be, and the only suites here answer for the gems themselves rather than for
+the language. [`AGENTS.md`](AGENTS.md) states the discipline in full; this file says how
+the thing is put together and how to build, install and check a change to it.
 
 ## How the repository is laid out
 
@@ -410,8 +410,10 @@ No such file or directory - .../binding/pico_sdk/data/sources.lock.yml
 
 ## Checking a change
 
-There is no test suite. What stands in for one is a sample program that fails to compile
-before the change and compiles after it, plus evidence that nothing else moved.
+Nothing here tests what a program does. What stands in for that is a sample program that
+fails to compile before the change and compiles after it, plus evidence that nothing else
+moved. The gem suites are a separate, smaller thing: they answer for the gems rather than
+for the language.
 
 **This desk needs a record before any of it runs.** Copy `config/target.yml.sample` to
 `config/target.yml` and keep the `host` entry in it: every verb here — `compile` included
@@ -430,10 +432,14 @@ gitignored, because which machines are at this desk is true of the desk.
 5. **Board build.** `./bareruby build --target=<the entry for that board>` through to the
    `.uf2`, `.hex` or ELF, and record `text`, `bss` and artifact size per board in
    [`HISTORY.md`](HISTORY.md). Where `--no-exceptions` changes the answer, measure both.
-6. **Packaging**, when a change adds a file to a gem or touches a gemspec. Build from what
+6. **The gem suites**, when a change touches a gemspec, a Gemfile, or anything under a
+   `lib/` that another gem loads. In each gem the change reaches:
+   `cd gems/<name> && bundle install && bundle exec rspec`. A suite runs in its own gem
+   directory and needs nothing installed first.
+7. **Packaging**, when a change adds a file to a gem or touches a gemspec. Build from what
    the gems ship, [as above](#checking-what-the-gems-ship) — a file left out of a
    `spec.files` is reachable from here and from nowhere a user stands.
-7. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
+8. **Hardware.** Flashing needs the board in front of someone. Ask rather than assume, and
    **never write "verified" for something that was only built** — say "built but not
    hardware-flashed".
 
