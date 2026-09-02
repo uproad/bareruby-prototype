@@ -42,7 +42,7 @@ jobs:
           gem build bareruby_prot-compiler.gemspec \
             --output "${{ github.workspace }}/gems/${{ matrix.suite }}/vendor/cache/bareruby_prot-compiler-0.0.1.gem"
 
-      - name: Install the locked bundle
+      - name: Install the bundle
         working-directory: gems/${{ matrix.suite }}
         run: bundle install
 
