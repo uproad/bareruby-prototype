@@ -2,7 +2,7 @@
 
 source "https://rubygems.org"
 
-# Specify your gem's dependencies in bareruby_prot-compiler.gemspec
+# Specify your gem's dependencies in bareruby_prot-simulator.gemspec
 gemspec
 
 gem "irb"
