@@ -2368,14 +2368,21 @@ Eight jobs, one per gem, each in its own directory.
 These gems were never written by `bundle gem`, so none of them had the files it writes.
 That is why nothing here ignored a lock: **the absence was invented around rather than
 filled**, and a `lockfile false` in every Gemfile stood in for the `.gitignore` that
-should have been there from the start. Each of the eight now carries what the generator
-writes — `.gitignore`, `.rspec`, `spec/spec_helper.rb` — and the Gemfiles are back to the
-plain form.
+should have been there from the start. All thirteen gems now carry that `.gitignore`, the
+eight with suites carry `.rspec` and `spec/spec_helper.rb` as well, and the Gemfiles are
+back to the plain form the generator writes.
+
+The rest of what `bundle gem` writes is deliberately not here. A `Rakefile` would be a
+second entrance to `bundle exec rspec`; `bin/console` and `bin/setup` would sit beside
+`./bareruby`, which is the entrance this checkout has; `.rubocop.yml` and `sig/` would
+configure tools this repository does not run; and a `version.rb` would move a constant
+out of thirteen gemspecs that state it in one line each. **A generated file nothing
+reaches for is still a file to keep true**, and this prototype is thrown away.
 
 ### What this does not do
 
 No end-to-end suite, no packaging suite, no fixtures, and nothing for the bindings, the
-machine layer or the simulator: what fits those is a separate question. The five gems
-outside the suites still have none of the generator's files. Nothing here tests what a
-compiled program does. Samples still answer that.
+machine layer or the simulator: what fits those is a separate question — those five gems
+have the `.gitignore` and nothing else. Nothing here tests what a compiled program does.
+Samples still answer that.
 
