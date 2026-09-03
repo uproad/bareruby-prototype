@@ -5,11 +5,13 @@ lockfile false
 
 gemspec
 
-# The compiler this gem is written against is read from the working tree beside it. Both
-# gems are this checkout's own and neither is published, so there is nowhere else for a
-# development bundle to find it. **What a bundle is allowed to resolve is the range the
-# gemspec declares**, and that range is what a user's install answers to; this line only
-# says where the gem is while it sits next door.
-gem "bareruby_prot-compiler", path: "../bareruby_prot-compiler"
-
 gem "rspec", "~> 3.13"
+
+# Which compiler this suite runs against is not this file's decision and not the gemspec's
+# either. The gemspec names the gem and the versions this one works with; a released gem
+# comes from rubygems by that name. This only says: if a compiler is checked out next door,
+# that is the one to read — which is true of every checkout of this repository, and true
+# again anywhere someone puts one there deliberately. Nothing here changes when the gems
+# move apart; the directory simply stops being there.
+local_compiler = File.expand_path("../bareruby_prot-compiler", __dir__)
+gem "bareruby_prot-compiler", path: local_compiler if Dir.exist?(local_compiler)

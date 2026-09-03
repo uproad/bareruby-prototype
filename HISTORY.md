@@ -2338,13 +2338,19 @@ the six standard classes. A suite runs in its own gem's directory, against the b
 directory's `Gemfile` describes, and needs nothing installed first — from an empty
 `GEM_HOME` all eight resolve, install and pass, one example each.
 
-**What a suite is allowed to run against is the range the gemspec declares.** Every
-internal dependency now carries one (`>= 0.0.1, < 0.1.0`) where it carried none, and a
-version outside it stops resolution rather than being picked up: raising the compiler to
-`0.1.0` fails every consumer's `bundle install` with exit 6. Inside a checkout a consumer
-reads the compiler from the working tree beside it, because neither gem is published and a
-development bundle has nowhere else to look. That line says where the gem is; the range
-says which gem is allowed.
+**What a gem needs and where a suite reads it from are two different questions, and they
+are answered in two different files.** The gemspec answers the first: it names the gem
+and the versions this one works with, and every internal dependency now carries a floor
+(`>= 0.0.1`) where it carried no requirement at all. There is no ceiling on any of them —
+an upper bound is a claim about versions that do not exist yet, it reaches every project
+that installs the gem, and nobody downstream can lift it.
+
+The Gemfile answers the second, and only conditionally: if a compiler is checked out next
+door, that is the one to read. In this repository one always is. **Nothing in that line
+changes when the gems move apart** — the directory simply stops being there, and the
+gemspec's requirement resolves the released gem instead. A suite that wants an unreleased
+compiler gets it the way any suite does: whoever runs it clones the commit they want into
+that directory first.
 
 The one example each gem carries is the seam. A standard class requires itself and asks
 whether the compiler took its registration; the ecosystem loads the command that pulls the
