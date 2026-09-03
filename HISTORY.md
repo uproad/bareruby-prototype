@@ -2392,6 +2392,19 @@ about this repository rather than about the generator.
 `.rubocop.yml` is here because the generator writes it. Nothing runs it yet and nothing
 gates on it.
 
+### What it costs
+
+Nothing in the compiler moved, and the figures say so. `ref.rb` on this desk:
+
+| target | `text` | `bss` | artifact |
+| --- | --- | --- | --- |
+| pico1h (RP2040, pico-sdk) | 44096 B | 6672 B | 80384 B `.uf2` |
+| f446 (STM32F446, STM32Cube) | 13684 B | 1976 B | 1223212 B `.elf` |
+| arduino_mega_2560 (ATmega2560) | 3268 B | 186 B | 9288 B `.hex` |
+
+Two compilations of `ref.rb` leave 227 identical files. All three boards are built but not
+hardware-flashed in this change.
+
 ### What this does not do
 
 No end-to-end suite, no packaging suite, and no fixtures. Beyond the version file, the
