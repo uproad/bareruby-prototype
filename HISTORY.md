@@ -2363,8 +2363,19 @@ Two workflows carry them — the tool's two gems in one, the six standard classe
 other, because a standard class is released apart from the tool it is written against.
 Eight jobs, one per gem, each in its own directory.
 
+### What the gems were missing
+
+These gems were never written by `bundle gem`, so none of them had the files it writes.
+That is why nothing here ignored a lock: **the absence was invented around rather than
+filled**, and a `lockfile false` in every Gemfile stood in for the `.gitignore` that
+should have been there from the start. Each of the eight now carries what the generator
+writes — `.gitignore`, `.rspec`, `spec/spec_helper.rb` — and the Gemfiles are back to the
+plain form.
+
 ### What this does not do
 
-No end-to-end suite, no packaging suite, no `spec_helper`, no fixtures, and nothing for
-the bindings, the machine layer or the simulator: what fits those is a separate question.
-Nothing here tests what a compiled program does. Samples still answer that.
+No end-to-end suite, no packaging suite, no fixtures, and nothing for the bindings, the
+machine layer or the simulator: what fits those is a separate question. The five gems
+outside the suites still have none of the generator's files. Nothing here tests what a
+compiled program does. Samples still answer that.
+

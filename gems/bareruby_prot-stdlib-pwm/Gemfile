@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 source "https://rubygems.org"
-lockfile false
 
+# Specify your gem's dependencies in bareruby_prot-stdlib-pwm.gemspec
 gemspec
 
 gem "rspec", "~> 3.13"

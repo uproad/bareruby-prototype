@@ -19,6 +19,11 @@
 # Gems this checkout reaches for, installed here rather than into the desk.
 /.gems/
 
+# The lock this checkout resolves for itself. Every gem in it is read from gems/ in the
+# working tree, so what a lock would pin is the handful of released gems underneath them,
+# and re-resolving is how a change to a gemspec is noticed at all.
+/Gemfile.lock
+
 # The extension, packed. `vscode/package.sh` writes it and VS Code installs it; the
 # sources beside it are what is kept.
 /vscode/*.vsix
