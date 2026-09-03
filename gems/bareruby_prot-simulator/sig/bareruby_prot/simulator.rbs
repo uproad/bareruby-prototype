@@ -1,0 +1,5 @@
+module BareRubyProt
+  module Simulator
+    VERSION: String
+  end
+end

@@ -1,0 +1,7 @@
+module BareRubyProt
+  module Stdlib
+    module Uart
+      VERSION: String
+    end
+  end
+end

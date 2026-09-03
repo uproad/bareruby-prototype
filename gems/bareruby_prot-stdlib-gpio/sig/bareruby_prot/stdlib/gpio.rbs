@@ -1,0 +1,7 @@
+module BareRubyProt
+  module Stdlib
+    module Gpio
+      VERSION: String
+    end
+  end
+end
