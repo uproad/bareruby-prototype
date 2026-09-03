@@ -25,25 +25,20 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  # Specify which files should be added to the gem when it is released.
+  # The template `new` writes is shipped as files rather than as strings, so it is carried
+  # here as files too. Nothing requires it, which means nothing here would notice it going
+  # missing: a project written out of a gem that left it behind is empty, and only a run
+  # that installs this gem and calls `new` says so.
   #
-  # **This is not the `git ls-files` the generator writes**, for two reasons. The gemspec
-  # has to ship: a project reads these gems from where they are, and to bundler a directory
-  # with no gemspec in it is not a gem. And this file is re-read from places git cannot
-  # answer for — an unpacked `.gem` used as a path source is not a repository, and there
-  # `git ls-files` returns nothing, which silently ships a gem with no files and no
-  # executable.
-# `new_template/` is in the list because the template `new` writes is shipped as files
-# rather than as strings. Nothing requires it, so nothing here would notice it going
-# missing: a project written out of a gem that left it behind is empty, and only a run
-# that installs this gem and calls `new` says so.
-spec.files = Dir["*.gemspec", "*.md", "Rakefile", "exe/**/*", "lib/**/*", "sig/**/*",
-                 "new_template/**/*"].select { |path| File.file?(path) }
+  # The gemspec ships too, because a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.rb"] +
+               Dir["new_template/**/*"].select { |path| File.file?(path) }
   spec.bindir = "exe"
-  spec.executables = spec.files.grep(%r{\Aexe/}) { |path| File.basename(path) }
+  spec.executables = ["bareruby"]
   spec.require_paths = ["lib"]
 
   # A user installs this one and gets a compiler with it. The other way round is not true:
   # a compiler is usable without anything that runs a second stage.
-  spec.add_dependency "bareruby_prot-compiler", ">= 0.0.1"
+  spec.add_dependency "bareruby_prot-compiler"
 end

@@ -24,18 +24,9 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  # Specify which files should be added to the gem when it is released.
-  #
-  # **This is not the `git ls-files` the generator writes**, for two reasons. The gemspec
-  # has to ship: a project reads these gems from where they are, and to bundler a directory
-  # with no gemspec in it is not a gem. And this file is re-read from places git cannot
-  # answer for — an unpacked `.gem` used as a path source is not a repository, and there
-  # `git ls-files` returns nothing, which silently ships a gem with no files and no
-  # executable.
-  spec.files = Dir["*.gemspec", "*.md", "Rakefile", "exe/**/*", "lib/**/*", "sig/**/*"]
-               .select { |path| File.file?(path) }
-  spec.bindir = "exe"
-  spec.executables = spec.files.grep(%r{\Aexe/}) { |path| File.basename(path) }
+  # The gemspec ships inside the gem: a project written by `new` reads these gems from
+  # where they are, and to bundler a directory with no gemspec in it is not a gem.
+  spec.files = Dir["*.gemspec"] + Dir["lib/**/*.{rb,yml}"]
   spec.require_paths = ["lib"]
 
   # The only thing outside this gem that reading a program needs.

@@ -2340,10 +2340,8 @@ directory's `Gemfile` describes, and needs nothing installed first — from an e
 
 **What a gem needs and where a suite reads it from are two different questions, and they
 are answered in two different files.** The gemspec answers the first: it names the gem
-and the versions this one works with, and every internal dependency now carries a floor
-(`>= 0.0.1`) where it carried no requirement at all. There is no ceiling on any of them —
-an upper bound is a claim about versions that do not exist yet, it reaches every project
-that installs the gem, and nobody downstream can lift it.
+this one needs. This change leaves every internal dependency requirement as it was. A test
+environment does not decide which released versions a gem accepts.
 
 The Gemfile answers the second, and only conditionally: if a compiler is checked out next
 door, that is the one to read. In this repository one always is. **Nothing in that line
@@ -2383,11 +2381,10 @@ about this repository rather than about the generator.
   was taken and the name was not.
 - Under that name the compiler's is `class Compiler`, and the generator writes `module`.
   Loading both raises `TypeError: Compiler is not a class` — measured, not assumed.
-- `spec.files` from `git ls-files` returns **nothing** where git cannot answer, and an
-  unpacked `.gem` used as a path source is not a repository. That form ships a gem with no
-  files and no executable, which is how `bundle exec bareruby` stopped being found. The
-  files are listed instead, and the gemspec is listed with them: a project reads these
-  gems from where they are, and to bundler a directory with no gemspec is not a gem.
+- Each gem keeps the package boundary its explicit `spec.files` list already described.
+  Replacing that boundary would change what the gems ship as part of adding a test
+  environment. The lists include each gemspec, so an unpacked `.gem` remains usable as a
+  path source.
 
 `.rubocop.yml` is here because the generator writes it. Nothing runs it yet and nothing
 gates on it.
