@@ -1,0 +1,50 @@
+# The RSpec suites carried by the gems that reach hardware, one job per gem: the four
+# bindings and the simulator. They are checked apart from the tool and apart from the
+# standard classes because they are released apart from both — a board's support is its
+# own thing, and a desk that has none of these still has a working compiler.
+#
+# Which platform repository each of these ends up in is not settled. One workflow holds
+# them until it is, and splitting this file is what settling it looks like.
+name: platform rspec checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-rspec-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: rspec ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - bareruby_prot-binding-arduino
+          - bareruby_prot-binding-esp_idf
+          - bareruby_prot-binding-pico_sdk
+          - bareruby_prot-binding-stm32cube
+          - bareruby_prot-simulator
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the bundle
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle install
+
+      - name: Run the suite
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle exec rspec
