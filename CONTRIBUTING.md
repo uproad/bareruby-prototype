@@ -434,8 +434,8 @@ gitignored, because which machines are at this desk is true of the desk.
    [`HISTORY.md`](HISTORY.md). Where `--no-exceptions` changes the answer, measure both.
 6. **The gem suites**, when a change touches a gemspec, a Gemfile, or anything under a
    `lib/` that another gem loads. In each gem the change reaches:
-   `cd gems/<name> && bundle install && bundle exec rspec`. A suite runs in its own gem
-   directory and needs nothing installed first.
+   `cd gems/<name> && bundle install && bundle exec rspec`. All thirteen gems have one, each
+   runs in its own directory, and none of them needs anything installed first.
 7. **Packaging**, when a change adds a file to a gem or touches a gemspec. Build from what
    the gems ship, [as above](#checking-what-the-gems-ship) — a file left out of a
    `spec.files` is reachable from here and from nowhere a user stands.

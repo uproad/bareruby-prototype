@@ -2368,21 +2368,32 @@ Eight jobs, one per gem, each in its own directory.
 These gems were never written by `bundle gem`, so none of them had the files it writes.
 That is why nothing here ignored a lock: **the absence was invented around rather than
 filled**, and a `lockfile false` in every Gemfile stood in for the `.gitignore` that
-should have been there from the start. All thirteen gems now carry that `.gitignore`, the
-eight with suites carry `.rspec` and `spec/spec_helper.rb` as well, and the Gemfiles are
-back to the plain form the generator writes.
+should have been there from the start.
 
-The rest of what `bundle gem` writes is deliberately not here. A `Rakefile` would be a
-second entrance to `bundle exec rspec`; `bin/console` and `bin/setup` would sit beside
-`./bareruby`, which is the entrance this checkout has; `.rubocop.yml` and `sig/` would
-configure tools this repository does not run; and a `version.rb` would move a constant
-out of thirteen gemspecs that state it in one line each. **A generated file nothing
-reaches for is still a file to keep true**, and this prototype is thrown away.
+The generator has now been run once per gem, all thirteen, and each gem carries what it
+writes: `.gitignore`, `.rspec`, `Rakefile`, `bin/console`, `bin/setup`, `.rubocop.yml`,
+`sig/`, `spec/spec_helper.rb`, a `version.rb` the gemspec reads, and a Gemfile in the
+plain form. Every gem has a suite; the five that had none answer for their version file.
+
+**Three of the generated forms could not be taken as written**, and each says something
+about this repository rather than about the generator.
+
+- The constant it derives from a gem name is `BarerubyProt`, and the namespace these gems
+  are written in is `BareRubyProt`. Two spellings of one prefix is a bug, so the structure
+  was taken and the name was not.
+- Under that name the compiler's is `class Compiler`, and the generator writes `module`.
+  Loading both raises `TypeError: Compiler is not a class` — measured, not assumed.
+- `spec.files` from `git ls-files` returns **nothing** where git cannot answer, and an
+  unpacked `.gem` used as a path source is not a repository. That form ships a gem with no
+  files and no executable, which is how `bundle exec bareruby` stopped being found. The
+  files are listed instead, and the gemspec is listed with them: a project reads these
+  gems from where they are, and to bundler a directory with no gemspec is not a gem.
+
+`.rubocop.yml` is here because the generator writes it. Nothing runs it yet and nothing
+gates on it.
 
 ### What this does not do
 
-No end-to-end suite, no packaging suite, no fixtures, and nothing for the bindings, the
-machine layer or the simulator: what fits those is a separate question — those five gems
-have the `.gitignore` and nothing else. Nothing here tests what a compiled program does.
-Samples still answer that.
-
+No end-to-end suite, no packaging suite, and no fixtures. Beyond the version file, the
+bindings and the simulator check nothing: what fits those is a separate question. Nothing
+here tests what a compiled program does. Samples still answer that.
