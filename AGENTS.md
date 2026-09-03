@@ -14,9 +14,12 @@ is put together; this file says what to build and what not to.
 extension, no abstraction nothing uses yet. Whatever was left out is written down
 afterwards rather than filled in.
 
-**No tests.** There is no spec suite and none is to be added. A sample program that fails
-to compile before the change and compiles after it is what stands in for one; the full
-check is in [`CONTRIBUTING.md`](CONTRIBUTING.md#checking-a-change).
+**No tests for what a program does.** A sample program that fails to compile before the
+change and compiles after it is what stands in for one; the full check is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#checking-a-change). The suites under `gems/*/spec/`
+are a separate thing and stay small: they check that each gem resolves and loads on its
+own, and that the seam between gems still holds. Do not write specs there for language
+behaviour.
 
 **No error guards.** No diagnostics, no defensive checks, no command-line options beyond
 the few a build cannot do without, no branches for cases that cannot arise on the happy

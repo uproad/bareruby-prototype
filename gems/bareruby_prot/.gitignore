@@ -1,0 +1,16 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+# A development bundle's lock. What a user of this gem resolves is the gemspec's
+# requirement, not this, and a lock kept here would only narrow what the suite is
+# run against.
+/Gemfile.lock
+
+# rspec failure tracking
+.rspec_status

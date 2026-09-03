@@ -1,0 +1,45 @@
+# The RSpec suites carried by the two gems the tool itself is made of, one job each.
+# A suite runs in its own gem's directory against the bundle that directory's Gemfile
+# describes, so a gem carries its checks the way it carries its source: whole, and
+# runnable from where it sits. Standard classes ship as their own release and have their
+# own workflow beside this one for the same reason.
+name: bareruby rspec checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bareruby-rspec-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: rspec ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - bareruby_prot-compiler
+          - bareruby_prot
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the bundle
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle install
+
+      - name: Run the suite
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle exec rspec

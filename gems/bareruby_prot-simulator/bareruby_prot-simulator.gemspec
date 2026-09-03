@@ -7,18 +7,26 @@
 #
 # The name carries the prototype's own prefix rather than the one the real compiler will
 # use, because this is a throwaway and has no business holding that name anywhere.
+require_relative "lib/bareruby_prot/simulator/version"
+
 Gem::Specification.new do |spec|
   spec.name = "bareruby_prot-simulator"
-  spec.version = "0.0.1"
-  spec.summary = "Interprets a host build, with the desk's own peripherals behind its calls."
+  spec.version = BareRubyProt::Simulator::VERSION
   spec.authors = ["uproad"]
+  spec.email = ["7349115+uproad@users.noreply.github.com"]
+
+  spec.summary = "Interprets a host build, with the desk's own peripherals behind its calls."
+  spec.description = "Interprets the artifact a host build left, with the desk's own peripherals behind its calls."
+  spec.homepage = "https://github.com/uproad/bareruby-prototype"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0"
 
+  spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["rubygems_mfa_required"] = "true"
+
   # The gemspec ships inside the gem: a project written by `new` reads these gems from
   # where they are, and to bundler a directory with no gemspec in it is not a gem.
-  spec.files = Dir["*.gemspec"] + Dir["*.md"] + Dir["lib/**/*.rb"]
+  spec.files = Dir["*.gemspec"] + ["API.md"] + Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]
-
-  spec.metadata = { "rubygems_mfa_required" => "true" }
 end

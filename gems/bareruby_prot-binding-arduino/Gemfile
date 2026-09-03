@@ -1,0 +1,23 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# Specify your gem's dependencies in bareruby_prot-binding-arduino.gemspec
+gemspec
+
+gem "irb"
+gem "rake", "~> 13.0"
+
+gem "rspec", "~> 3.0"
+
+gem "rubocop", "~> 1.21"
+
+# Which copy of the gems this one depends on the suite runs against is not this file to
+# decide and not the gemspec either. The gemspec names them and the versions this one
+# works with, and a released gem comes from rubygems by that name. This only says: when
+# one is checked out next door, that is the copy to read. In this repository they always
+# are. Nothing here changes when the gems move apart — the directories stop being there.
+local_ecosystem = File.expand_path("../bareruby_prot", __dir__)
+gem "bareruby_prot", path: local_ecosystem if Dir.exist?(local_ecosystem)
+local_compiler = File.expand_path("../bareruby_prot-compiler", __dir__)
+gem "bareruby_prot-compiler", path: local_compiler if Dir.exist?(local_compiler)

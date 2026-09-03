@@ -1,0 +1,48 @@
+# The RSpec suites carried by the standard classes, one job per class. They are checked
+# apart from the tool they are written against because they are released apart from it:
+# a class answers for itself, and what it needs from the compiler is the range its
+# gemspec declares.
+name: stdlib rspec checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stdlib-rspec-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: rspec ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - bareruby_prot-stdlib-adc
+          - bareruby_prot-stdlib-gpio
+          - bareruby_prot-stdlib-i2c
+          - bareruby_prot-stdlib-onboard_led
+          - bareruby_prot-stdlib-pwm
+          - bareruby_prot-stdlib-uart
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the bundle
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle install
+
+      - name: Run the suite
+        working-directory: gems/${{ matrix.suite }}
+        run: bundle exec rspec

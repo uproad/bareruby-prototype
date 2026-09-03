@@ -2330,3 +2330,80 @@ rather than by a transmitter this side configures.
 
 `arduino-mega2560` is built but not hardware-flashed in this change: that board is not on
 the desk.
+
+## Each gem answers for itself
+
+Eight gems now carry a bundle and a suite of their own: the compiler, the ecosystem, and
+the six standard classes. A suite runs in its own gem's directory, against the bundle that
+directory's `Gemfile` describes, and needs nothing installed first — from an empty
+`GEM_HOME` all eight resolve, install and pass, one example each.
+
+**What a gem needs and where a suite reads it from are two different questions, and they
+are answered in two different files.** The gemspec answers the first: it names the gem
+this one needs. This change leaves every internal dependency requirement as it was. A test
+environment does not decide which released versions a gem accepts.
+
+The Gemfile answers the second, and only conditionally: if a compiler is checked out next
+door, that is the one to read. In this repository one always is. **Nothing in that line
+changes when the gems move apart** — the directory simply stops being there, and the
+gemspec's requirement resolves the released gem instead. A suite that wants an unreleased
+compiler gets it the way any suite does: whoever runs it clones the commit they want into
+that directory first.
+
+The one example each gem carries is the seam. A standard class requires itself and asks
+whether the compiler took its registration; the ecosystem loads the command that pulls the
+first stage in; the compiler asks whether it still offers the registration the others are
+written against. Renaming `Peripheral.register` turns the compiler's own example red and
+takes the seven consumers down with it at load, which is what the example is for: a green
+that says nothing about which code it read is not worth running.
+
+Two workflows carry them — the tool's two gems in one, the six standard classes in the
+other, because a standard class is released apart from the tool it is written against.
+Eight jobs, one per gem, each in its own directory.
+
+### What the gems were missing
+
+These gems were never written by `bundle gem`, so none of them had the files it writes.
+That is why nothing here ignored a lock: **the absence was invented around rather than
+filled**, and a `lockfile false` in every Gemfile stood in for the `.gitignore` that
+should have been there from the start.
+
+The generator has now been run once per gem, all thirteen, and each gem carries what it
+writes: `.gitignore`, `.rspec`, `Rakefile`, `bin/console`, `bin/setup`, `.rubocop.yml`,
+`sig/`, `spec/spec_helper.rb`, a `version.rb` the gemspec reads, and a Gemfile in the
+plain form. Every gem has a suite; the five that had none answer for their version file.
+
+**Three of the generated forms could not be taken as written**, and each says something
+about this repository rather than about the generator.
+
+- The constant it derives from a gem name is `BarerubyProt`, and the namespace these gems
+  are written in is `BareRubyProt`. Two spellings of one prefix is a bug, so the structure
+  was taken and the name was not.
+- Under that name the compiler's is `class Compiler`, and the generator writes `module`.
+  Loading both raises `TypeError: Compiler is not a class` — measured, not assumed.
+- Each gem keeps the package boundary its explicit `spec.files` list already described.
+  Replacing that boundary would change what the gems ship as part of adding a test
+  environment. The lists include each gemspec, so an unpacked `.gem` remains usable as a
+  path source.
+
+`.rubocop.yml` is here because the generator writes it. Nothing runs it yet and nothing
+gates on it.
+
+### What it costs
+
+Nothing in the compiler moved, and the figures say so. `ref.rb` on this desk:
+
+| target | `text` | `bss` | artifact |
+| --- | --- | --- | --- |
+| pico1h (RP2040, pico-sdk) | 44096 B | 6672 B | 80384 B `.uf2` |
+| f446 (STM32F446, STM32Cube) | 13684 B | 1976 B | 1223212 B `.elf` |
+| arduino_mega_2560 (ATmega2560) | 3268 B | 186 B | 9288 B `.hex` |
+
+Two compilations of `ref.rb` leave 227 identical files. All three boards are built but not
+hardware-flashed in this change.
+
+### What this does not do
+
+No end-to-end suite, no packaging suite, and no fixtures. Beyond the version file, the
+bindings and the simulator check nothing: what fits those is a separate question. Nothing
+here tests what a compiled program does. Samples still answer that.
