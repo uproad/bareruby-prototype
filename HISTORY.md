@@ -2330,3 +2330,17 @@ rather than by a transmitter this side configures.
 
 `arduino-mega2560` is built but not hardware-flashed in this change: that board is not on
 the desk.
+
+## UIAPduino Pro Micro CH32V003 V1.4
+
+`samples/uiapduino_blink.rb` builds through UIAPduino Arduino core 1.0.42 for the
+CH32V003 and blinks the onboard LED on hardware. On macOS Apple Silicon, minichlink
+built from ch32fun commit `b28d285460ce052a179dba8f4a22c6f73ff8e328` wrote and
+started the image over the factory USB bootloader. The author observed the LED blinking.
+`bareruby flash` also wrote the image and reported success on macOS.
+The image is 7,272 bytes; ELF `text` is 6,992 bytes, `data` 280 bytes and `bss` 712
+bytes. The chip has 16 KiB flash and 2 KiB RAM; stack use is not measured.
+
+This proves the LED and timing path only. GPIO, ADC, PWM, UART, I2C, exceptions and
+console output have not been established for this board. USB flashing through the
+command currently discovers bootloaders on macOS only.

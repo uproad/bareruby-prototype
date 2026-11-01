@@ -603,6 +603,20 @@ says how.
 naming ST-LINK probe serials from `boards:` when more than one probe is attached. **That
 path has never been run** — the STM32 firmware verified so far was flashed by hand.
 
+### UIAPduino Pro Micro CH32V003 V1.4
+
+The Arduino binding offers `uiapduino-pro-micro-ch32v003`. `target add` records it, and
+`build` fetches UIAPduino core 1.0.42 and its cross compiler. The core's macOS compiler
+is an Intel binary and needs Rosetta on Apple Silicon. The verified program is
+`samples/uiapduino_blink.rb`; the indicator is board pin 2. Other peripherals have not
+been verified on this board. The build has no console output.
+
+On macOS, install [minichlink](https://github.com/cnlohr/ch32fun/tree/master/minichlink)
+on `PATH` and connect the board while holding reset, releasing reset immediately after
+connection. `bareruby flash --target=<name>` checks that exactly one UIAPduino is in
+bootloader mode, writes the image and starts it. Flash discovery currently supports
+macOS only. A running board does not necessarily enumerate as a USB device.
+
 ### Arduino Mega 2560, through arduino-cli
 
 `--no-exceptions` is not optional here. The core compiles with `-fno-exceptions` and this

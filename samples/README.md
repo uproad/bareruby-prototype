@@ -17,6 +17,7 @@ it is given no argument.
 | File | What it covers |
 | --- | --- |
 | `blink.rb` | Demo 1 — GPIO |
+| `uiapduino_blink.rb` | Onboard LED and sleeps on UIAPduino Pro Micro CH32V003 V1.4 |
 | `heartbeat.rb` | `OnboardLED`, which blinks every supported board unchanged — including boards whose LED is not a GPIO |
 | `interrupt.rb` | GPIO falling-edge interrupt feasibility |
 | `servo.rb` | Demo 2 — PWM with keyword arguments, a peripheral held in an ivar |
