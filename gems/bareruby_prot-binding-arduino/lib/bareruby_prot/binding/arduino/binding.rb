@@ -401,14 +401,17 @@ module BareRubyProt
       #include <stdio.h>
       #include <string.h>
 
-      /* **Where printf already goes is the libc's answer, and the two libcs here differ.**
+      /* The CH32 board has no console here. Where printf goes on the other boards is
+         the libc's answer, and their libcs differ.
          On an AVR there is no stream until one is made, so one is made over the port the
          board's USB-serial bridge is on and both of the runtime's channels are pointed at
          it — fd1 is what puts reaches and fd2 is where a panic says so. On an ESP32 the
          console is already a UART the system opened before this ran, and it is the one
          this board brings out through its bridge chip; opening the line here is what makes
          it the port the program can also write to as unit 0. */
-      #ifdef ARDUINO_ARCH_ESP32
+      #if defined(ARDUINO_ARCH_CH32)
+      void bareruby_startup(void) {}
+      #elif defined(ARDUINO_ARCH_ESP32)
       void bareruby_startup(void) {
           Serial.begin(#{CONSOLE_BAUD});
       }

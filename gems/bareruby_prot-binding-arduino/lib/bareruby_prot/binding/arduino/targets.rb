@@ -20,6 +20,7 @@ require_relative "flash"
 # name alone no longer says which composition.
 module BareRubyProt
   module ArduinoBinding
+    CH32V003 = Isa.new("riscv32-none-elf")
     AVR = Isa.new("avr-none")
     XTENSA_LX7_S3 = Isa.new("xtensa-esp32s3-elf")
   end
@@ -34,5 +35,11 @@ module BareRubyProt
     "freenove-esp32-s3-wroom-arduino",
     isa: ArduinoBinding::XTENSA_LX7_S3, substrate: Substrate::BARE_METAL,
     binding: ArduinoBinding, machine: Machine.register(:esp32_s3_wroom, chip: "esp32s3")
+  )
+
+  Target.register(
+    "uiapduino-pro-micro-ch32v003",
+    isa: ArduinoBinding::CH32V003, substrate: Substrate::BARE_METAL,
+    binding: ArduinoBinding, machine: Machine.register(:uiapduino_ch32v003, chip: "ch32v003")
   )
 end

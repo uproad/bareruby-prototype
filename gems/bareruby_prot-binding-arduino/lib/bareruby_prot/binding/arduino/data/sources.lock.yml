@@ -45,6 +45,10 @@ cli:
 # written by `arduino-cli upload`. Its version is the one the core's own board list asks
 # for, pinned here for the same reason the core's is.
 cores:
+  UIAP:ch32v:
+    version: 1.0.42
+    index: https://github.com/YuukiUmeta-UIAP/board_manager_files/raw/main/package_uiap.jp_index.json
+    holds: packages/UIAP/hardware/ch32v/1.0.42
   arduino:avr:
     version: 1.8.8
     # Under the data directory, and the whole of what says the core is already here. It is

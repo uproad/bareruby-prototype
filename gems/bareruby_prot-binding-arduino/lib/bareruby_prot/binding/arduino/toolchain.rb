@@ -20,6 +20,7 @@ module BareRubyProt
   # name that does not carry how the tool arranges itself.
   module ArduinoToolchain
     IMAGES = {
+      "bareruby_program.ino.bin" => "bareruby_program.bin",
       "bareruby_program.ino.hex" => "bareruby_program.hex",
       "bareruby_program.ino.elf" => "bareruby_program.elf"
     }.freeze

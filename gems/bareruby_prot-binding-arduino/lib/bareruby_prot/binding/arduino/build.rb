@@ -44,10 +44,8 @@ module BareRubyProt
       "#{SKETCH}/#{SKETCH}.ino" => SKETCH_TEXT
     }
 
-    # The board's console is a bridge chip of its own, always attached and always
-    # listening, so output has somewhere to arrive in every build rather than only in one
-    # that paid for a USB stack.
-    def stdout? = true
+    # UIAPduino has no console attached by this binding.
+    def stdout? = @target.machine.key != :uiapduino_ch32v003
 
     def entry = ENTRY
 
@@ -88,7 +86,7 @@ module BareRubyProt
         sketch = #{SKETCH}
         sources = #{@sources.join(' ')}
         definitions = #{definitions.join(' ')}
-        stdout_channel = serial
+        stdout_channel = #{stdout? ? "serial" : "none"}
         exceptions = #{exceptions}
         artifact = #{@machine.artifact}
         build_command = #{build_command}

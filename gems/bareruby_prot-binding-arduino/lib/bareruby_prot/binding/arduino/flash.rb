@@ -32,6 +32,8 @@ module BareRubyProt
     # one merged image at offset zero, and reset from underneath the peripheral.
     def self.run(directory, boards:, options: {}, found: nil)
       fqbn = Toolchain.recorded(directory, "fqbn")
+      return uiapduino(directory) if fqbn.start_with?("UIAP:ch32v:")
+
       writer = ArduinoTools.writer(fqbn)
       ports = boards.empty? ? found(fqbn, writer) : boards.map(&:to_s)
       return false if ports.empty?
@@ -39,6 +41,38 @@ module BareRubyProt
       ports.all? do |port|
         writer ? written(directory, writer, port) : uploaded(directory, fqbn, port)
       end
+    end
+
+    # The UIAPduino bootloader is a HID device, not a serial port. Its bootloader
+    # does not distinguish identical boards, so write only when exactly one is waiting.
+    def self.uiapduino(directory)
+      unless RUBY_PLATFORM.include?("darwin")
+        warn "flash: UIAPduino discovery is currently supported on macOS only."
+        return false
+      end
+
+      inventory = JSON.parse(IO.popen(["system_profiler", "SPUSBDataType", "-json"], &:read))
+      devices = usb_devices(inventory.fetch("SPUSBDataType", []))
+      matching = devices.count do |device|
+        device["vendor_id"].to_s.match?(/0x1209/i) && device["product_id"].to_s.match?(/0xb803/i)
+      end
+      unless matching == 1
+        warn "flash: expected one UIAPduino in bootloader mode; found #{matching}."
+        return false
+      end
+
+      unless ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? { |path| File.executable?(File.join(path, "minichlink")) }
+        warn "flash: install minichlink and put it on PATH."
+        return false
+      end
+
+      Toolchain.aloud(["minichlink", "-c", "0x1209b803", "-w",
+                       File.join(directory, Toolchain.recorded(directory, "artifact")), "flash", "-b"],
+                      environment)
+    end
+
+    def self.usb_devices(devices)
+      devices.flat_map { |device| [device] + usb_devices(device.fetch("_items", [])) }
     end
 
     def self.uploaded(directory, fqbn, port)
